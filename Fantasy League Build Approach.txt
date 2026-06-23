@@ -1,0 +1,23 @@
+Fantasy League Build Approach
+
+Methodology
+- Build top-down: structure and skeleton first, real behavior later
+- Code must be self-documenting — function, variable, class, and interface names should fully spell out their purpose, so the code reads without needing comments
+- It is fine for functions to be empty or return a hardcoded mock value before their real logic is implemented
+- Interfaces between components are designed first, following SOLID principles, before any implementation behavior is added
+
+Build Order
+1. Interfaces / skeleton — define how every component talks to every other component (frontend, API, workers, database, football data source) using stub or mock implementations only
+2. Database — schema and persistence layer
+3. APIs — backend endpoints
+4. Backend workers — background job processing
+5. Football API data source — real data import integration
+
+Within each layer above, functionality is fleshed out incrementally, one screen or user flow at a time (see fantasy_league_user_flows_v1.txt and fantasy_league_squad_builder_flow_v1.txt), rather than building everything at once.
+
+Hosting & Scale (V1)
+- Hosted on AWS
+- MVP V1 scale target: fewer than 1,000 football players (Player records) in the data store
+
+Open Design Questions
+- Many design questions remain to be answered as each layer above is built out

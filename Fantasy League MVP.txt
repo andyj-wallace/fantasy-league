@@ -1,0 +1,25 @@
+What's Actually Left:
+
+Data Model
+    League
+    User
+    Team (per user per league — holds the 16-man roster, formation, captain/vice-captain; Squad folded in, no separate entity)
+    Player
+    Transfer
+    Gameweek
+    Match (real-world fixture: home/away club, kickoff time, status, final score)
+    PlayerMatchStat (real-world per-player stats per match: goals, assists, cards, saves, minutes — imported from provider)
+    PlayerScore (calculated fantasy points per player per gameweek)
+    TeamScore (calculated fantasy total per team per gameweek)
+    LeagueStanding (precomputed leaderboard rows per league per gameweek)
+Screens
+    Login
+    Create League
+    Join League
+    Squad Builder
+    Transfers
+    Leaderboard
+    Player Detail
+Backend APIs:
+Background Jobs:
+    

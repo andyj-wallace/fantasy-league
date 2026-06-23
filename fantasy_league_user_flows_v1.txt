@@ -1,0 +1,80 @@
+Fantasy League V1 User Flows
+
+1. CREATE LEAGUE
+
+* User clicks Create League
+* User enters league name
+* System creates league
+* System generates invite code
+* User becomes league commissioner
+* User shares invite code
+
+2. JOIN LEAGUE
+
+* User enters invite code
+* System validates code
+* User joins league
+* User is prompted to build a squad
+
+3. BUILD INITIAL SQUAD
+
+* User receives £110M budget
+* User selects 16-player squad
+* User must select 2 goalkeepers
+* User must satisfy squad requirements
+* User saves squad
+
+4. SET STARTING LINEUP
+
+* User selects starting XI
+* User selects valid formation
+* User chooses captain
+* User chooses vice-captain
+* User saves lineup
+
+5. MAKE TRANSFERS
+
+* User views available transfers
+* User selects players out
+* User selects players in
+* System validates budget and squad rules
+* Transfer is confirmed
+
+6. GAMEWEEK LOCK
+
+* Players lock individually at kickoff
+* Locked players can no longer be changed
+* Unlocked players remain editable
+
+7. GAMEWEEK SCORING
+
+* Matches are played
+* Player statistics are collected
+* Fantasy points are calculated
+* Bench points are added directly to the team total (auto-subs deferred to V2)
+* Captain and vice-captain rules are applied
+
+8. VIEW LEADERBOARD
+
+* User views league standings
+* Rankings are ordered by total points
+* Tiebreakers are applied when necessary
+
+9. MONTHLY PRICE UPDATE
+
+* System recalculates player prices
+* New prices become effective
+* User budgets update automatically
+
+10. POSTPONED MATCH HANDLING
+
+* System identifies postponed matches
+* Affected clubs are counted
+* Free transfers are awarded based on affected clubs
+
+11. LEAGUE ADMINISTRATION
+
+* Commissioner removes managers if necessary
+* Commissioner renames league
+* Commissioner regenerates invite code
+* League settings become locked once the season starts

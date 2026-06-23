@@ -1,0 +1,92 @@
+Assuming:
+    Simple UI
+    Single league type (what we've designed)
+    One experienced full-stack engineer
+    Existing football data provider
+    No native mobile apps
+    No fancy live updates
+    No payment system
+    Aggressive MVP
+
+8–12 weeks
+    Weeks 1–2
+        Database design
+        Backend foundation
+        Authentication
+        League creation/joining
+    Weeks 3–4
+        Squad builder
+        Transfers
+        Formation validation
+        Captaincy
+    Weeks 5–6
+        Football data importer
+        Player database
+        Match database
+        Locking logic
+    Weeks 7–8
+        Scoring engine
+        Auto-subs
+        Leaderboards
+        Gameweek processing
+    Weeks 9–10
+        Testing
+        Bug fixes
+        Admin features
+    Weeks 11–12
+        Deployment
+        Monitoring
+        Beta testing
+
+
+More Realistic (side project)
+4–6 months
+
+Most projects take longer because:
+    Football data quirks
+    Scoring edge cases
+    Transfer bugs
+    Auto-sub bugs
+    Data quality issues
+
+
+What actually takes the longest?
+
+Not the frontend.
+Not the APIs.
+The scoring engine.
+
+For example:
+
+    Player starts match
+    Gets injured after 8 minutes
+    Receives yellow card
+    Captain doesn't play
+    Vice-captain does play
+    Bench substitution occurs
+    Match is later ruled postponed
+
+Those edge cases consume a disproportionate amount of development time.
+
+Break it into 3 milestones.
+Milestone 1 (2–3 weeks) Playable internally.
+    Login
+    Create league
+    Join league
+    Build squad
+    Save lineup
+No scoring.
+
+Milestone 2 (3–5 weeks) Game actually works.
+    Data import
+    Transfers
+    Locking
+    Scoring
+    Leaderboards
+
+Milestone 3 (2–4 weeks) Production ready.
+    Admin tools
+    Testing
+    Monitoring
+    Performance
+    Bug fixing
