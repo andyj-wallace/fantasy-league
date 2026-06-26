@@ -70,6 +70,7 @@ Tiebreakers
 Injuries & Suspensions
 - No special rules
 - Managers may keep players indefinitely
+- Cosmetic availability flag only (Available / Out / Questionable, shown on player cards) — does not affect roster rules, scoring, or transfer eligibility. See PlayerAvailabilityStatus in Fantasy League Architecture.txt
 
 Postponed Matches
 - 1 free transfer per affected club
@@ -99,7 +100,6 @@ Other Positive Events
 - No clean sheet bonus for MID or FWD (V1)
 - Save (GK): +1 per 3 saves (rounded down)
 - Penalty Won: +2
-- Direct Free Kick Goal Bonus: +1
 
 Negative Events
 - Yellow Card: -1
@@ -114,6 +114,7 @@ Squad Builder Player Cards
 - Current Price
 - Total Fantasy Points
 - Recent Form
+- Availability Status (cosmetic: Available / Out / Questionable)
 
 Recent Form Rules
 - Use last 5 matches when available

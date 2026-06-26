@@ -32,3 +32,32 @@ Add `-v` (`docker compose down -v`) to also delete the database volume and start
 npm run typecheck      # tsc --noEmit
 npm run db:generate    # generate a new migration after editing src/db/schema.ts
 ```
+
+## Environment variables
+
+| Variable | Secret? | Notes |
+|---|---|---|
+| `DATABASE_URL` | yes | local Postgres connection string |
+| `NEXT_PUBLIC_API_BASE_URL` | no | bundled into client-side JS by Next.js — never put secrets here |
+| `FOOTBALL_DATA_API_BASE_URL` | no | football data provider host, e.g. `https://v3.football.api-sports.io` |
+| `FOOTBALL_DATA_API_KEY` | yes | football data provider key, read only by the worker process, never the frontend |
+
+Real values belong only in your local `.env` (gitignored, never committed). `.env.example` is a
+committed template — it should only ever hold placeholders for secret values, never the real
+thing. Beyond local development (CI, staging, production), don't store secrets in files at all:
+inject them as environment variables at deploy time via AWS Secrets Manager or SSM Parameter
+Store.
+
+## Football data polling budget
+
+The football data provider caps us at 100 requests/day (excluding its free account/quota-status
+endpoint). The worker's live-match polling cadence is computed from that budget rather than a
+fixed interval — see [`docs/polling-budget.md`](docs/polling-budget.md) for the full back-of-envelope
+breakdown. Summary:
+
+| Scenario | Fixtures live | Interval | Total calls used |
+|---|---|---|---|
+| Busiest realistic (Sat 3pm blackout) | 7 | ~22 min | 94 / 100 |
+| Typical day | 3 | ~9 min | 95 / 100 |
+| Light day | 1 | ~3.5 min (floored ~5–10 min) | well under cap |
+| Absolute floor (all 10 PL fixtures simultaneous — never happens) | 10 | ~37 min | 88 / 100 |

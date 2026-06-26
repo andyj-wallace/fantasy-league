@@ -59,6 +59,8 @@ Fantasy League V1 User Flows
 * User views league standings
 * Rankings are ordered by total points
 * Tiebreakers are applied when necessary
+* A "last updated" timestamp is shown next to the standings, with inline microcopy: "Updated automatically — busy match days may take a little longer."
+* Hovering/tapping the timestamp shows a tooltip: "Scores update shortly after each match ends. On busier days with several matches finishing close together, it can take a bit longer for every score to come through."
 
 9. MONTHLY PRICE UPDATE
 
