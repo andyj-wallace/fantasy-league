@@ -1,0 +1,10 @@
+export * as leaguesRepository from "./leagues";
+export * as gameweeksRepository from "./gameweeks";
+export * as matchesRepository from "./matches";
+export * as playerMatchStatsRepository from "./playerMatchStats";
+export * as playerScoresRepository from "./playerScores";
+export * as teamsRepository from "./teams";
+export * as teamScoresRepository from "./teamScores";
+export * as leagueStandingsRepository from "./leagueStandings";
+export * as playersRepository from "./players";
+export * as transfersRepository from "./transfers";

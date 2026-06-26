@@ -1,0 +1,208 @@
+import {
+  boolean,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  real,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
+
+/** Mirrors PlayerPosition in src/domain/shared.ts. */
+export const playerPositionEnum = pgEnum("player_position", ["GK", "DEF", "MID", "FWD"]);
+
+/** Mirrors StartingFormation in src/domain/shared.ts. */
+export const startingFormationEnum = pgEnum("starting_formation", [
+  "3-4-3",
+  "3-5-2",
+  "4-3-3",
+  "4-4-2",
+  "4-5-1",
+  "5-3-2",
+  "5-4-1",
+]);
+
+/** Mirrors MatchStatus in src/domain/shared.ts. */
+export const matchStatusEnum = pgEnum("match_status", [
+  "SCHEDULED",
+  "IN_PROGRESS",
+  "COMPLETED",
+  "POSTPONED",
+  "DELAYED",
+  "INTERRUPTED",
+]);
+
+/** Mirrors GameweekStatus in src/domain/shared.ts. */
+export const gameweekStatusEnum = pgEnum("gameweek_status", [
+  "UPCOMING",
+  "LOCKED",
+  "IN_PROGRESS",
+  "COMPLETED",
+]);
+
+export const users = pgTable("users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: text("email").notNull().unique(),
+  displayName: text("display_name").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const leagues = pgTable("leagues", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  inviteCode: text("invite_code").notNull().unique(),
+  commissionerUserId: uuid("commissioner_user_id")
+    .notNull()
+    .references(() => users.id),
+  areSettingsLocked: boolean("are_settings_locked").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const gameweeks = pgTable("gameweeks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  number: integer("number").notNull().unique(),
+  deadlineAt: timestamp("deadline_at").notNull(),
+  status: gameweekStatusEnum("status").notNull(),
+});
+
+export const players = pgTable("players", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  club: text("club").notNull(),
+  position: playerPositionEnum("position").notNull(),
+  priceInMillions: real("price_in_millions").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const matches = pgTable("matches", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  gameweekId: uuid("gameweek_id")
+    .notNull()
+    .references(() => gameweeks.id),
+  homeClub: text("home_club").notNull(),
+  awayClub: text("away_club").notNull(),
+  kickoffAt: timestamp("kickoff_at").notNull(),
+  status: matchStatusEnum("status").notNull(),
+  finalHomeScore: integer("final_home_score"),
+  finalAwayScore: integer("final_away_score"),
+});
+
+export const teams = pgTable("teams", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  leagueId: uuid("league_id")
+    .notNull()
+    .references(() => leagues.id),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id),
+  name: text("name").notNull(),
+  // Nullable: a Team exists from the moment a manager joins a league, before they've built a
+  // squad — formation/captain/vice-captain aren't chosen until the squad builder flow runs.
+  formation: startingFormationEnum("formation"),
+  captainPlayerId: uuid("captain_player_id").references(() => players.id),
+  viceCaptainPlayerId: uuid("vice_captain_player_id").references(() => players.id),
+  remainingBudgetInMillions: real("remaining_budget_in_millions").notNull(),
+  bankedFreeTransferCount: integer("banked_free_transfer_count").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+/** One row per player on a Team's 16-man roster; isStarting distinguishes the XI from the bench. */
+export const teamRosterSlots = pgTable("team_roster_slots", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  teamId: uuid("team_id")
+    .notNull()
+    .references(() => teams.id),
+  playerId: uuid("player_id")
+    .notNull()
+    .references(() => players.id),
+  isStarting: boolean("is_starting").notNull(),
+});
+
+export const transfers = pgTable("transfers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  teamId: uuid("team_id")
+    .notNull()
+    .references(() => teams.id),
+  gameweekId: uuid("gameweek_id")
+    .notNull()
+    .references(() => gameweeks.id),
+  playerOutId: uuid("player_out_id")
+    .notNull()
+    .references(() => players.id),
+  playerInId: uuid("player_in_id")
+    .notNull()
+    .references(() => players.id),
+  pointsCost: integer("points_cost").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const playerMatchStats = pgTable("player_match_stats", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  matchId: uuid("match_id")
+    .notNull()
+    .references(() => matches.id),
+  playerId: uuid("player_id")
+    .notNull()
+    .references(() => players.id),
+  minutesPlayed: integer("minutes_played").notNull(),
+  goalsScored: integer("goals_scored").notNull().default(0),
+  directFreeKickGoalsScored: integer("direct_free_kick_goals_scored").notNull().default(0),
+  assists: integer("assists").notNull().default(0),
+  savesCount: integer("saves_count").notNull().default(0),
+  ownGoalsScored: integer("own_goals_scored").notNull().default(0),
+  penaltiesWon: integer("penalties_won").notNull().default(0),
+  penaltiesConceded: integer("penalties_conceded").notNull().default(0),
+  receivedYellowCard: boolean("received_yellow_card").notNull().default(false),
+  receivedRedCard: boolean("received_red_card").notNull().default(false),
+});
+
+/** breakdown/tiebreakerStats are stored as jsonb, matching the plain object shape of the domain type. */
+export const playerScores = pgTable("player_scores", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  playerId: uuid("player_id")
+    .notNull()
+    .references(() => players.id),
+  matchId: uuid("match_id")
+    .notNull()
+    .references(() => matches.id),
+  gameweekId: uuid("gameweek_id")
+    .notNull()
+    .references(() => gameweeks.id),
+  breakdown: jsonb("breakdown").notNull(),
+  totalPoints: integer("total_points").notNull(),
+  calculatedAt: timestamp("calculated_at").notNull().defaultNow(),
+});
+
+export const teamScores = pgTable("team_scores", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  teamId: uuid("team_id")
+    .notNull()
+    .references(() => teams.id),
+  gameweekId: uuid("gameweek_id")
+    .notNull()
+    .references(() => gameweeks.id),
+  captainBonusPlayerId: uuid("captain_bonus_player_id").references(() => players.id),
+  totalPoints: integer("total_points").notNull(),
+  calculatedAt: timestamp("calculated_at").notNull().defaultNow(),
+});
+
+export const leagueStandings = pgTable("league_standings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  leagueId: uuid("league_id")
+    .notNull()
+    .references(() => leagues.id),
+  gameweekId: uuid("gameweek_id")
+    .notNull()
+    .references(() => gameweeks.id),
+  teamId: uuid("team_id")
+    .notNull()
+    .references(() => teams.id),
+  rank: integer("rank").notNull(),
+  totalPoints: integer("total_points").notNull(),
+  tiebreakerStats: jsonb("tiebreaker_stats").notNull(),
+  calculatedAt: timestamp("calculated_at").notNull().defaultNow(),
+});

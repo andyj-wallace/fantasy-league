@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Fantasy League — Codebase Overview</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --panel: #161922;
+    --panel-2: #1d212c;
+    --border: #2a2f3d;
+    --text: #e6e8ee;
+    --text-dim: #9aa3b5;
+    --accent: #5b8def;
+    --green: #3ecf8e;
+    --green-bg: rgba(62,207,142,0.14);
+    --yellow: #e8b339;
+    --yellow-bg: rgba(232,179,57,0.14);
+    --orange: #e88f39;
+    --orange-bg: rgba(232,143,57,0.14);
+    --red: #e85d5d;
+    --red-bg: rgba(232,93,93,0.14);
+    --gray: #8b93a7;
+    --gray-bg: rgba(139,147,167,0.14);
+    --blue: #5b9be8;
+    --blue-bg: rgba(91,155,232,0.14);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.55;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, .mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 0.92em; }
+  code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; color: #c9d6ff; }
+
+  header.page-header {
+    padding: 32px 40px 24px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, #161922 0%, #0f1117 100%);
+  }
+  header.page-header h1 { margin: 0 0 6px; font-size: 1.7rem; }
+  header.page-header .sub { color: var(--text-dim); font-size: 0.95rem; }
+
+  .layout { display: grid; grid-template-columns: 230px 1fr; gap: 0; max-width: 1320px; margin: 0 auto; }
+  nav.toc {
+    padding: 28px 18px;
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    overflow-y: auto;
+    border-right: 1px solid var(--border);
+  }
+  nav.toc h2 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); margin: 0 0 10px; }
+  nav.toc ol { list-style: none; margin: 0; padding: 0; counter-reset: toc; }
+  nav.toc li { counter-increment: toc; margin-bottom: 6px; font-size: 0.88rem; }
+  nav.toc li a::before { content: counter(toc) ". "; color: var(--text-dim); }
+  nav.toc li a { color: var(--text); }
+  nav.toc li a:hover { color: var(--accent); text-decoration: none; }
+
+  main { padding: 28px 40px 80px; min-width: 0; }
+  section { margin-bottom: 56px; scroll-margin-top: 16px; }
+  section h2 {
+    font-size: 1.3rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+    margin-bottom: 18px;
+  }
+  section h3 { font-size: 1.02rem; color: var(--text); margin: 28px 0 10px; }
+  p.lead { color: var(--text-dim); margin-top: -6px; }
+
+  /* Dashboard */
+  .dash-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 14px;
+  }
+  .stat-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .stat-card .num { font-size: 1.7rem; font-weight: 700; }
+  .stat-card .label { color: var(--text-dim); font-size: 0.82rem; margin-top: 2px; }
+  .stat-card.flag-red .num { color: var(--red); }
+  .stat-card.flag-yellow .num { color: var(--yellow); }
+  .stat-card.flag-green .num { color: var(--green); }
+  .stat-card.flag-blue .num { color: var(--blue); }
+
+  /* Badges */
+  .badge {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 2px 9px;
+    border-radius: 100px;
+    white-space: nowrap;
+    letter-spacing: 0.01em;
+  }
+  .b-done   { background: var(--green-bg); color: var(--green); }
+  .b-defined{ background: var(--blue-bg);  color: var(--blue); }
+  .b-partial{ background: var(--yellow-bg);color: var(--yellow); }
+  .b-mock   { background: var(--orange-bg);color: var(--orange); }
+  .b-stub   { background: var(--gray-bg);  color: var(--gray); }
+  .b-orphan { background: var(--red-bg);   color: var(--red); }
+
+  .sev-high   { background: var(--red-bg);   color: var(--red); }
+  .sev-medium { background: var(--orange-bg);color: var(--orange); }
+  .sev-low    { background: var(--yellow-bg);color: var(--yellow); }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--text-dim); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; background: var(--panel-2); }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  td.path { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 0.82rem; color: #c9d6ff; white-space: nowrap; }
+
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin-bottom: 16px; }
+  .legend { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+
+  /* Flow diagram */
+  .flow-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0; margin: 18px 0; }
+  .flow-box {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 0.82rem;
+    text-align: center;
+    min-width: 120px;
+  }
+  .flow-box .t { font-weight: 600; display: block; margin-bottom: 3px; }
+  .flow-box .d { color: var(--text-dim); font-size: 0.74rem; }
+  .flow-box.dashed { border-style: dashed; border-color: var(--red); opacity: 0.85; }
+  .flow-box.dashed .t { color: var(--red); }
+  .flow-box.blue { border-color: var(--blue); }
+  .flow-box.blue .t { color: var(--blue); }
+  .flow-arrow { color: var(--text-dim); font-size: 1.1rem; padding: 0 10px; }
+  .flow-arrow.down { display: block; text-align: center; padding: 4px 0; }
+  .flow-wrap { display: flex; flex-direction: column; gap: 2px; }
+
+  .note {
+    border-left: 3px solid var(--blue);
+    background: var(--blue-bg);
+    padding: 10px 14px;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.86rem;
+    margin: 14px 0;
+    color: var(--text);
+  }
+  .note.warn { border-left-color: var(--red); background: var(--red-bg); }
+
+  footer { text-align: center; color: var(--text-dim); font-size: 0.8rem; padding: 24px; border-top: 1px solid var(--border); }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    nav.toc { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="page-header">
+  <h1>Fantasy League — Codebase Overview</h1>
+  <div class="sub">Generated 2026-06-25 · Branch <code>main</code> · Skeleton-first build, per <code>CLAUDE.md</code> / <code>Fantasy League Build Approach.txt</code></div>
+</header>
+
+<div class="layout">
+<nav class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#dashboard">Dashboard</a></li>
+    <li><a href="#architecture">Architecture &amp; Flow Diagrams</a></li>
+    <li><a href="#walkthrough">New-Dev Walkthrough</a></li>
+    <li><a href="#domain">Domain Layer</a></li>
+    <li><a href="#database">Database Layer</a></li>
+    <li><a href="#api">API Layer</a></li>
+    <li><a href="#workers">Worker Layer</a></li>
+    <li><a href="#frontend">Frontend Layer</a></li>
+    <li><a href="#gaps">Gaps &amp; Risks</a></li>
+    <li><a href="#scaling">Scaling Considerations</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<section id="dashboard">
+  <h2>Dashboard</h2>
+  <div class="dash-grid">
+    <div class="stat-card flag-blue"><div class="num">12</div><div class="label">DB tables defined &amp; migrated, 0 wired to code</div></div>
+    <div class="stat-card flag-yellow"><div class="num">14 / 14</div><div class="label">API endpoints, all mock-data only</div></div>
+    <div class="stat-card flag-red"><div class="num">5 / 7</div><div class="label">Worker functions defined but never invoked</div></div>
+    <div class="stat-card flag-green"><div class="num">12</div><div class="label">Domain types, fully specified</div></div>
+    <div class="stat-card flag-yellow"><div class="num">9</div><div class="label">Frontend pages, mostly raw-JSON dumps</div></div>
+    <div class="stat-card flag-red"><div class="num">0</div><div class="label">Automated tests / CI workflows</div></div>
+  </div>
+  <div class="note">This repo is intentionally at the <strong>skeleton stage</strong> (build order: skeleton → database → APIs → workers → football data integration, see <code>CLAUDE.md</code>). Almost everything below being "mock" or "stub" is expected for where the project is — this document exists to make the exact boundary between "wired" and "not yet wired" visible.</div>
+</section>
+
+<section id="architecture">
+  <h2>Architecture &amp; Flow Diagrams</h2>
+  <p class="lead">Five layers, one shared vocabulary (<code>src/domain</code>). Next.js frontend → Lambda-shaped API handlers → Postgres (via Drizzle) → a separate scheduled worker process. No queue/event-bus in V1, by design.</p>
+
+  <h3>HTTP Request Flow (e.g. "Create League")</h3>
+  <div class="flow-row">
+    <div class="flow-box"><span class="t">Browser</span><span class="d">Next.js page<br>src/app/leagues/create</span></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-box"><span class="t">fetch()</span><span class="d">hand-rolled per page<br>no shared API client</span></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-box"><span class="t">localServer.ts</span><span class="d">dev only — prod uses<br>API Gateway + Lambda</span></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-box"><span class="t">routes.ts</span><span class="d">method+path<br>regex match</span></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-box"><span class="t">createLeague.ts</span><span class="d">the handler</span></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-box"><span class="t">mocks.ts</span><span class="d">createMockLeague()</span></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-box"><span class="t">jsonResponse()</span><span class="d">200/201 + JSON body</span></div>
+  </div>
+  <div class="flow-row">
+    <span class="flow-arrow" style="padding-left:0;">↳ (not yet connected)</span>
+    <div class="flow-box dashed"><span class="t">Postgres</span><span class="d">schema.ts tables exist &amp;<br>are migrated, but no handler<br>reads/writes them yet</span></div>
+  </div>
+
+  <h3>Worker Cycle Flow (scheduled poll)</h3>
+  <div class="flow-row">
+    <div class="flow-box"><span class="t">EventBridge rule</span><span class="d">prod, every 1–5 min</span></div>
+    <span class="flow-arrow">/</span>
+    <div class="flow-box"><span class="t">setInterval</span><span class="d">localScheduler.ts, dev</span></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-box"><span class="t">handler.ts</span><span class="d">Lambda ScheduledHandler</span></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-box"><span class="t">runWorkerCycle()</span><span class="d">the "one pass" pipeline</span></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-box"><span class="t">importMatchData()</span><span class="d">called, but body is empty</span></div>
+  </div>
+  <div class="flow-row">
+    <span class="flow-arrow" style="padding-left:0;">↳ (defined, never called from runWorkerCycle)</span>
+    <div class="flow-box dashed"><span class="t">calculatePlayerScores()</span><span class="d">orphaned stub</span></div>
+    <div class="flow-box dashed"><span class="t">calculateTeamScores()</span><span class="d">orphaned stub</span></div>
+    <div class="flow-box dashed"><span class="t">updateStandings()</span><span class="d">orphaned stub</span></div>
+  </div>
+  <div class="flow-row">
+    <span class="flow-arrow" style="padding-left:0;">↳ (no trigger wired at all — not even a no-op call site)</span>
+    <div class="flow-box dashed"><span class="t">awardPostponedMatchTransfers()</span><span class="d">MATCH_POSTPONED event, per architecture doc</span></div>
+    <div class="flow-box dashed"><span class="t">runMonthlyPriceUpdate()</span><span class="d">PRICE_UPDATE_DAY event, per architecture doc</span></div>
+  </div>
+
+  <div class="note">The intended pipeline (<code>Fantasy League Architecture.txt</code>) is: poll → import → <code>calculatePlayerScores</code> → <code>calculateTeamScores</code> → <code>updateStandings</code>, so that the leaderboard read path is ever only a flat <code>SELECT</code>. Today only the first link of that chain has a call site, and that call site's implementation is itself empty.</div>
+</section>
+
+<section id="walkthrough">
+  <h2>New-Dev Walkthrough</h2>
+  <p class="lead">A plain-language tour of what actually happens when you run this app, written for someone opening the repo for the first time.</p>
+
+  <div class="panel">
+    <p>Five folders matter, and they all agree on one shared vocabulary:</p>
+    <ul>
+      <li><code>src/domain</code> — plain TypeScript interfaces (<code>League</code>, <code>Team</code>, <code>Player</code>, …). No logic, just the shape of every concept in the product. Every other layer imports from here.</li>
+      <li><code>src/db</code> — the Postgres schema, written with Drizzle ORM, plus a generated SQL migration. Mirrors the domain types table-for-table.</li>
+      <li><code>src/api</code> — one file per HTTP endpoint, shaped like an AWS Lambda handler so the exact same function can run locally or deployed.</li>
+      <li><code>src/workers</code> — background jobs, meant to run on a schedule (EventBridge in prod), not in response to a request.</li>
+      <li><code>src/app</code> — the Next.js frontend, one folder per route.</li>
+    </ul>
+
+    <h3 style="margin-top:22px;">Walking through "Create a League" end to end</h3>
+    <ol>
+      <li>You load <code>/leagues/create</code> (<a href="#">src/app/leagues/create/page.tsx</a>) — a client component with a plain HTML form.</li>
+      <li>On submit, it does a raw <code>fetch()</code> straight to <code>{API_BASE_URL}/leagues</code> with a JSON body. There's no shared API client — every page writes its own fetch call.</li>
+      <li>In dev, that request lands on <code>localServer.ts</code> — a small hand-rolled Node <code>http</code> server that regex-matches the method+path against the table in <code>routes.ts</code>.</li>
+      <li>The matched handler, <code>createLeague.ts</code>, runs: it <code>JSON.parse</code>s the body and passes the fields into <code>createMockLeague()</code> from <code>mocks.ts</code>, which returns a hardcoded <code>League</code> object with your overrides spliced on top. <strong>No database is touched.</strong></li>
+      <li>The handler wraps that object in <code>jsonResponse()</code> and the local server writes it back as the HTTP response body.</li>
+      <li>In production, the identical handler function would be deployed as a Lambda behind API Gateway — that's the entire reason <code>ApiHandlerEvent</code> only picks the few fields of <code>APIGatewayProxyEvent</code> the handlers actually read: same code, two entrypoints (<code>api/index.ts</code> locally vs. the Lambda runtime invoking the handler directly).</li>
+    </ol>
+
+    <h3 style="margin-top:22px;">The worker side, briefly</h3>
+    <p>Same two-entrypoint idea: <code>handler.ts</code> for Lambda/EventBridge, <code>localScheduler.ts</code> for a local <code>setInterval</code> loop. Both just call <code>runWorkerCycle()</code>, which is meant to be the full "poll provider → import → score → standings" pass but today only performs step one — and that step (<code>importMatchData</code>) is itself an empty function body.</p>
+
+    <h3 style="margin-top:22px;">Bottom line</h3>
+    <p>Reading any handler or worker function today tells you what its eventual behavior <em>will</em> be — names are deliberately self-documenting, per <code>CLAUDE.md</code>. But actually running the app right now only exercises the mock-data path end-to-end: nothing you do in the UI persists anywhere.</p>
+  </div>
+</section>
+
+<section id="domain">
+  <h2>Domain Layer — <code>src/domain</code></h2>
+  <p class="lead">Shared TypeScript types. Fully specified, well-commented, no logic. This is the contract every other layer (DB schema, API handlers, frontend) is written against.</p>
+  <table>
+    <tr><th>File</th><th>Defines</th><th>Status</th></tr>
+    <tr><td class="path">shared.ts</td><td>PlayerPosition, StartingFormation, MatchStatus, GameweekStatus</td><td><span class="badge b-done">Done</span></td></tr>
+    <tr><td class="path">user.ts</td><td>User</td><td><span class="badge b-done">Done</span></td></tr>
+    <tr><td class="path">league.ts</td><td>League</td><td><span class="badge b-done">Done</span></td></tr>
+    <tr><td class="path">team.ts</td><td>Team, TeamRosterSlot</td><td><span class="badge b-done">Done</span></td></tr>
+    <tr><td class="path">player.ts</td><td>Player</td><td><span class="badge b-done">Done</span></td></tr>
+    <tr><td class="path">gameweek.ts</td><td>Gameweek</td><td><span class="badge b-done">Done</span></td></tr>
+    <tr><td class="path">transfer.ts</td><td>Transfer</td><td><span class="badge b-done">Done</span></td></tr>
+    <tr><td class="path">match.ts</td><td>Match</td><td><span class="badge b-done">Done</span></td></tr>
+    <tr><td class="path">playerMatchStat.ts</td><td>PlayerMatchStat (raw imported stats)</td><td><span class="badge b-done">Done</span></td></tr>
+    <tr><td class="path">playerScore.ts</td><td>PlayerScore, PlayerScoreBreakdown</td><td><span class="badge b-done">Done</span></td></tr>
+    <tr><td class="path">teamScore.ts</td><td>TeamScore</td><td><span class="badge b-done">Done</span></td></tr>
+    <tr><td class="path">leagueStanding.ts</td><td>LeagueStanding, LeagueStandingTiebreakerStats</td><td><span class="badge b-done">Done</span></td></tr>
+    <tr><td class="path">index.ts</td><td>barrel re-export of all of the above</td><td><span class="badge b-done">Done</span></td></tr>
+  </table>
+  <div class="note">Note: <code>Team.rosterSlots</code> is an embedded array in the domain type, but the database normalizes it into a separate <code>team_roster_slots</code> table (see <a href="#gaps">Gaps</a> #4) — there's no mapping layer between the two shapes yet.</div>
+</section>
+
+<section id="database">
+  <h2>Database Layer — <code>src/db</code></h2>
+  <p class="lead">Postgres via Drizzle ORM. Schema is fully defined and a migration has been generated — but it has zero callers anywhere in the codebase.</p>
+  <table>
+    <tr><th>Table</th><th>Mirrors domain type</th><th>Notable columns</th></tr>
+    <tr><td class="path">users</td><td>User</td><td>email unique</td></tr>
+    <tr><td class="path">leagues</td><td>League</td><td>invite_code unique, FK → users</td></tr>
+    <tr><td class="path">gameweeks</td><td>Gameweek</td><td>number unique</td></tr>
+    <tr><td class="path">players</td><td>Player</td><td>—</td></tr>
+    <tr><td class="path">matches</td><td>Match</td><td>FK → gameweeks</td></tr>
+    <tr><td class="path">teams</td><td>Team (minus rosterSlots)</td><td>FK → leagues, users, players (captain/vice)</td></tr>
+    <tr><td class="path">team_roster_slots</td><td>Team.rosterSlots (normalized)</td><td>FK → teams, players</td></tr>
+    <tr><td class="path">transfers</td><td>Transfer</td><td>FK → teams, gameweeks, players ×2</td></tr>
+    <tr><td class="path">player_match_stats</td><td>PlayerMatchStat</td><td>FK → matches, players</td></tr>
+    <tr><td class="path">player_scores</td><td>PlayerScore</td><td>breakdown stored as <code>jsonb</code></td></tr>
+    <tr><td class="path">team_scores</td><td>TeamScore</td><td>captain_bonus_player_id nullable FK</td></tr>
+    <tr><td class="path">league_standings</td><td>LeagueStanding</td><td>tiebreaker_stats stored as <code>jsonb</code></td></tr>
+  </table>
+
+  <table>
+    <tr><th>File</th><th>Role</th><th>Status</th></tr>
+    <tr><td class="path">schema.ts</td><td>12 tables + 4 enums, all FKs wired</td><td><span class="badge b-defined">Defined</span></td></tr>
+    <tr><td class="path">migrations/0000_complete_gargoyle.sql</td><td>Generated migration matching schema.ts</td><td><span class="badge b-done">Generated</span></td></tr>
+    <tr><td class="path">client.ts</td><td>Drizzle + pg Pool, exports <code>db</code></td><td><span class="badge b-orphan">Defined, 0 import sites</span></td></tr>
+    <tr><td class="path">drizzle.config.ts / docker-compose.yml / .env.example</td><td>Local Postgres + migration tooling</td><td><span class="badge b-done">Done</span></td></tr>
+  </table>
+</section>
+
+<section id="api">
+  <h2>API Layer — <code>src/api</code></h2>
+  <p class="lead">14 Lambda-shaped handlers, one route table, a tiny local dev server that simulates API Gateway. Every handler currently returns canned data from <code>mocks.ts</code> — none read or write the database.</p>
+
+  <table>
+    <tr><th>Method</th><th>Path</th><th>Handler</th><th>Status</th></tr>
+    <tr><td>POST</td><td class="path">/leagues</td><td>createLeague.ts</td><td><span class="badge b-mock">Mock</span></td></tr>
+    <tr><td>POST</td><td class="path">/leagues/join</td><td>joinLeague.ts</td><td><span class="badge b-mock">Mock</span></td></tr>
+    <tr><td>GET</td><td class="path">/leagues/:leagueId</td><td>getLeague.ts</td><td><span class="badge b-mock">Mock</span></td></tr>
+    <tr><td>PATCH</td><td class="path">/leagues/:leagueId</td><td>updateLeague.ts</td><td><span class="badge b-mock">Mock</span></td></tr>
+    <tr><td>POST</td><td class="path">/leagues/:leagueId/invite-code/regenerate</td><td>regenerateInviteCode.ts</td><td><span class="badge b-mock">Mock</span></td></tr>
+    <tr><td>DELETE</td><td class="path">/leagues/:leagueId/managers/:userId</td><td>removeManager.ts</td><td><span class="badge b-stub">Stub (204, no logic)</span></td></tr>
+    <tr><td>GET</td><td class="path">/teams/:teamId</td><td>getTeam.ts</td><td><span class="badge b-mock">Mock</span></td></tr>
+    <tr><td>PUT</td><td class="path">/teams/:teamId/roster</td><td>setTeamRoster.ts</td><td><span class="badge b-mock">Mock (echoes input)</span></td></tr>
+    <tr><td>PUT</td><td class="path">/teams/:teamId/lineup</td><td>setTeamLineup.ts</td><td><span class="badge b-mock">Mock (echoes input)</span></td></tr>
+    <tr><td>GET</td><td class="path">/players</td><td>searchPlayers.ts</td><td><span class="badge b-mock">Mock</span></td></tr>
+    <tr><td>GET</td><td class="path">/players/:playerId</td><td>getPlayer.ts</td><td><span class="badge b-mock">Mock</span></td></tr>
+    <tr><td>GET</td><td class="path">/teams/:teamId/transfers/available</td><td>getAvailableTransfers.ts</td><td><span class="badge b-mock">Mock</span></td></tr>
+    <tr><td>POST</td><td class="path">/teams/:teamId/transfers</td><td>makeTransfer.ts</td><td><span class="badge b-mock">Mock</span></td></tr>
+    <tr><td>GET</td><td class="path">/leagues/:leagueId/standings</td><td>getLeagueStandings.ts</td><td><span class="badge b-mock">Mock</span></td></tr>
+  </table>
+
+  <table>
+    <tr><th>Scaffolding file</th><th>Role</th></tr>
+    <tr><td class="path">types.ts</td><td><code>ApiHandlerEvent</code> / <code>ApiHandlerResult</code> / <code>ApiHandler</code> — the shared handler signature</td></tr>
+    <tr><td class="path">httpResponse.ts</td><td><code>jsonResponse()</code> / <code>emptyResponse()</code> helpers</td></tr>
+    <tr><td class="path">routes.ts</td><td>method+path → handler table, doubles as the API Gateway resource map</td></tr>
+    <tr><td class="path">localServer.ts</td><td>Hand-rolled Node <code>http</code> server simulating API Gateway + Lambda proxy locally</td></tr>
+    <tr><td class="path">mocks.ts</td><td><code>createMock*()</code> factories standing in for DB reads</td></tr>
+  </table>
+</section>
+
+<section id="workers">
+  <h2>Worker Layer — <code>src/workers</code></h2>
+  <p class="lead">A separate process, triggered on a schedule rather than per-request. Most of the individual functions exist as empty stubs and are not yet called by anything.</p>
+  <table>
+    <tr><th>File</th><th>Role</th><th>Status</th></tr>
+    <tr><td class="path">handler.ts</td><td>Lambda <code>ScheduledHandler</code> entrypoint → calls <code>runWorkerCycle()</code></td><td><span class="badge b-done">Wired</span></td></tr>
+    <tr><td class="path">localScheduler.ts</td><td>Dev-only <code>setInterval</code> loop calling <code>runWorkerCycle()</code></td><td><span class="badge b-done">Wired (dev)</span></td></tr>
+    <tr><td class="path">runWorkerCycle.ts</td><td>The "one pass" pipeline — currently calls only <code>importMatchData()</code></td><td><span class="badge b-partial">Partial (1 of ~4 steps)</span></td></tr>
+    <tr><td class="path">footballDataProvider.ts</td><td><code>FootballDataProvider</code> interface + <code>StubFootballDataProvider</code> (returns empty arrays)</td><td><span class="badge b-stub">Interface only</span></td></tr>
+    <tr><td class="path">importMatchData.ts</td><td>Should import raw match/stat data via the provider</td><td><span class="badge b-stub">Empty body</span></td></tr>
+    <tr><td class="path">calculatePlayerScores.ts</td><td>Should turn PlayerMatchStat → PlayerScore for one match</td><td><span class="badge b-orphan">Orphaned stub</span></td></tr>
+    <tr><td class="path">calculateTeamScores.ts</td><td>Should turn PlayerScore → TeamScore for one gameweek (captain 2x)</td><td><span class="badge b-orphan">Orphaned stub</span></td></tr>
+    <tr><td class="path">updateStandings.ts</td><td>Should turn TeamScore → ranked LeagueStanding rows</td><td><span class="badge b-orphan">Orphaned stub</span></td></tr>
+    <tr><td class="path">awardPostponedMatchTransfers.ts</td><td>MATCH_POSTPONED event handler (stacks free transfers, capped at 8)</td><td><span class="badge b-orphan">Orphaned stub, no trigger</span></td></tr>
+    <tr><td class="path">runMonthlyPriceUpdate.ts</td><td>PRICE_UPDATE_DAY event handler</td><td><span class="badge b-orphan">Orphaned stub, no trigger</span></td></tr>
+  </table>
+  <div class="note">"Orphaned stub" means the function body is empty <em>and</em> nothing in the codebase calls it — distinct from <code>importMatchData</code>, which is also empty but at least has a call site in <code>runWorkerCycle</code>.</div>
+</section>
+
+<section id="frontend">
+  <h2>Frontend Layer — <code>src/app</code></h2>
+  <p class="lead">Next.js App Router. Most pages are server components that fetch from the local API and dump raw JSON — there's no shared API client, design system, navigation, or loading/error states yet.</p>
+  <table>
+    <tr><th>Route</th><th>File</th><th>Status</th></tr>
+    <tr><td class="path">/</td><td>page.tsx</td><td><span class="badge b-stub">Stub — hardcoded mock IDs + links</span></td></tr>
+    <tr><td class="path">/login</td><td>login/page.tsx</td><td><span class="badge b-stub">Stub — static text, no auth</span></td></tr>
+    <tr><td class="path">/leagues/create</td><td>leagues/create/page.tsx</td><td><span class="badge b-partial">Partial — real form, posts to mock API</span></td></tr>
+    <tr><td class="path">/leagues/join</td><td>leagues/join/page.tsx</td><td><span class="badge b-partial">Partial — real form, posts to mock API</span></td></tr>
+    <tr><td class="path">/leagues/[leagueId]/leaderboard</td><td>leagues/[leagueId]/leaderboard/page.tsx</td><td><span class="badge b-partial">Partial — fetch + raw JSON dump</span></td></tr>
+    <tr><td class="path">/teams/[teamId]/squad-builder</td><td>teams/[teamId]/squad-builder/page.tsx</td><td><span class="badge b-partial">Partial — fetch + raw JSON dump</span></td></tr>
+    <tr><td class="path">/teams/[teamId]/transfers</td><td>teams/[teamId]/transfers/page.tsx</td><td><span class="badge b-partial">Partial — fetch + raw JSON dump</span></td></tr>
+    <tr><td class="path">/players/[playerId]</td><td>players/[playerId]/page.tsx</td><td><span class="badge b-partial">Partial — fetch + raw JSON dump</span></td></tr>
+    <tr><td class="path">(root layout)</td><td>layout.tsx</td><td><span class="badge b-stub">Stub — bare html/body, no nav/styles</span></td></tr>
+  </table>
+  <table>
+    <tr><th>Support file</th><th>Role</th></tr>
+    <tr><td class="path">lib/apiBaseUrl.ts</td><td><code>getApiBaseUrl()</code> — reads <code>NEXT_PUBLIC_API_BASE_URL</code>, falls back to localhost:3001</td></tr>
+  </table>
+</section>
+
+<section id="gaps">
+  <h2>Gaps &amp; Risks</h2>
+  <p class="lead">Most of these are expected at the current build stage, not bugs — flagged here so they're tracked as explicit next steps rather than discovered by surprise.</p>
+  <table>
+    <tr><th>#</th><th>Severity</th><th>Area</th><th>Gap</th><th>Why it matters</th></tr>
+    <tr>
+      <td>1</td><td><span class="badge sev-high">High</span></td><td>Database</td>
+      <td>Zero call sites for <code>db/client.ts</code></td>
+      <td>Every handler reads/writes only in-memory mocks; nothing persists between requests yet. Expected at this build stage — next concrete milestone per the build order.</td>
+    </tr>
+    <tr>
+      <td>2</td><td><span class="badge sev-high">High</span></td><td>Workers</td>
+      <td>Scoring pipeline 80% orphaned — <code>calculatePlayerScores</code>, <code>calculateTeamScores</code>, <code>updateStandings</code>, <code>awardPostponedMatchTransfers</code>, <code>runMonthlyPriceUpdate</code> are never invoked anywhere</td>
+      <td>Per <code>ROADMAP.txt</code> this scoring engine is where most of the project's effort goes — it's worth confirming the wiring plan before fleshing out the bodies.</td>
+    </tr>
+    <tr>
+      <td>3</td><td><span class="badge sev-high">High</span></td><td>Security</td>
+      <td>No authentication anywhere — <code>userId</code> / <code>commissionerUserId</code> are plain client-supplied strings, login page is static</td>
+      <td>Once real persistence lands, any caller can act as any user (e.g. <code>removeManager</code> would let anyone remove anyone). Needs an auth layer before real data is exposed.</td>
+    </tr>
+    <tr>
+      <td>4</td><td><span class="badge sev-medium">Medium</span></td><td>API / Domain</td>
+      <td><code>Team.rosterSlots</code> (embedded array) vs. <code>team_roster_slots</code> (normalized table) — no mapping/repository layer exists between the two shapes</td>
+      <td>This translation is undesigned, not just unimplemented — worth deciding the repository pattern before wiring the DB into handlers.</td>
+    </tr>
+    <tr>
+      <td>5</td><td><span class="badge sev-medium">Medium</span></td><td>API</td>
+      <td>No runtime input validation — handlers do <code>JSON.parse(event.body ?? "{}") as SomeType</code> with no schema check</td>
+      <td>Missing/malformed fields pass through silently as <code>undefined</code>; non-JSON bodies throw inside <code>JSON.parse</code> uncaught.</td>
+    </tr>
+    <tr>
+      <td>6</td><td><span class="badge sev-medium">Medium</span></td><td>API</td>
+      <td>No try/catch around <code>matched.route.handler(event)</code> in <code>localServer.ts:64</code></td>
+      <td>Any thrown error (e.g. bad JSON body) crashes that request instead of returning a 4xx, with no centralized error response shape.</td>
+    </tr>
+    <tr>
+      <td>7</td><td><span class="badge sev-low">Low</span></td><td>Quality</td>
+      <td>No test files (<code>*.test.ts</code>) and no CI workflow (<code>.github/workflows</code>) anywhere in the repo</td>
+      <td><code>npm run typecheck</code> is currently the only automated check — fine pre-MVP, worth adding before real logic lands in the worker stubs.</td>
+    </tr>
+    <tr>
+      <td>8</td><td><span class="badge sev-low">Low</span></td><td>Workers</td>
+      <td><code>localScheduler.ts</code> uses an in-process <code>setInterval</code></td>
+      <td>Fine for one dev machine; would double-process if ever run as more than one instance against a real DB. Production already avoids this via a single EventBridge rule, so this is a dev-only footnote.</td>
+    </tr>
+    <tr>
+      <td>9</td><td><span class="badge sev-low">Low</span></td><td>Database</td>
+      <td><code>db/client.ts</code> builds a <code>pg.Pool</code> at module load with no connection error handling</td>
+      <td>First import will hang or throw if <code>DATABASE_URL</code> is unset or Postgres is unreachable — no retry/backoff or startup health check.</td>
+    </tr>
+  </table>
+</section>
+
+<section id="scaling">
+  <h2>Scaling Considerations</h2>
+  <p class="lead">V1 explicitly targets a small scale (fewer than 1,000 <code>Player</code> records, per <code>CLAUDE.md</code>) — these are forward-looking notes, not blockers for V1.</p>
+  <table>
+    <tr><th>Topic</th><th>Current design</th><th>Note</th></tr>
+    <tr>
+      <td>Leaderboard reads</td>
+      <td><code>getLeagueStandings</code> is designed to be a flat <code>SELECT</code> against the precomputed <code>league_standings</code> table once wired</td>
+      <td><span class="badge b-done">Good</span> — matches the "calculate once, store forever" mandate in the architecture doc; the anti-pattern it explicitly warns against (recomputing every team's score on read) isn't present.</td>
+    </tr>
+    <tr>
+      <td>jsonb columns</td>
+      <td><code>player_scores.breakdown</code> and <code>league_standings.tiebreaker_stats</code> stored as <code>jsonb</code></td>
+      <td>Trades query-ability for flexibility — fine at this scale, but neither column can be filtered/sorted in SQL without JSON operators if a future feature needs e.g. "sort by goal points."</td>
+    </tr>
+    <tr>
+      <td>Pagination</td>
+      <td>None on <code>searchPlayers</code> or <code>getLeagueStandings</code></td>
+      <td>Acceptable under the stated &lt;1,000-player / small-league target; revisit if that assumption changes.</td>
+    </tr>
+    <tr>
+      <td>Schema/migration drift</td>
+      <td><code>schema.ts</code> is hand-edited, <code>db:generate</code> produces the migration manually</td>
+      <td>Nothing enforces the migration stays in sync with <code>schema.ts</code> — no CI check comparing the two. Low risk solo, worth a pre-commit or CI check once more than one person touches the schema.</td>
+    </tr>
+  </table>
+</section>
+
+</main>
+</div>
+
+<footer>Generated from a read-only review of the working tree — no files were modified. Source: <code>fantasy-league</code> repo, branch <code>main</code>.</footer>
+
+</body>
+</html>
