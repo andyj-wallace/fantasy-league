@@ -2,19 +2,25 @@
 
 import { useState, type FormEvent } from "react";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
+import { getStoredUserId } from "@/app/lib/auth";
 
 export default function CreateLeaguePage() {
   const [result, setResult] = useState<string | null>(null);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const commissionerUserId = getStoredUserId();
+    if (!commissionerUserId) {
+      setResult("Not logged in — visit /login first.");
+      return;
+    }
     const formData = new FormData(event.currentTarget);
     const response = await fetch(`${getApiBaseUrl()}/leagues`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         name: formData.get("name"),
-        commissionerUserId: formData.get("commissionerUserId"),
+        commissionerUserId,
       }),
     });
     setResult(await response.text());
@@ -25,7 +31,6 @@ export default function CreateLeaguePage() {
       <h1>Create League</h1>
       <form onSubmit={handleSubmit}>
         <input name="name" placeholder="League name" />
-        <input name="commissionerUserId" placeholder="Commissioner user ID" />
         <button type="submit">Create</button>
       </form>
       {result && <pre>{result}</pre>}

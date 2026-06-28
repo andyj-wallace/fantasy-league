@@ -1,3 +1,4 @@
+export * as usersRepository from "./users";
 export * as leaguesRepository from "./leagues";
 export * as gameweeksRepository from "./gameweeks";
 export * as matchesRepository from "./matches";
