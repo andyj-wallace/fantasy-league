@@ -6,6 +6,7 @@ import { getLeague } from "./handlers/leagues/getLeague";
 import { updateLeague } from "./handlers/leagues/updateLeague";
 import { regenerateInviteCode } from "./handlers/leagues/regenerateInviteCode";
 import { removeManager } from "./handlers/leagues/removeManager";
+import { getMyTeams } from "./handlers/teams/getMyTeams";
 import { getTeam } from "./handlers/teams/getTeam";
 import { setTeamRoster } from "./handlers/teams/setTeamRoster";
 import { setTeamLineup } from "./handlers/teams/setTeamLineup";
@@ -33,6 +34,7 @@ export const routes: RouteDefinition[] = [
   { method: "PATCH", path: "/leagues/:leagueId", handler: updateLeague },
   { method: "POST", path: "/leagues/:leagueId/invite-code/regenerate", handler: regenerateInviteCode },
   { method: "DELETE", path: "/leagues/:leagueId/managers/:userId", handler: removeManager },
+  { method: "GET", path: "/me/teams", handler: getMyTeams },
   { method: "GET", path: "/teams/:teamId", handler: getTeam },
   { method: "PUT", path: "/teams/:teamId/roster", handler: setTeamRoster },
   { method: "PUT", path: "/teams/:teamId/lineup", handler: setTeamLineup },

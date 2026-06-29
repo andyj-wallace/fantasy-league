@@ -15,3 +15,8 @@ export function setStoredSession(session: { userId: string; token: string }): vo
   window.localStorage.setItem(STORED_USER_ID_KEY, session.userId);
   window.localStorage.setItem(STORED_TOKEN_KEY, session.token);
 }
+
+export function clearStoredSession(): void {
+  window.localStorage.removeItem(STORED_USER_ID_KEY);
+  window.localStorage.removeItem(STORED_TOKEN_KEY);
+}

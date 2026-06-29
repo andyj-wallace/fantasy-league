@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../client";
-import { players, teamRosterSlots, teams } from "../schema";
-import { MAX_BANKED_FREE_TRANSFER_COUNT, type StartingFormation, type Team, type TeamRosterSlot } from "../../domain";
+import { leagues, players, teamRosterSlots, teams } from "../schema";
+import { MAX_BANKED_FREE_TRANSFER_COUNT, type League, type StartingFormation, type Team, type TeamRosterSlot } from "../../domain";
 
 /**
  * Scalar Team columns only — deliberately not the full `Team` domain type, which embeds
@@ -67,6 +67,27 @@ export async function findByLeagueAndUser(leagueId: string, userId: string): Pro
     .from(teams)
     .where(and(eq(teams.leagueId, leagueId), eq(teams.userId, userId)));
   return row ? toTeamRow(row) : null;
+}
+
+function toLeague(row: typeof leagues.$inferSelect): League {
+  return {
+    id: row.id,
+    name: row.name,
+    inviteCode: row.inviteCode,
+    commissionerUserId: row.commissionerUserId,
+    areSettingsLocked: row.areSettingsLocked,
+    createdAt: row.createdAt,
+  };
+}
+
+/** Powers a "your leagues" home view — every Team a user holds, paired with that Team's League. */
+export async function findWithLeagueByUserId(userId: string): Promise<{ team: TeamRow; league: League }[]> {
+  const rows = await db
+    .select({ team: teams, league: leagues })
+    .from(teams)
+    .innerJoin(leagues, eq(teams.leagueId, leagues.id))
+    .where(eq(teams.userId, userId));
+  return rows.map((row) => ({ team: toTeamRow(row.team), league: toLeague(row.league) }));
 }
 
 export async function findRosterSlots(teamId: string): Promise<TeamRosterSlot[]> {

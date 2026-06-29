@@ -3,6 +3,7 @@ export * from "./constants";
 export * from "./user";
 export * from "./league";
 export * from "./team";
+export * from "./squadComposition";
 export * from "./player";
 export * from "./gameweek";
 export * from "./transfer";

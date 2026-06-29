@@ -1,14 +1,17 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { setStoredSession } from "@/app/lib/auth";
 
 export default function LoginPage() {
-  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setError(null);
     const formData = new FormData(event.currentTarget);
     const response = await fetch(`${getApiBaseUrl()}/auth/login`, {
       method: "POST",
@@ -19,8 +22,12 @@ export default function LoginPage() {
       }),
     });
     const body = await response.json();
-    if (response.ok) setStoredSession({ userId: body.userId, token: body.token });
-    setResult(JSON.stringify(body));
+    if (!response.ok) {
+      setError(body.message ?? "Login failed — try again.");
+      return;
+    }
+    setStoredSession({ userId: body.userId, token: body.token });
+    router.push("/");
   }
 
   return (
@@ -32,7 +39,7 @@ export default function LoginPage() {
         <input name="displayName" placeholder="Display name (only used the first time)" />
         <button type="submit">Continue</button>
       </form>
-      {result && <pre>{result}</pre>}
+      {error && <p>{error}</p>}
     </main>
   );
 }

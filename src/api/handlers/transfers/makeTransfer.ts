@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { gameweeksRepository, playersRepository, teamsRepository, transfersRepository } from "../../../db/repositories";
-import type { Transfer } from "../../../domain";
+import { deriveStartingFormation, validateSquadComposition, type Transfer } from "../../../domain";
 import { requireAuth } from "../../auth";
 import { badRequestResponse, forbiddenResponse, jsonResponse, notFoundResponse } from "../../httpResponse";
 import type { ApiHandler } from "../../types";
@@ -34,15 +34,26 @@ export const makeTransfer: ApiHandler = requireAuth(async (event, session) => {
   ]);
   if (!playerOut || !playerIn) return notFoundResponse("playerOutId or playerInId does not exist");
 
-  // Real cost/budget calculation; squad-composition rules (budget cap, club limit, etc.) aren't
-  // enforced yet — that's a dedicated follow-up.
-  const pointsCost = team.bankedFreeTransferCount > 0 ? 0 : 10;
-  const remainingBudgetInMillions = team.remainingBudgetInMillions + playerOut.priceInMillions - playerIn.priceInMillions;
-  const bankedFreeTransferCount = pointsCost === 0 ? team.bankedFreeTransferCount - 1 : team.bankedFreeTransferCount;
-
   const updatedRosterSlots = rosterSlots.map((slot) =>
     slot.playerId === body.playerOutId ? { playerId: body.playerInId, isStarting: slot.isStarting } : slot,
   );
+
+  const updatedPlayers = await playersRepository.findManyByIds(updatedRosterSlots.map((slot) => slot.playerId));
+  const squadError = validateSquadComposition(updatedPlayers);
+  if (squadError) return badRequestResponse(squadError);
+
+  const updatedPlayersById = new Map(updatedPlayers.map((player) => [player.id, player]));
+  const starters = updatedRosterSlots
+    .filter((slot) => slot.isStarting)
+    .map((slot) => updatedPlayersById.get(slot.playerId)!);
+  if (!deriveStartingFormation(starters)) {
+    return badRequestResponse("This transfer would leave the starting XI without a valid formation");
+  }
+
+  // Real cost/budget calculation, now squad-composition-checked above.
+  const pointsCost = team.bankedFreeTransferCount > 0 ? 0 : 10;
+  const remainingBudgetInMillions = team.remainingBudgetInMillions + playerOut.priceInMillions - playerIn.priceInMillions;
+  const bankedFreeTransferCount = pointsCost === 0 ? team.bankedFreeTransferCount - 1 : team.bankedFreeTransferCount;
 
   await teamsRepository.replaceRosterSlots(teamId, updatedRosterSlots, remainingBudgetInMillions);
   await teamsRepository.updateAfterTransfer(teamId, { remainingBudgetInMillions, bankedFreeTransferCount });
