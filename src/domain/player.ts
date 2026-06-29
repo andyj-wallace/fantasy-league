@@ -15,3 +15,11 @@ export interface Player {
   createdAt: Date;
   updatedAt: Date;
 }
+
+/** A Player enriched with scoring history for squad-builder/player-detail display — derived on
+ * read from PlayerScore rows, never persisted itself. */
+export interface PlayerWithStats extends Player {
+  totalFantasyPoints: number;
+  /** Most-recent-first points from up to the last 5 scored matches; null if fewer than 3 ("Insufficient Data"). */
+  recentFormPoints: number[] | null;
+}

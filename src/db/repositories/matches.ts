@@ -22,6 +22,12 @@ export async function findById(id: string): Promise<Match | null> {
   return row ? toMatch(row) : null;
 }
 
+/** Every Match in a Gameweek — used to derive which clubs (and so which Players) are locked. */
+export async function findByGameweekId(gameweekId: string): Promise<Match[]> {
+  const rows = await db.select().from(matches).where(eq(matches.gameweekId, gameweekId));
+  return rows.map(toMatch);
+}
+
 export async function findByExternalId(externalId: string): Promise<Match | null> {
   const [row] = await db.select().from(matches).where(eq(matches.externalId, externalId));
   return row ? toMatch(row) : null;

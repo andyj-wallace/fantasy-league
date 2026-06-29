@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { gameweeksRepository, playersRepository, teamsRepository, transfersRepository } from "../../../db/repositories";
-import { deriveStartingFormation, validateSquadComposition, type Transfer } from "../../../domain";
+import { deriveStartingFormation, POINTS_COST_PER_PAID_TRANSFER, validateSquadComposition, type Transfer } from "../../../domain";
 import { requireAuth } from "../../auth";
 import { badRequestResponse, forbiddenResponse, jsonResponse, notFoundResponse } from "../../httpResponse";
 import type { ApiHandler } from "../../types";
@@ -51,7 +51,7 @@ export const makeTransfer: ApiHandler = requireAuth(async (event, session) => {
   }
 
   // Real cost/budget calculation, now squad-composition-checked above.
-  const pointsCost = team.bankedFreeTransferCount > 0 ? 0 : 10;
+  const pointsCost = team.bankedFreeTransferCount > 0 ? 0 : POINTS_COST_PER_PAID_TRANSFER;
   const remainingBudgetInMillions = team.remainingBudgetInMillions + playerOut.priceInMillions - playerIn.priceInMillions;
   const bankedFreeTransferCount = pointsCost === 0 ? team.bankedFreeTransferCount - 1 : team.bankedFreeTransferCount;
 

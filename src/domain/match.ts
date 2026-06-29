@@ -14,3 +14,12 @@ export interface Match {
   finalHomeScore: number | null;
   finalAwayScore: number | null;
 }
+
+/**
+ * Whether a club's players are locked right now — "Match Locking" in fantasy_league_v1_design.txt:
+ * a player locks individually at the exact kickoff of their club's match, regardless of how that
+ * match later resolves, and stays locked even after it finishes.
+ */
+export function isClubLocked(club: string, matches: { homeClub: string; awayClub: string; kickoffAt: Date }[], now: Date): boolean {
+  return matches.some((match) => (match.homeClub === club || match.awayClub === club) && match.kickoffAt <= now);
+}

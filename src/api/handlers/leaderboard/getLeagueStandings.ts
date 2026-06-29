@@ -1,4 +1,4 @@
-import { leagueStandingsRepository } from "../../../db/repositories";
+import { leagueStandingsRepository, teamsRepository, usersRepository } from "../../../db/repositories";
 import { jsonResponse } from "../../httpResponse";
 import type { ApiHandler } from "../../types";
 
@@ -10,5 +10,20 @@ export const getLeagueStandings: ApiHandler = async (event) => {
     ? await leagueStandingsRepository.findForLeagueAndGameweek(leagueId, gameweekId)
     : await leagueStandingsRepository.findLatestForLeague(leagueId);
 
-  return jsonResponse(200, standings);
+  const teams = await teamsRepository.findByLeagueId(leagueId);
+  const teamsById = new Map(teams.map((team) => [team.id, team]));
+  const users = await usersRepository.findManyByIds(teams.map((team) => team.userId));
+  const managerNamesByUserId = new Map(users.map((user) => [user.id, user.displayName]));
+
+  return jsonResponse(
+    200,
+    standings.map((standing) => {
+      const team = teamsById.get(standing.teamId);
+      return {
+        ...standing,
+        teamName: team?.name ?? standing.teamId,
+        managerName: team ? managerNamesByUserId.get(team.userId) ?? team.userId : standing.teamId,
+      };
+    }),
+  );
 };

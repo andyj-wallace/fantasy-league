@@ -47,15 +47,29 @@ export function validateSquadComposition(players: SquadValidationPlayer[]): stri
   return null;
 }
 
-const FORMATION_BY_DEFENDER_MIDFIELDER_FORWARD_SHAPE: Record<string, StartingFormation> = {
-  "3-4-3": "3-4-3",
-  "3-5-2": "3-5-2",
-  "4-3-3": "4-3-3",
-  "4-4-2": "4-4-2",
-  "4-5-1": "4-5-1",
-  "5-3-2": "5-3-2",
-  "5-4-1": "5-4-1",
-};
+/** The 7 formations valid for a starting XI in V1 (see fantasy_league_v1_design.txt) — each
+ * name is itself its DEF-MID-FWD split, which deriveStartingFormation and
+ * formationRequiredCounts below both parse rather than re-stating the mapping twice. */
+export const VALID_STARTING_FORMATIONS: StartingFormation[] = [
+  "3-4-3",
+  "3-5-2",
+  "4-3-3",
+  "4-4-2",
+  "4-5-1",
+  "5-3-2",
+  "5-4-1",
+];
+
+const FORMATION_BY_DEFENDER_MIDFIELDER_FORWARD_SHAPE: Record<string, StartingFormation> = Object.fromEntries(
+  VALID_STARTING_FORMATIONS.map((formation) => [formation, formation]),
+);
+
+/** The exact per-position headcount a formation requires in the starting XI — the inverse of
+ * deriveStartingFormation, used to drive squad-builder slot limits as the user assigns starters. */
+export function formationRequiredCounts(formation: StartingFormation): Record<PlayerPosition, number> {
+  const [defenderCount, midfielderCount, forwardCount] = formation.split("-").map(Number);
+  return { GK: 1, DEF: defenderCount!, MID: midfielderCount!, FWD: forwardCount! };
+}
 
 /**
  * Derives the formation a starting XI actually forms, by shape (exactly 1 GK, plus the

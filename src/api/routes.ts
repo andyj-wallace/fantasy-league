@@ -1,5 +1,6 @@
 import type { ApiHandler } from "./types";
 import { login } from "./handlers/auth/login";
+import { checkEmail } from "./handlers/auth/checkEmail";
 import { createLeague } from "./handlers/leagues/createLeague";
 import { joinLeague } from "./handlers/leagues/joinLeague";
 import { getLeague } from "./handlers/leagues/getLeague";
@@ -28,6 +29,7 @@ export interface RouteDefinition {
 
 export const routes: RouteDefinition[] = [
   { method: "POST", path: "/auth/login", handler: login },
+  { method: "POST", path: "/auth/check-email", handler: checkEmail },
   { method: "POST", path: "/leagues", handler: createLeague },
   { method: "POST", path: "/leagues/join", handler: joinLeague },
   { method: "GET", path: "/leagues/:leagueId", handler: getLeague },

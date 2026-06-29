@@ -1,6 +1,6 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "../client";
-import { playerScores } from "../schema";
+import { gameweeks, playerScores } from "../schema";
 import type { PlayerScore, PlayerScoreBreakdown } from "../../domain";
 
 function toPlayerScore(row: typeof playerScores.$inferSelect): PlayerScore {
@@ -24,6 +24,24 @@ export async function findByPlayerAndGameweek(
     .from(playerScores)
     .where(and(eq(playerScores.playerId, playerId), eq(playerScores.gameweekId, gameweekId)));
   return row ? toPlayerScore(row) : null;
+}
+
+/** Every scored match's points for the given players, newest gameweek first — the shape squad-
+ * builder player cards need for total points and recent form, without the full breakdown. */
+export async function findManyByPlayerIds(
+  playerIds: string[],
+): Promise<{ playerId: string; gameweekNumber: number; totalPoints: number }[]> {
+  if (playerIds.length === 0) return [];
+  return db
+    .select({
+      playerId: playerScores.playerId,
+      gameweekNumber: gameweeks.number,
+      totalPoints: playerScores.totalPoints,
+    })
+    .from(playerScores)
+    .innerJoin(gameweeks, eq(playerScores.gameweekId, gameweeks.id))
+    .where(inArray(playerScores.playerId, playerIds))
+    .orderBy(desc(gameweeks.number));
 }
 
 /** Replaces every PlayerScore row for a Match — delete-then-insert keeps re-running idempotent. */

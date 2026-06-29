@@ -6,6 +6,9 @@ export const STARTING_SQUAD_BUDGET_IN_MILLIONS = 110;
 /** Hard cap on banked free transfers, including postponed-match and gameweek-completion awards. */
 export const MAX_BANKED_FREE_TRANSFER_COUNT = 8;
 
+/** Points deducted for a transfer beyond the team's banked free transfers. */
+export const POINTS_COST_PER_PAID_TRANSFER = 10;
+
 /**
  * Flat per-position placeholder price assigned to a Player the first time the roster importer
  * sees them. Not real market pricing — that's deferred to a future task (see

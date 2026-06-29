@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { authedFetch } from "@/app/lib/apiFetch";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { clearStoredSession, getStoredToken } from "@/app/lib/auth";
+import { TeamLeagueLinks } from "@/app/components/TeamLeagueLinks";
 import type { League } from "../domain";
 
 interface TeamSummary {
@@ -19,8 +21,9 @@ interface TeamWithLeague {
 }
 
 export default function HomePage() {
+  const router = useRouter();
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
-  const [teamsWithLeagues, setTeamsWithLeagues] = useState<TeamWithLeague[]>([]);
+  const [teamsWithLeagues, setTeamsWithLeagues] = useState<TeamWithLeague[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -30,14 +33,20 @@ export default function HomePage() {
 
     authedFetch(`${getApiBaseUrl()}/me/teams`)
       .then((response) => response.json())
-      .then(setTeamsWithLeagues)
+      .then((result: TeamWithLeague[]) => {
+        if (result.length === 1) {
+          router.push(`/leagues/${result[0]!.league.id}`);
+          return;
+        }
+        setTeamsWithLeagues(result);
+      })
       .catch(() => setError("Could not load your leagues — try refreshing."));
-  }, []);
+  }, [router]);
 
   function handleLogout() {
     clearStoredSession();
     setIsLoggedIn(false);
-    setTeamsWithLeagues([]);
+    setTeamsWithLeagues(null);
   }
 
   if (isLoggedIn === null) return null; // avoid a logged-out flash while localStorage is checked
@@ -53,6 +62,9 @@ export default function HomePage() {
     );
   }
 
+  // teamsWithLeagues stays null while loading, and while a single-league redirect is in flight.
+  if (!error && teamsWithLeagues === null) return null;
+
   return (
     <main>
       <h1>Fantasy League</h1>
@@ -60,15 +72,12 @@ export default function HomePage() {
 
       <h2>Your leagues</h2>
       {error && <p>{error}</p>}
-      {!error && teamsWithLeagues.length === 0 && <p>You haven't joined or created a league yet.</p>}
-      {teamsWithLeagues.length > 0 && (
+      {!error && teamsWithLeagues!.length === 0 && <p>You haven't joined or created a league yet.</p>}
+      {!error && teamsWithLeagues!.length > 0 && (
         <ul>
-          {teamsWithLeagues.map(({ team, league }) => (
+          {teamsWithLeagues!.map(({ team, league }) => (
             <li key={team.id}>
-              {league.name} — {team.name} (£{team.remainingBudgetInMillions}M remaining) —{" "}
-              <Link href={`/teams/${team.id}/squad-builder`}>Squad</Link>{" "}
-              <Link href={`/teams/${team.id}/transfers`}>Transfers</Link>{" "}
-              <Link href={`/leagues/${league.id}/leaderboard`}>Leaderboard</Link>
+              <TeamLeagueLinks team={team} league={league} />
             </li>
           ))}
         </ul>
