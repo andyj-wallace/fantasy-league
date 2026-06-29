@@ -10,7 +10,6 @@ function toPlayerMatchStat(row: typeof playerMatchStats.$inferSelect): PlayerMat
     playerId: row.playerId,
     minutesPlayed: row.minutesPlayed,
     goalsScored: row.goalsScored,
-    directFreeKickGoalsScored: row.directFreeKickGoalsScored,
     assists: row.assists,
     savesCount: row.savesCount,
     ownGoalsScored: row.ownGoalsScored,
@@ -35,7 +34,6 @@ export async function insertMany(stats: PlayerMatchStat[]): Promise<void> {
       playerId: stat.playerId,
       minutesPlayed: stat.minutesPlayed,
       goalsScored: stat.goalsScored,
-      directFreeKickGoalsScored: stat.directFreeKickGoalsScored,
       assists: stat.assists,
       savesCount: stat.savesCount,
       ownGoalsScored: stat.ownGoalsScored,
@@ -45,6 +43,13 @@ export async function insertMany(stats: PlayerMatchStat[]): Promise<void> {
       receivedRedCard: stat.receivedRedCard,
     })),
   );
+}
+
+/** Replaces every PlayerMatchStat row for a Match — used by the confirmation pass to overwrite
+ * provisional stats with corrected ones (e.g. late VAR review) without duplicating rows. */
+export async function replaceForMatch(matchId: string, stats: PlayerMatchStat[]): Promise<void> {
+  await db.delete(playerMatchStats).where(eq(playerMatchStats.matchId, matchId));
+  await insertMany(stats);
 }
 
 /** Powers the "goals scored by selected players" standings tiebreaker — sums goals across every

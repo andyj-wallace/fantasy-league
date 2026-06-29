@@ -42,6 +42,13 @@ export const gameweekStatusEnum = pgEnum("gameweek_status", [
   "COMPLETED",
 ]);
 
+/** Mirrors PlayerAvailabilityStatus in src/domain/shared.ts. Cosmetic only — see Fantasy League Architecture.txt. */
+export const playerAvailabilityStatusEnum = pgEnum("player_availability_status", [
+  "AVAILABLE",
+  "OUT",
+  "QUESTIONABLE",
+]);
+
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   email: text("email").notNull().unique(),
@@ -69,16 +76,26 @@ export const gameweeks = pgTable("gameweeks", {
 
 export const players = pgTable("players", {
   id: uuid("id").primaryKey().defaultRandom(),
+  // The football data provider's player ID — null until the roster importer links this row to
+  // a provider record; used to attribute imported PlayerMatchStat/injury rows to the right Player.
+  externalId: text("external_id").unique(),
   name: text("name").notNull(),
   club: text("club").notNull(),
   position: playerPositionEnum("position").notNull(),
   priceInMillions: real("price_in_millions").notNull(),
+  availabilityStatus: playerAvailabilityStatusEnum("availability_status").notNull().default("AVAILABLE"),
+  // Raw provider text ("Knee Injury", "Suspended", ...) for tooltip/label display — kept separate
+  // from the enum rather than string-matched into it (fragile across providers/leagues).
+  availabilityReason: text("availability_reason"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 export const matches = pgTable("matches", {
   id: uuid("id").primaryKey().defaultRandom(),
+  // The football data provider's fixture ID — set as soon as the importer first sees this
+  // fixture; lets later polls upsert by provider identity instead of our internal uuid.
+  externalId: text("external_id").unique(),
   gameweekId: uuid("gameweek_id")
     .notNull()
     .references(() => gameweeks.id),
@@ -88,6 +105,33 @@ export const matches = pgTable("matches", {
   status: matchStatusEnum("status").notNull(),
   finalHomeScore: integer("final_home_score"),
   finalAwayScore: integer("final_away_score"),
+});
+
+/**
+ * Singleton row (one ever exists) tracking when each gated, budget-sensitive provider poll last
+ * ran, so the worker cycle can stay under the provider's 100-requests/day cap. See polling-budget.md.
+ */
+export const providerPollState = pgTable("provider_poll_state", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  lastDiscoveryRanAt: timestamp("last_discovery_ran_at"),
+  lastRosterImportRanAt: timestamp("last_roster_import_ran_at"),
+  lastAvailabilitySyncRanAt: timestamp("last_availability_sync_ran_at"),
+  /** Computed by the live-polling tick from the quota-status formula; the tick no-ops until now() reaches this. */
+  nextLivePollDueAt: timestamp("next_live_poll_due_at"),
+});
+
+/**
+ * A "confirmation pass" owed ~45-60 min after a Match reaches COMPLETED, to catch late VAR
+ * corrections per the Live-Match Polling Strategy in Fantasy League Architecture.txt. Persisted
+ * (not in-memory) so it survives both Lambda's stateless invocations and local process restarts.
+ */
+export const pendingConfirmationPasses = pgTable("pending_confirmation_passes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  matchId: uuid("match_id")
+    .notNull()
+    .references(() => matches.id),
+  externalFixtureId: text("external_fixture_id").notNull(),
+  dueAt: timestamp("due_at").notNull(),
 });
 
 export const teams = pgTable("teams", {
@@ -150,7 +194,6 @@ export const playerMatchStats = pgTable("player_match_stats", {
     .references(() => players.id),
   minutesPlayed: integer("minutes_played").notNull(),
   goalsScored: integer("goals_scored").notNull().default(0),
-  directFreeKickGoalsScored: integer("direct_free_kick_goals_scored").notNull().default(0),
   assists: integer("assists").notNull().default(0),
   savesCount: integer("saves_count").notNull().default(0),
   ownGoalsScored: integer("own_goals_scored").notNull().default(0),

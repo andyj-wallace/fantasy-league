@@ -19,3 +19,11 @@ export function notFoundResponse(message = "Not found"): ApiHandlerResult {
 export function badRequestResponse(message: string): ApiHandlerResult {
   return jsonResponse(400, { message });
 }
+
+export function unauthorizedResponse(message = "Missing or invalid session"): ApiHandlerResult {
+  return jsonResponse(401, { message });
+}
+
+export function forbiddenResponse(message = "Not allowed to modify this resource"): ApiHandlerResult {
+  return jsonResponse(403, { message });
+}

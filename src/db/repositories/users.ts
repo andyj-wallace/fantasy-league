@@ -12,6 +12,11 @@ function toUser(row: typeof users.$inferSelect): User {
   };
 }
 
+export async function findById(id: string): Promise<User | null> {
+  const [row] = await db.select().from(users).where(eq(users.id, id));
+  return row ? toUser(row) : null;
+}
+
 export async function findByEmail(email: string): Promise<User | null> {
   const [row] = await db.select().from(users).where(eq(users.email, email));
   return row ? toUser(row) : null;

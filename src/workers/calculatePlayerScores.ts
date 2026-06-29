@@ -33,7 +33,6 @@ export async function calculatePlayerScores(matchId: string): Promise<void> {
       cleanSheetPoints: didAppear && isCleanSheetEligiblePosition && opponentScored0 ? 4 : 0,
       savePoints: Math.floor(stat.savesCount / 3),
       penaltyWonPoints: stat.penaltiesWon * 2,
-      directFreeKickGoalBonusPoints: stat.directFreeKickGoalsScored * 1,
       yellowCardPoints: stat.receivedYellowCard ? -1 : 0,
       redCardPoints: stat.receivedRedCard ? -2 : 0,
       ownGoalPoints: stat.ownGoalsScored * -2,

@@ -1,26 +1,25 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { authedFetch } from "@/app/lib/apiFetch";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
-import { getStoredUserId } from "@/app/lib/auth";
+import { getStoredToken } from "@/app/lib/auth";
 
 export default function JoinLeaguePage() {
   const [result, setResult] = useState<string | null>(null);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const userId = getStoredUserId();
-    if (!userId) {
+    if (!getStoredToken()) {
       setResult("Not logged in — visit /login first.");
       return;
     }
     const formData = new FormData(event.currentTarget);
-    const response = await fetch(`${getApiBaseUrl()}/leagues/join`, {
+    const response = await authedFetch(`${getApiBaseUrl()}/leagues/join`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         inviteCode: formData.get("inviteCode"),
-        userId,
       }),
     });
     setResult(await response.text());

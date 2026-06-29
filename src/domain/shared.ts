@@ -21,3 +21,10 @@ export type MatchStatus = "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "POSTPONED
  * replayed and scored, which re-triggers calculateTeamScores/updateStandings for this gameweek.
  */
 export type GameweekStatus = "UPCOMING" | "LOCKED" | "IN_PROGRESS" | "COMPLETED";
+
+/**
+ * Cosmetic-only availability flag shown on player cards — does not affect roster rules,
+ * scoring, or transfer eligibility. See "Player Availability Status" in Fantasy League
+ * Architecture.txt for why this collapses the provider's injury/suspension data into 3 states.
+ */
+export type PlayerAvailabilityStatus = "AVAILABLE" | "OUT" | "QUESTIONABLE";

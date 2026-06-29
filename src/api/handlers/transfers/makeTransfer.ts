@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { gameweeksRepository, playersRepository, teamsRepository, transfersRepository } from "../../../db/repositories";
 import type { Transfer } from "../../../domain";
-import { badRequestResponse, jsonResponse, notFoundResponse } from "../../httpResponse";
+import { requireAuth } from "../../auth";
+import { badRequestResponse, forbiddenResponse, jsonResponse, notFoundResponse } from "../../httpResponse";
 import type { ApiHandler } from "../../types";
 
 interface MakeTransferRequestBody {
@@ -9,7 +10,7 @@ interface MakeTransferRequestBody {
   playerInId: string;
 }
 
-export const makeTransfer: ApiHandler = async (event) => {
+export const makeTransfer: ApiHandler = requireAuth(async (event, session) => {
   const teamId = event.pathParameters?.teamId ?? "";
   const body = JSON.parse(event.body ?? "{}") as MakeTransferRequestBody;
   if (!body.playerOutId || !body.playerInId) {
@@ -18,6 +19,7 @@ export const makeTransfer: ApiHandler = async (event) => {
 
   const team = await teamsRepository.findById(teamId);
   if (!team) return notFoundResponse("Team not found");
+  if (team.userId !== session.userId) return forbiddenResponse();
 
   const currentGameweek = await gameweeksRepository.findCurrent();
   if (!currentGameweek) return badRequestResponse("No active gameweek to record this transfer against");
@@ -57,4 +59,4 @@ export const makeTransfer: ApiHandler = async (event) => {
   await transfersRepository.insert(transfer);
 
   return jsonResponse(201, transfer);
-};
+});

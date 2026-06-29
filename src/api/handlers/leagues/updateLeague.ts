@@ -1,5 +1,6 @@
 import { leaguesRepository } from "../../../db/repositories";
-import { jsonResponse, notFoundResponse } from "../../httpResponse";
+import { requireAuth } from "../../auth";
+import { forbiddenResponse, jsonResponse, notFoundResponse } from "../../httpResponse";
 import type { ApiHandler } from "../../types";
 
 interface UpdateLeagueRequestBody {
@@ -7,10 +8,14 @@ interface UpdateLeagueRequestBody {
   areSettingsLocked?: boolean;
 }
 
-export const updateLeague: ApiHandler = async (event) => {
+export const updateLeague: ApiHandler = requireAuth(async (event, session) => {
   const leagueId = event.pathParameters?.leagueId ?? "";
   const body = JSON.parse(event.body ?? "{}") as UpdateLeagueRequestBody;
+
+  const existingLeague = await leaguesRepository.findById(leagueId);
+  if (!existingLeague) return notFoundResponse();
+  if (existingLeague.commissionerUserId !== session.userId) return forbiddenResponse();
+
   const league = await leaguesRepository.update(leagueId, body);
-  if (!league) return notFoundResponse();
   return jsonResponse(200, league);
-};
+});

@@ -8,8 +8,6 @@ export interface PlayerMatchStat {
   playerId: string;
   minutesPlayed: number;
   goalsScored: number;
-  /** Of goalsScored, how many were scored directly from a free kick (scoring bonus). */
-  directFreeKickGoalsScored: number;
   assists: number;
   savesCount: number;
   ownGoalsScored: number;

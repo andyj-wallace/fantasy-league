@@ -10,7 +10,6 @@ export interface PlayerScoreBreakdown {
   cleanSheetPoints: number;
   savePoints: number;
   penaltyWonPoints: number;
-  directFreeKickGoalBonusPoints: number;
   yellowCardPoints: number;
   redCardPoints: number;
   ownGoalPoints: number;

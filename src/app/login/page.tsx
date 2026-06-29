@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
-import { setStoredUserId } from "@/app/lib/auth";
+import { setStoredSession } from "@/app/lib/auth";
 
 export default function LoginPage() {
   const [result, setResult] = useState<string | null>(null);
@@ -19,7 +19,7 @@ export default function LoginPage() {
       }),
     });
     const body = await response.json();
-    if (response.ok) setStoredUserId(body.userId);
+    if (response.ok) setStoredSession({ userId: body.userId, token: body.token });
     setResult(JSON.stringify(body));
   }
 

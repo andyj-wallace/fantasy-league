@@ -9,3 +9,5 @@ export * as teamScoresRepository from "./teamScores";
 export * as leagueStandingsRepository from "./leagueStandings";
 export * as playersRepository from "./players";
 export * as transfersRepository from "./transfers";
+export * as providerPollStateRepository from "./providerPollState";
+export * as pendingConfirmationPassesRepository from "./pendingConfirmationPasses";
