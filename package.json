@@ -10,7 +10,8 @@
     "dev:web": "next dev -p 3000",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "seed:mock": "tsx src/db/seedMock.ts"
+    "seed:mock": "tsx src/db/seedMock.ts",
+    "dev:stop": "lsof -ti tcp:3000,3001 | xargs kill -9"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.162",
