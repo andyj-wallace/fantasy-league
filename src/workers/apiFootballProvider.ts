@@ -11,6 +11,18 @@ import type {
 /** Premier League's API-Football league ID. */
 const PREMIER_LEAGUE_ID = 39;
 
+/** Inter-request delay for loops that issue several calls back to back (one /players/squads
+ * call per club, one /players call per page) — lower API-Football plan tiers (including Free)
+ * rate-limit per minute well below what a tight loop of ~20 calls produces with no delay at all,
+ * so both loops below pace themselves against this. Configurable since the right value depends
+ * on plan tier; default errs conservative since hitting it means a wasted, partially-completed
+ * run. */
+const INTER_REQUEST_DELAY_MS = Number(process.env.FOOTBALL_DATA_REQUEST_DELAY_MS ?? 5_000);
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 const POSITION_BY_PROVIDER_LABEL: Record<string, PlayerPosition> = {
   Goalkeeper: "GK",
   Defender: "DEF",
@@ -59,7 +71,8 @@ interface RawTeam {
 }
 
 /** /players/squads returns position as a direct full-word field per player — distinct from
- * fixtures/players' single-letter games.position, and from /players' paginated season-stats shape. */
+ * fixtures/players' single-letter games.position. /players' paginated season-stats shape uses
+ * this same full-word convention (via games.position below), just nested under statistics[]. */
 interface RawSquadBlock {
   team: { id: number; name: string };
   players: { id: number; name: string; position: string | null }[];
@@ -67,6 +80,14 @@ interface RawSquadBlock {
 
 interface RawInjuryEntry {
   player: { id: number; type: string; reason: string | null };
+}
+
+/** /players' paginated response shape: one entry per player, statistics[0] is their primary
+ * club/position for the requested season (a player transferred mid-season has multiple entries —
+ * we only need the first). */
+interface RawPlayerSeasonEntry {
+  player: { id: number; name: string };
+  statistics: { team: { name: string }; games: { position: string | null } }[];
 }
 
 interface RawStatusResponse {
@@ -182,7 +203,7 @@ export class ApiFootballProvider implements FootballDataProvider {
     });
 
     const entries: ProviderRosterEntry[] = [];
-    for (const teamEntry of teams) {
+    for (const [i, teamEntry] of teams.entries()) {
       const { response: squadBlocks } = await this.request<RawSquadBlock[]>("players/squads", {
         team: teamEntry.team.id,
       });
@@ -199,7 +220,71 @@ export class ApiFootballProvider implements FootballDataProvider {
           });
         }
       }
+
+      if (i < teams.length - 1) {
+        await delay(INTER_REQUEST_DELAY_MS);
+      }
     }
+    return entries;
+  }
+
+  /** Paginated /players?league&season&page pull — the complete league roster for a season,
+   * including players fetchPlayerRoster's squad snapshot misses (new signings, promoted-club
+   * players not yet linked to a squad block). Delays between pages (INTER_REQUEST_DELAY_MS) to
+   * stay under the provider's per-minute rate limit; a full season is ~28 pages, so this is for
+   * one-time hydration and monthly syncs, not a frequent check.
+   *
+   * Lower API-Football plan tiers (including Free) cap the `page` param itself — e.g. "Free
+   * plans are limited to a maximum value of 3 for the Page parameter" — well below the ~28 pages
+   * a full season needs. Hitting that ceiling stops pagination and returns whatever was fetched
+   * so far instead of failing the whole call, since on those tiers this can only ever be a
+   * partial supplement to fetchPlayerRoster's squad-based pull, not the complete roster. */
+  async fetchAllPlayersForSeason(): Promise<ProviderRosterEntry[]> {
+    const entries: ProviderRosterEntry[] = [];
+    let currentPage = 1;
+    let totalPages = 1;
+
+    do {
+      let response: RawPlayerSeasonEntry[];
+      let paging: { current: number; total: number } | undefined;
+      try {
+        ({ response, paging } = await this.request<RawPlayerSeasonEntry[]>("players", {
+          league: PREMIER_LEAGUE_ID,
+          season: this.seasonYear,
+          page: currentPage,
+        }));
+      } catch (error) {
+        if (error instanceof Error && /page parameter/i.test(error.message)) {
+          console.warn(
+            `fetchAllPlayersForSeason: stopped at page ${currentPage} — plan's page limit reached (${error.message}). ` +
+              `Returning ${entries.length} players fetched so far; this is a partial result on this plan tier.`,
+          );
+          break;
+        }
+        throw error;
+      }
+
+      totalPages = paging?.total ?? 1;
+
+      for (const entry of response) {
+        const statistics = entry.statistics[0];
+        if (!statistics) continue;
+        const position = mapProviderPositionLabel(statistics.games.position);
+        if (!position) continue; // skip entries with no usable position (e.g. provider data gaps)
+        entries.push({
+          externalId: String(entry.player.id),
+          name: entry.player.name,
+          club: statistics.team.name,
+          position,
+        });
+      }
+
+      if (currentPage < totalPages) {
+        await delay(INTER_REQUEST_DELAY_MS);
+      }
+      currentPage++;
+    } while (currentPage <= totalPages);
+
     return entries;
   }
 
@@ -227,6 +312,6 @@ export function createFootballDataProviderFromEnv(): FootballDataProvider {
   const baseUrl = process.env.FOOTBALL_DATA_API_BASE_URL ?? "https://v3.football.api-sports.io";
   const apiKey = process.env.FOOTBALL_DATA_API_KEY;
   if (!apiKey) throw new Error("FOOTBALL_DATA_API_KEY is not set");
-  const seasonYear = Number(process.env.FOOTBALL_DATA_SEASON_YEAR ?? 2026);
+  const seasonYear = Number(process.env.FOOTBALL_DATA_SEASON_YEAR ?? 2024);
   return new ApiFootballProvider(baseUrl, apiKey, seasonYear);
 }

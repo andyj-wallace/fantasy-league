@@ -58,8 +58,14 @@ export interface FootballDataProvider {
   fetchLiveFixtures(): Promise<ProviderFixture[]>;
   /** 2 calls (events + players) for one fixture. */
   fetchFixturePlayerStats(externalFixtureId: string): Promise<ProviderPlayerMatchStat[]>;
-  /** Paginated; the full league roster. */
+  /** ~21 calls (1 /teams + 20 /players/squads): current squads only, no pagination — cheap, but
+   * misses new signings/promoted-club players not yet linked to a squad block. */
   fetchPlayerRoster(): Promise<ProviderRosterEntry[]>;
+  /** Paginated full-league pull (/players?league&season&page, ~28 calls for a season) — the
+   * complete player list, including anyone fetchPlayerRoster's squad snapshot misses. Costlier
+   * and rate-limited (inter-page delay), so this is for one-time hydration and monthly syncs,
+   * not the frequent roster check. */
+  fetchAllPlayersForSeason(): Promise<ProviderRosterEntry[]>;
   /** Today's injury/suspension report for the whole league. */
   fetchInjuries(): Promise<ProviderInjuryEntry[]>;
   /** Free call (per polling-budget.md) — today's remaining request budget. */
@@ -80,6 +86,10 @@ export class StubFootballDataProvider implements FootballDataProvider {
   }
 
   async fetchPlayerRoster(): Promise<ProviderRosterEntry[]> {
+    return [];
+  }
+
+  async fetchAllPlayersForSeason(): Promise<ProviderRosterEntry[]> {
     return [];
   }
 
