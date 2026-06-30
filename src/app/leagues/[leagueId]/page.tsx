@@ -35,6 +35,7 @@ export default function LeaguePage() {
   const [teamWithLeague, setTeamWithLeague] = useState<TeamWithLeague | null>(null);
   const [standings, setStandings] = useState<StandingEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
 
   useEffect(() => {
     if (!getStoredToken()) {
@@ -65,6 +66,20 @@ export default function LeaguePage() {
     router.push("/");
   }
 
+  function getInviteUrl(inviteCode: string): string {
+    return `${window.location.origin}/leagues/join?code=${inviteCode}`;
+  }
+
+  async function handleCopyInvite(inviteCode: string) {
+    try {
+      await navigator.clipboard.writeText(getInviteUrl(inviteCode));
+      setCopyStatus("copied");
+    } catch {
+      setCopyStatus("error");
+    }
+    setTimeout(() => setCopyStatus("idle"), 2000);
+  }
+
   const lastUpdatedAt =
     standings && standings.length > 0
       ? new Date(Math.max(...standings.map((standing) => new Date(standing.calculatedAt).getTime())))
@@ -80,6 +95,24 @@ export default function LeaguePage() {
       {teamWithLeague && (
         <p>
           <TeamLeagueLinks team={teamWithLeague.team} league={teamWithLeague.league} />
+        </p>
+      )}
+
+      {teamWithLeague && (
+        <p>
+          Invite code: <strong>{teamWithLeague.league.inviteCode}</strong>{" "}
+          <button onClick={() => handleCopyInvite(teamWithLeague.league.inviteCode)}>Copy invite link</button>
+          {copyStatus === "copied" && " Copied!"}
+          {copyStatus === "error" && " Could not copy — copy the code manually."}{" "}
+          <a
+            href={`https://wa.me/?text=${encodeURIComponent(
+              `Join my Fantasy League "${teamWithLeague.league.name}": ${getInviteUrl(teamWithLeague.league.inviteCode)}`,
+            )}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Share via WhatsApp
+          </a>
         </p>
       )}
 

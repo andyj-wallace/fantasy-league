@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { authedFetch } from "@/app/lib/apiFetch";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
@@ -8,7 +8,15 @@ import { getStoredToken } from "@/app/lib/auth";
 
 export default function JoinLeaguePage() {
   const [error, setError] = useState<string | null>(null);
+  const [inviteCode, setInviteCode] = useState("");
   const router = useRouter();
+
+  // Prefills from a shared invite link's ?code= param (see the "Share invite" links on the
+  // league page) so the recipient doesn't have to retype the code by hand.
+  useEffect(() => {
+    const codeFromLink = new URLSearchParams(window.location.search).get("code");
+    if (codeFromLink) setInviteCode(codeFromLink);
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -38,7 +46,13 @@ export default function JoinLeaguePage() {
     <main>
       <h1>Join League</h1>
       <form onSubmit={handleSubmit}>
-        <input name="inviteCode" placeholder="Invite code" required />
+        <input
+          name="inviteCode"
+          placeholder="Invite code"
+          value={inviteCode}
+          onChange={(event) => setInviteCode(event.target.value)}
+          required
+        />
         <input name="teamName" placeholder="Your team name (optional)" />
         <button type="submit">Join</button>
       </form>
