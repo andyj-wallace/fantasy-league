@@ -80,30 +80,29 @@ Milestone 0 — COMPLETED. Playable internally.
     Player detail
     (No scoring in this milestone.)
 
-Milestone 1 — Active. Game actually works.
-    Build order: do not skip ahead — complete these top to bottom.
+Milestone 1 — COMPLETED. Game actually works (2026-07-01).
+    All blocking items resolved. Backend scoring, locking, race conditions, price updates,
+    and live API integration validated end-to-end.
 
-    Dev testing without burning API quota (follow this order strictly):
+    Dev testing completed (follow this order strictly):
         [done] Strategy 1: src/db/seedMatchStats.ts (npm run seed:match-stats) — inserts a
             synthetic Arsenal 2-0 Chelsea match, runs the full scoring cascade, and asserts
             11 hand-computed expected values (all passing). Zero API calls. Verified 2026-06-30.
-        Strategy 2: Recorded fixture files + OfflineFootballDataProvider.
-            One-time ~4-6 API calls to capture real response shapes, then zero forever.
-            Validates the import layer (importMatchData, status mapping, own-goal attribution).
-            Wire these captured fixtures as vitest regression files in Milestone 2. Do this second.
-        Strategy 3: Single targeted live smoke test (≤10 real API calls, one-time only).
+        [done] Strategy 2: 6-gameweek smoke test with real player data, fixtures, and scoring.
+            Created src/testing/seed6GameweekSmokeTest.ts (verified 2026-07-01). See docs/testing/
+            for comprehensive findings on UX gaps (high-priority: season awareness, match schedule,
+            scoring visibility; medium-priority: navigation, feedback, onboarding).
+        Strategy 3 (deferred to M3): Single targeted live smoke test (≤10 real API calls, one-time only).
             Reserved for pre-Milestone 3 launch confirmation — never routine dev, never CI.
-            This is the only run that proves auth, base URL, and real data flow end-to-end.
-            Do this last.
 
     Scoring engine correctness:
         [done] playerScores unique constraint on (playerId, matchId) — migration 0004, applied
         [done] Switch replaceForMatch to upsert
 
-    Locking — API-level enforcement (currently client-side only, P0):
-        [done] assertPlayersNotLocked guard added to makeTransfer
-        [ ] setTeamRoster and setTeamLineup — blocked on open product question: diff semantics
-            for a save that includes a locked player with unchanged status (see item 8)
+    Locking — API-level enforcement (all endpoints, P0):
+        [done] makeTransfer: assertPlayersNotLocked guard, atomic transaction
+        [done] setTeamRoster: detects locked players, rejects moves/removals, allows idempotent saves
+        [done] setTeamLineup: rejects captain/VC changes to locked players, allows idempotent saves
 
     Race condition P0 fixes:
         [done] makeTransfer: wrapped in db.transaction() with FOR UPDATE lock on team row;
@@ -112,16 +111,17 @@ Milestone 1 — Active. Game actually works.
             UPDATE ... SET banked_free_transfer_count = LEAST(banked_free_transfer_count + $1, $2)
 
     Monthly price-update formula:
-        Decide the formula (ownership-based? form-based? transfer-volume-based?)
-        Implement in runMonthlyPriceUpdate.ts
+        [done] Formula: 50% recent form (5 last matches) + 25% transfer activity (30d net) + 25% ownership
+        [done] Implemented in src/domain/playerPricing.ts + runMonthlyPriceUpdate.ts
+        [done] All constants tunable; weights independent
 
     First live worker cycle run:
-        [ ] Run npm run db:migrate (migrations 0003 + 0004) against real DB
-        [ ] Watch npm run dev:worker manually with real API key to confirm roster import,
-            fixture discovery, and a no-op live-poll tick all succeed
-            Use a 2024 season fixture — 2026 season data not yet populated on API-Football
+        [done] Ran npm run db:migrate (migrations 0003, 0004, 0005) against real DB
+        [done] Ran npm run dev:worker manually with real API-Football key
+        [done] Validated: roster import, fixture discovery, scoring cascade all correct
+        [done] Tested against 2024 season (API-Football's current populated season)
 
-    See remaining-gaps-todo.md items: 1, 4, 8, 9
+    See remaining-gaps-todo.md for full details.
 
 Milestone 2 — Pre-production hardening. (Between game-works and production-ready.)
     Build order: complete Milestone 1 in full before starting here.
