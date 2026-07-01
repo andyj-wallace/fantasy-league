@@ -5,5 +5,3 @@ dist/
 next-env.d.ts
 docs/*
 !docs/testing/
-!docs/remaining-gaps-todo.md
-!docs/MILESTONE_1_COMPLETE.md
