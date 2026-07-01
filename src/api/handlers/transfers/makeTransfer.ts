@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { gameweeksRepository, playersRepository, teamsRepository, transfersRepository } from "../../../db/repositories";
-import { deriveStartingFormation, POINTS_COST_PER_PAID_TRANSFER, validateSquadComposition, type Transfer } from "../../../domain";
+import { db } from "../../../db/client";
+import { gameweeksRepository, matchesRepository, playersRepository, teamsRepository, transfersRepository } from "../../../db/repositories";
+import { deriveStartingFormation, isClubLocked, POINTS_COST_PER_PAID_TRANSFER, validateSquadComposition, type Transfer } from "../../../domain";
 import { requireAuth } from "../../auth";
 import { badRequestResponse, forbiddenResponse, jsonResponse, notFoundResponse } from "../../httpResponse";
 import type { ApiHandler } from "../../types";
@@ -34,6 +35,15 @@ export const makeTransfer: ApiHandler = requireAuth(async (event, session) => {
   ]);
   if (!playerOut || !playerIn) return notFoundResponse("playerOutId or playerInId does not exist");
 
+  const matchesThisGameweek = await matchesRepository.findByGameweekId(currentGameweek.id);
+  const now = new Date();
+  if (isClubLocked(playerOut.club, matchesThisGameweek, now)) {
+    return badRequestResponse(`${playerOut.name} is locked — their match has already kicked off`);
+  }
+  if (isClubLocked(playerIn.club, matchesThisGameweek, now)) {
+    return badRequestResponse(`${playerIn.name} is locked — their match has already kicked off`);
+  }
+
   const updatedRosterSlots = rosterSlots.map((slot) =>
     slot.playerId === body.playerOutId ? { playerId: body.playerInId, isStarting: slot.isStarting } : slot,
   );
@@ -50,24 +60,34 @@ export const makeTransfer: ApiHandler = requireAuth(async (event, session) => {
     return badRequestResponse("This transfer would leave the starting XI without a valid formation");
   }
 
-  // Real cost/budget calculation, now squad-composition-checked above.
-  const pointsCost = team.bankedFreeTransferCount > 0 ? 0 : POINTS_COST_PER_PAID_TRANSFER;
-  const remainingBudgetInMillions = team.remainingBudgetInMillions + playerOut.priceInMillions - playerIn.priceInMillions;
-  const bankedFreeTransferCount = pointsCost === 0 ? team.bankedFreeTransferCount - 1 : team.bankedFreeTransferCount;
+  // Wrap all writes in a transaction and re-read the team with FOR UPDATE so concurrent transfer
+  // requests for the same team block here rather than racing on budget / bankedFreeTransferCount.
+  return await db.transaction(async (tx) => {
+    const lockedTeam = await teamsRepository.findByIdForUpdate(teamId, tx);
+    if (!lockedTeam) return notFoundResponse("Team not found");
 
-  await teamsRepository.replaceRosterSlots(teamId, updatedRosterSlots, remainingBudgetInMillions);
-  await teamsRepository.updateAfterTransfer(teamId, { remainingBudgetInMillions, bankedFreeTransferCount });
+    const pointsCost = lockedTeam.bankedFreeTransferCount > 0 ? 0 : POINTS_COST_PER_PAID_TRANSFER;
+    const remainingBudgetInMillions =
+      lockedTeam.remainingBudgetInMillions + playerOut.priceInMillions - playerIn.priceInMillions;
+    const bankedFreeTransferCount =
+      pointsCost === 0 ? lockedTeam.bankedFreeTransferCount - 1 : lockedTeam.bankedFreeTransferCount;
 
-  const transfer: Transfer = {
-    id: randomUUID(),
-    teamId,
-    gameweekId: currentGameweek.id,
-    playerOutId: body.playerOutId,
-    playerInId: body.playerInId,
-    pointsCost,
-    createdAt: new Date(),
-  };
-  await transfersRepository.insert(transfer);
+    if (remainingBudgetInMillions < 0) return badRequestResponse("Insufficient budget for this transfer");
 
-  return jsonResponse(201, transfer);
+    await teamsRepository.replaceRosterSlots(teamId, updatedRosterSlots, remainingBudgetInMillions, tx);
+    await teamsRepository.updateAfterTransfer(teamId, { remainingBudgetInMillions, bankedFreeTransferCount }, tx);
+
+    const transfer: Transfer = {
+      id: randomUUID(),
+      teamId,
+      gameweekId: currentGameweek.id,
+      playerOutId: body.playerOutId,
+      playerInId: body.playerInId,
+      pointsCost,
+      createdAt: new Date(),
+    };
+    await transfersRepository.insert(transfer, tx);
+
+    return jsonResponse(201, transfer);
+  });
 });

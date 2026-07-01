@@ -1,10 +1,11 @@
-import type { PlayerPosition } from "../domain";
+import type { PlayerPosition, PlayerProfile, PlayerSeasonStatistics } from "../domain";
 import type {
   FootballDataProvider,
   ProviderFixture,
   ProviderInjuryEntry,
   ProviderPlayerMatchStat,
   ProviderRosterEntry,
+  ProviderSeasonInfo,
   QuotaStatus,
 } from "./footballDataProvider";
 
@@ -17,7 +18,7 @@ const PREMIER_LEAGUE_ID = 39;
  * so both loops below pace themselves against this. Configurable since the right value depends
  * on plan tier; default errs conservative since hitting it means a wasted, partially-completed
  * run. */
-const INTER_REQUEST_DELAY_MS = Number(process.env.FOOTBALL_DATA_REQUEST_DELAY_MS ?? 5_000);
+const INTER_REQUEST_DELAY_MS = Number(process.env.FOOTBALL_DATA_REQUEST_DELAY_MS ?? 7_000);
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -94,6 +95,56 @@ interface RawStatusResponse {
   requests: { current: number; limit_day: number };
 }
 
+interface RawLeagueSeasonEntry {
+  year: number;
+  current: boolean;
+  coverage: {
+    fixtures: { statistics_players: boolean };
+    injuries: boolean;
+  };
+}
+
+interface RawLeagueEntry {
+  seasons: RawLeagueSeasonEntry[];
+}
+
+/** /players/profiles' single-player bio response. */
+interface RawPlayerProfileEntry {
+  player: {
+    id: number;
+    firstname: string | null;
+    lastname: string | null;
+    age: number | null;
+    birth: { date: string | null; place: string | null; country: string | null };
+    nationality: string | null;
+    height: string | null;
+    weight: string | null;
+    number: number | null;
+    photo: string | null;
+  };
+}
+
+/** /players' single-player-and-season response — the same shape RawPlayerSeasonEntry uses for
+ * the paginated league pull, but with the full statistics block this single-player lookup needs
+ * (rating, goals, assists, saves, cards) rather than just team/position. */
+interface RawPlayerWithStatisticsEntry {
+  player: { id: number };
+  statistics: {
+    team: { name: string };
+    league: { name: string };
+    games: { appearences: number | null; minutes: number | null; position: string | null; rating: string | null };
+    goals: { total: number | null; assists: number | null; saves: number | null };
+    cards: { yellow: number | null; red: number | null };
+  }[];
+}
+
+/** Parses API-Football's "175 cm" / "68 kg" string fields down to a bare number. */
+function parseLeadingNumber(value: string | null): number | null {
+  if (!value) return null;
+  const match = /^\d+/.exec(value);
+  return match ? Number(match[0]) : null;
+}
+
 function toProviderFixture(raw: RawFixture): ProviderFixture {
   return {
     externalId: String(raw.fixture.id),
@@ -108,11 +159,23 @@ function toProviderFixture(raw: RawFixture): ProviderFixture {
 }
 
 export class ApiFootballProvider implements FootballDataProvider {
+  private seasonYear: number;
+  private coverageFixturePlayerStats = false;
+  private coverageInjuries = false;
+
   constructor(
     private readonly baseUrl: string,
     private readonly apiKey: string,
-    private readonly seasonYear: number,
-  ) {}
+    initialSeasonYear: number,
+  ) {
+    this.seasonYear = initialSeasonYear;
+  }
+
+  setCurrentSeason(year: number, coverage: { fixturePlayerStats: boolean; injuries: boolean }): void {
+    this.seasonYear = year;
+    this.coverageFixturePlayerStats = coverage.fixturePlayerStats;
+    this.coverageInjuries = coverage.injuries;
+  }
 
   private async request<T>(path: string, params: Record<string, string | number> = {}): Promise<ApiFootballEnvelope<T>> {
     const url = new URL(path, this.baseUrl);
@@ -154,6 +217,10 @@ export class ApiFootballProvider implements FootballDataProvider {
   }
 
   async fetchFixturePlayerStats(externalFixtureId: string): Promise<ProviderPlayerMatchStat[]> {
+    if (!this.coverageFixturePlayerStats) {
+      console.log(`[provider] fetchFixturePlayerStats skipped — statistics_players not covered for season ${this.seasonYear}`);
+      return [];
+    }
     const [playersResult, eventsResult] = await Promise.all([
       this.request<RawFixturePlayersBlock[]>("fixtures/players", { fixture: externalFixtureId }),
       this.request<RawFixtureEvent[]>("fixtures/events", { fixture: externalFixtureId }),
@@ -203,7 +270,8 @@ export class ApiFootballProvider implements FootballDataProvider {
     });
 
     const entries: ProviderRosterEntry[] = [];
-    for (const [i, teamEntry] of teams.entries()) {
+    for (const teamEntry of teams) {
+      await delay(INTER_REQUEST_DELAY_MS);
       const { response: squadBlocks } = await this.request<RawSquadBlock[]>("players/squads", {
         team: teamEntry.team.id,
       });
@@ -219,10 +287,6 @@ export class ApiFootballProvider implements FootballDataProvider {
             position,
           });
         }
-      }
-
-      if (i < teams.length - 1) {
-        await delay(INTER_REQUEST_DELAY_MS);
       }
     }
     return entries;
@@ -289,6 +353,7 @@ export class ApiFootballProvider implements FootballDataProvider {
   }
 
   async fetchInjuries(): Promise<ProviderInjuryEntry[]> {
+    if (!this.coverageInjuries) return [];
     const { response } = await this.request<RawInjuryEntry[]>("injuries", {
       league: PREMIER_LEAGUE_ID,
       season: this.seasonYear,
@@ -300,14 +365,72 @@ export class ApiFootballProvider implements FootballDataProvider {
     }));
   }
 
+  async fetchLeagueCurrentSeason(): Promise<ProviderSeasonInfo | null> {
+    const { response } = await this.request<RawLeagueEntry[]>("leagues", { id: PREMIER_LEAGUE_ID });
+    const leagueEntry = response[0];
+    if (!leagueEntry) return null;
+    const currentSeason = leagueEntry.seasons.find((s) => s.current);
+    if (!currentSeason) return null;
+    return {
+      seasonYear: currentSeason.year,
+      coverageFixturePlayerStats: currentSeason.coverage.fixtures.statistics_players,
+      coverageInjuries: currentSeason.coverage.injuries,
+    };
+  }
+
   async fetchQuotaStatus(): Promise<QuotaStatus> {
     const { response } = await this.request<RawStatusResponse>("status");
     return { requestsUsedToday: response.requests.current, requestsLimitPerDay: response.requests.limit_day };
   }
+
+  async fetchPlayerProfile(externalPlayerId: string): Promise<PlayerProfile | null> {
+    const { response } = await this.request<RawPlayerProfileEntry[]>("players/profiles", { player: externalPlayerId });
+    const entry = response[0];
+    if (!entry) return null;
+
+    const { player } = entry;
+    return {
+      externalId: String(player.id),
+      firstName: player.firstname ?? "",
+      lastName: player.lastname ?? "",
+      age: player.age,
+      birthDate: player.birth.date,
+      birthPlace: player.birth.place,
+      birthCountry: player.birth.country,
+      nationality: player.nationality,
+      heightCm: parseLeadingNumber(player.height),
+      weightKg: parseLeadingNumber(player.weight),
+      shirtNumber: player.number,
+      photoUrl: player.photo,
+    };
+  }
+
+  async fetchPlayerSeasonStatistics(externalPlayerId: string, season: number): Promise<PlayerSeasonStatistics | null> {
+    const { response } = await this.request<RawPlayerWithStatisticsEntry[]>("players", { id: externalPlayerId, season });
+    const entry = response[0];
+    const statistics = entry?.statistics[0];
+    if (!entry || !statistics) return null;
+
+    return {
+      externalId: String(entry.player.id),
+      season,
+      club: statistics.team.name,
+      leagueName: statistics.league.name,
+      position: mapProviderPositionLabel(statistics.games.position),
+      appearances: statistics.games.appearences ?? 0,
+      minutesPlayed: statistics.games.minutes ?? 0,
+      rating: statistics.games.rating ? Number(statistics.games.rating) : null,
+      goals: statistics.goals.total ?? 0,
+      assists: statistics.goals.assists ?? 0,
+      saves: statistics.goals.saves ?? 0,
+      yellowCards: statistics.cards.yellow ?? 0,
+      redCards: statistics.cards.red ?? 0,
+    };
+  }
 }
 
-/** Builds the real provider from env vars (FOOTBALL_DATA_API_BASE_URL, FOOTBALL_DATA_API_KEY,
- * FOOTBALL_DATA_SEASON_YEAR) — the wiring used by both the Lambda handler and local dev worker. */
+/** Builds the real provider from env vars. FOOTBALL_DATA_SEASON_YEAR is an initial fallback only —
+ * the worker's monthly season sync overwrites it via setCurrentSeason() once the DB row is resolved. */
 export function createFootballDataProviderFromEnv(): FootballDataProvider {
   const baseUrl = process.env.FOOTBALL_DATA_API_BASE_URL ?? "https://v3.football.api-sports.io";
   const apiKey = process.env.FOOTBALL_DATA_API_KEY;

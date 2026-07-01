@@ -11,6 +11,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "seed:mock": "tsx src/db/seedMock.ts",
+    "seed:match-stats": "tsx src/db/seedMatchStats.ts",
     "hydrate:roster": "tsx src/workers/hydratePlayerRosterOnce.ts",
     "dev:stop": "lsof -ti tcp:3000,3001 | xargs kill -9"
   },

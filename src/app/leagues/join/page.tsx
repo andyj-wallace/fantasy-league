@@ -11,8 +11,6 @@ export default function JoinLeaguePage() {
   const [inviteCode, setInviteCode] = useState("");
   const router = useRouter();
 
-  // Prefills from a shared invite link's ?code= param (see the "Share invite" links on the
-  // league page) so the recipient doesn't have to retype the code by hand.
   useEffect(() => {
     const codeFromLink = new URLSearchParams(window.location.search).get("code");
     if (codeFromLink) setInviteCode(codeFromLink);
@@ -45,18 +43,20 @@ export default function JoinLeaguePage() {
   return (
     <main>
       <h1>Join League</h1>
-      <form onSubmit={handleSubmit}>
-        <input
-          name="inviteCode"
-          placeholder="Invite code"
-          value={inviteCode}
-          onChange={(event) => setInviteCode(event.target.value)}
-          required
-        />
-        <input name="teamName" placeholder="Your team name (optional)" />
-        <button type="submit">Join</button>
-      </form>
-      {error && <p>{error}</p>}
+      <div className="card" style={{ maxWidth: 400 }}>
+        <form className="form-stack" onSubmit={handleSubmit}>
+          <input
+            name="inviteCode"
+            placeholder="Invite code"
+            value={inviteCode}
+            onChange={(event) => setInviteCode(event.target.value)}
+            required
+          />
+          <input name="teamName" placeholder="Your team name (optional)" />
+          <button className="btn-primary" type="submit">Join</button>
+        </form>
+        {error && <p className="msg msg-error" style={{ marginTop: "0.75rem" }}>{error}</p>}
+      </div>
     </main>
   );
 }

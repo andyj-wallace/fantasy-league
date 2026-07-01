@@ -86,36 +86,38 @@ function TransferPicker({
   }
 
   return (
-    <details ref={detailsRef}>
-      <summary>Transfer</summary>
-      <input
-        placeholder={`Search replacement ${outgoingPlayer.position}s by name`}
-        value={searchQuery}
-        onChange={(event) => setSearchQuery(event.target.value)}
-      />
-      <ul style={{ maxHeight: "12em", overflowY: "auto" }}>
-        {filteredReplacements.length === 0 && <li>No eligible replacements.</li>}
-        {filteredReplacements.map((player) => (
-          <li key={player.id}>
-            <label>
-              <input
-                type="radio"
-                name={`replacement-for-${outgoingPlayer.id}`}
-                checked={selectedReplacementId === player.id}
-                onChange={() => setSelectedReplacementId(player.id)}
-              />{" "}
-              {player.name} — {player.club} — £{player.priceInMillions}M — {player.totalFantasyPoints}pts
-            </label>
-          </li>
-        ))}
-      </ul>
-      <button onClick={handleConfirm} disabled={!selectedReplacementId || isSubmitting}>
-        Confirm
-      </button>{" "}
-      <button onClick={reset} disabled={isSubmitting}>
-        Cancel
-      </button>
-      {error && <p>{error}</p>}
+    <details ref={detailsRef} className="transfer-picker">
+      <summary>Transfer out</summary>
+      <div className="transfer-picker-body">
+        <input
+          placeholder={`Search replacement ${outgoingPlayer.position}s by name`}
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+        />
+        <ul className="transfer-picker-list">
+          {filteredReplacements.length === 0 && <li style={{ color: "var(--color-text-muted)" }}>No eligible replacements.</li>}
+          {filteredReplacements.map((player) => (
+            <li key={player.id}>
+              <label style={{ fontWeight: 400, cursor: "pointer" }}>
+                <input
+                  type="radio"
+                  name={`replacement-for-${outgoingPlayer.id}`}
+                  checked={selectedReplacementId === player.id}
+                  onChange={() => setSelectedReplacementId(player.id)}
+                />{" "}
+                {player.name} — {player.club} — £{player.priceInMillions}M — {player.totalFantasyPoints}pts
+              </label>
+            </li>
+          ))}
+        </ul>
+        <div className="transfer-picker-actions">
+          <button className="btn-primary" onClick={handleConfirm} disabled={!selectedReplacementId || isSubmitting}>
+            Confirm
+          </button>
+          <button onClick={reset} disabled={isSubmitting}>Cancel</button>
+        </div>
+        {error && <p className="msg msg-error">{error}</p>}
+      </div>
     </details>
   );
 }
@@ -173,70 +175,93 @@ export default function TransfersPage() {
     return null;
   }
 
-  if (loadError) return <main><p>{loadError}</p></main>;
+  if (loadError) return <main><p className="msg msg-error">{loadError}</p></main>;
   if (!team || !available) return null;
 
   return (
     <main>
       <h1>Transfers — {team.name}</h1>
-      <p>
-        Banked free transfers: {available.bankedFreeTransferCount}/{available.maxBankedFreeTransferCount}
-      </p>
-      <p>
-        Next transfer costs:{" "}
-        {available.nextTransferPointsCost === 0 ? "FREE" : `-${available.nextTransferPointsCost} points`}
-      </p>
-      <p>Remaining budget: £{available.remainingBudgetInMillions}M</p>
-      {pageMessage && <p>{pageMessage}</p>}
+
+      <div className="stat-row">
+        <div className="stat-tile">
+          <span className="stat-tile-label">Free transfers</span>
+          <span className="stat-tile-value">
+            {available.bankedFreeTransferCount}/{available.maxBankedFreeTransferCount}
+          </span>
+        </div>
+        <div className="stat-tile">
+          <span className="stat-tile-label">Next transfer</span>
+          <span className="stat-tile-value">
+            {available.nextTransferPointsCost === 0 ? "Free" : `-${available.nextTransferPointsCost}pts`}
+          </span>
+        </div>
+        <div className="stat-tile">
+          <span className="stat-tile-label">Budget</span>
+          <span className="stat-tile-value">£{available.remainingBudgetInMillions}M</span>
+        </div>
+      </div>
+
+      {pageMessage && <p className="msg msg-success">{pageMessage}</p>}
 
       <h2>Current Roster</h2>
       {available.roster.length === 0 ? (
         <p>No roster set yet — build your squad first.</p>
       ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Club</th>
-              <th>Position</th>
-              <th>Price</th>
-              <th>Starting</th>
-              <th>Locked</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {available.roster.map((player) => (
-              <tr key={player.id}>
-                <td>{player.name}</td>
-                <td>{player.club}</td>
-                <td>{player.position}</td>
-                <td>£{player.priceInMillions}M</td>
-                <td>{player.isStarting ? "Starting" : "Bench"}</td>
-                <td>{player.isLocked ? "Locked" : "Unlocked"}</td>
-                <td>
-                  {!player.isLocked && (
-                    <TransferPicker
-                      outgoingPlayer={player}
-                      eligibleReplacements={eligibleReplacements(player)}
-                      onConfirm={(replacementPlayerId) => handleConfirmTransfer(player, replacementPlayerId)}
-                    />
-                  )}
-                </td>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Club</th>
+                <th>Pos</th>
+                <th>Price</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {available.roster.map((player) => (
+                <tr key={player.id}>
+                  <td>{player.name}</td>
+                  <td>{player.club}</td>
+                  <td>{player.position}</td>
+                  <td>£{player.priceInMillions}M</td>
+                  <td>{player.isStarting ? "Starting" : "Bench"}</td>
+                  <td>
+                    {player.isLocked
+                      ? <span className="badge badge-red">Locked</span>
+                      : <span className="badge badge-green">Available</span>}
+                  </td>
+                  <td>
+                    {!player.isLocked && (
+                      <TransferPicker
+                        outgoingPlayer={player}
+                        eligibleReplacements={eligibleReplacements(player)}
+                        onConfirm={(replacementPlayerId) => handleConfirmTransfer(player, replacementPlayerId)}
+                      />
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       <h2>Transfers this gameweek</h2>
       {available.transfersThisGameweek.length === 0 ? (
         <p>No transfers made this gameweek yet.</p>
       ) : (
-        <ul>
+        <ul className="squad-list" style={{ marginTop: "0.5rem" }}>
           {available.transfersThisGameweek.map((transfer) => (
             <li key={transfer.id}>
-              {transfer.playerOutName} → {transfer.playerInName} ({transfer.pointsCost === 0 ? "free" : `-${transfer.pointsCost}pts`})
+              <span>{transfer.playerOutName}</span>
+              <span style={{ color: "var(--color-text-muted)" }}>→</span>
+              <span>{transfer.playerInName}</span>
+              <span className={transfer.pointsCost === 0 ? "badge badge-green" : "badge badge-red"}>
+                {transfer.pointsCost === 0 ? "free" : `-${transfer.pointsCost}pts`}
+              </span>
             </li>
           ))}
         </ul>

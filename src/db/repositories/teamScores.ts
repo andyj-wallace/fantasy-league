@@ -3,6 +3,25 @@ import { db } from "../client";
 import { gameweeks, teamScores } from "../schema";
 import type { TeamScore } from "../../domain";
 
+function toTeamScore(row: typeof teamScores.$inferSelect): TeamScore {
+  return {
+    id: row.id,
+    teamId: row.teamId,
+    gameweekId: row.gameweekId,
+    captainBonusPlayerId: row.captainBonusPlayerId,
+    totalPoints: row.totalPoints,
+    calculatedAt: row.calculatedAt,
+  };
+}
+
+export async function findByTeamAndGameweek(teamId: string, gameweekId: string): Promise<TeamScore | null> {
+  const [row] = await db
+    .select()
+    .from(teamScores)
+    .where(and(eq(teamScores.teamId, teamId), eq(teamScores.gameweekId, gameweekId)));
+  return row ? toTeamScore(row) : null;
+}
+
 /** Replaces every TeamScore row for a gameweek — delete-then-insert keeps re-running idempotent. */
 export async function replaceForGameweek(gameweekId: string, scores: TeamScore[]): Promise<void> {
   await db.delete(teamScores).where(eq(teamScores.gameweekId, gameweekId));

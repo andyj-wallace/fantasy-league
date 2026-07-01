@@ -49,7 +49,7 @@ export default function HomePage() {
     setTeamsWithLeagues(null);
   }
 
-  if (isLoggedIn === null) return null; // avoid a logged-out flash while localStorage is checked
+  if (isLoggedIn === null) return null;
 
   if (!isLoggedIn) {
     return (
@@ -62,19 +62,22 @@ export default function HomePage() {
     );
   }
 
-  // teamsWithLeagues stays null while loading, and while a single-league redirect is in flight.
   if (!error && teamsWithLeagues === null) return null;
 
   return (
     <main>
-      <h1>Fantasy League</h1>
-      <button onClick={handleLogout}>Log out</button>
+      <div className="page-header">
+        <h1>Fantasy League</h1>
+        <button className="btn-danger" onClick={handleLogout}>Log out</button>
+      </div>
 
       <h2>Your leagues</h2>
-      {error && <p>{error}</p>}
-      {!error && teamsWithLeagues!.length === 0 && <p>You haven't joined or created a league yet.</p>}
+      {error && <p className="msg msg-error">{error}</p>}
+      {!error && teamsWithLeagues!.length === 0 && (
+        <p>You haven't joined or created a league yet.</p>
+      )}
       {!error && teamsWithLeagues!.length > 0 && (
-        <ul>
+        <ul className="league-list">
           {teamsWithLeagues!.map(({ team, league }) => (
             <li key={team.id}>
               <TeamLeagueLinks team={team} league={league} />
@@ -83,14 +86,10 @@ export default function HomePage() {
         </ul>
       )}
 
-      <ul>
-        <li>
-          <Link href="/leagues/create">Create League</Link>
-        </li>
-        <li>
-          <Link href="/leagues/join">Join League</Link>
-        </li>
-      </ul>
+      <div className="link-list">
+        <Link href="/leagues/create">Create League</Link>
+        <Link href="/leagues/join">Join League</Link>
+      </div>
     </main>
   );
 }

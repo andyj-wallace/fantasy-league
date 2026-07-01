@@ -68,6 +68,7 @@ export async function importMatchData(
   provider: FootballDataProvider,
   fixtures: ProviderFixture[],
 ): Promise<ImportMatchDataResult> {
+  console.log(`[importMatchData] processing ${fixtures.length} fixtures...`);
   const newlyCompletedMatchIds: string[] = [];
   const newlyPostponedMatchIds: string[] = [];
 
@@ -95,7 +96,7 @@ export async function importMatchData(
     };
     await matchesRepository.upsert(match);
 
-    if (status === "COMPLETED" && previousStatus !== "COMPLETED") {
+    if (status === "COMPLETED" && previousStatus !== undefined && previousStatus !== "COMPLETED") {
       const providerStats = await provider.fetchFixturePlayerStats(fixture.externalId);
       const stats = await resolvePlayerMatchStats(match.id, providerStats);
       await playerMatchStatsRepository.insertMany(stats);
@@ -112,5 +113,6 @@ export async function importMatchData(
     }
   }
 
+  console.log(`[importMatchData] done — ${newlyCompletedMatchIds.length} newly completed, ${newlyPostponedMatchIds.length} newly postponed`);
   return { newlyCompletedMatchIds, newlyPostponedMatchIds };
 }

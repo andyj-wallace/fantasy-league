@@ -92,7 +92,7 @@ export function startLocalApiServer(port: number): void {
     }
   });
 
-  server.listen(port, () => {
+  server.listen(port, "0.0.0.0", () => {
     console.log(`Local API server listening on port ${port}`);
   });
 }

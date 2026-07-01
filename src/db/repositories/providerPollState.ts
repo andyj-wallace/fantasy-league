@@ -9,6 +9,10 @@ export interface ProviderPollState {
   lastRosterImportRanAt: Date | null;
   lastAvailabilitySyncRanAt: Date | null;
   nextLivePollDueAt: Date | null;
+  currentSeasonYear: number | null;
+  coverageFixturePlayerStats: boolean;
+  coverageInjuries: boolean;
+  lastSeasonSyncRanAt: Date | null;
 }
 
 function toState(row: typeof providerPollState.$inferSelect): ProviderPollState {
@@ -18,6 +22,10 @@ function toState(row: typeof providerPollState.$inferSelect): ProviderPollState 
     lastRosterImportRanAt: row.lastRosterImportRanAt,
     lastAvailabilitySyncRanAt: row.lastAvailabilitySyncRanAt,
     nextLivePollDueAt: row.nextLivePollDueAt,
+    currentSeasonYear: row.currentSeasonYear,
+    coverageFixturePlayerStats: row.coverageFixturePlayerStats,
+    coverageInjuries: row.coverageInjuries,
+    lastSeasonSyncRanAt: row.lastSeasonSyncRanAt,
   };
 }
 

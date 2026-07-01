@@ -1,5 +1,5 @@
-import { and, eq } from "drizzle-orm";
-import { db } from "../client";
+import { and, count, eq, gte, inArray } from "drizzle-orm";
+import { db, type DbOrTx } from "../client";
 import { transfers } from "../schema";
 import type { Transfer } from "../../domain";
 
@@ -15,8 +15,8 @@ function toTransfer(row: typeof transfers.$inferSelect): Transfer {
   };
 }
 
-export async function insert(transfer: Transfer): Promise<void> {
-  await db.insert(transfers).values({
+export async function insert(transfer: Transfer, tx?: DbOrTx): Promise<void> {
+  await (tx ?? db).insert(transfers).values({
     id: transfer.id,
     teamId: transfer.teamId,
     gameweekId: transfer.gameweekId,
@@ -25,6 +25,39 @@ export async function insert(transfer: Transfer): Promise<void> {
     pointsCost: transfer.pointsCost,
     createdAt: transfer.createdAt,
   });
+}
+
+/** Net transfer volume per player over a rolling window — the transfer-activity signal for
+ * monthly price updates. Players not transferred at all in the window are omitted (their
+ * transfersIn and transfersOut are both 0 by absence). */
+export async function findTransferVolumeByPlayerIds(
+  playerIds: string[],
+  since: Date,
+): Promise<{ playerId: string; transfersIn: number; transfersOut: number }[]> {
+  if (playerIds.length === 0) return [];
+
+  const [inRows, outRows] = await Promise.all([
+    db
+      .select({ playerId: transfers.playerInId, transferCount: count() })
+      .from(transfers)
+      .where(and(inArray(transfers.playerInId, playerIds), gte(transfers.createdAt, since)))
+      .groupBy(transfers.playerInId),
+    db
+      .select({ playerId: transfers.playerOutId, transferCount: count() })
+      .from(transfers)
+      .where(and(inArray(transfers.playerOutId, playerIds), gte(transfers.createdAt, since)))
+      .groupBy(transfers.playerOutId),
+  ]);
+
+  const transfersInByPlayerId = new Map(inRows.map((row) => [row.playerId, row.transferCount]));
+  const transfersOutByPlayerId = new Map(outRows.map((row) => [row.playerId, row.transferCount]));
+  const allAffectedPlayerIds = new Set([...transfersInByPlayerId.keys(), ...transfersOutByPlayerId.keys()]);
+
+  return [...allAffectedPlayerIds].map((playerId) => ({
+    playerId,
+    transfersIn: transfersInByPlayerId.get(playerId) ?? 0,
+    transfersOut: transfersOutByPlayerId.get(playerId) ?? 0,
+  }));
 }
 
 /** A Team's transfers within one Gameweek — what the transfers screen shows as "made this gameweek". */

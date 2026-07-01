@@ -7,6 +7,7 @@ import {
   real,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -118,6 +119,13 @@ export const providerPollState = pgTable("provider_poll_state", {
   lastAvailabilitySyncRanAt: timestamp("last_availability_sync_ran_at"),
   /** Computed by the live-polling tick from the quota-status formula; the tick no-ops until now() reaches this. */
   nextLivePollDueAt: timestamp("next_live_poll_due_at"),
+  /** Set monthly by fetchLeagueCurrentSeason — the API-Football year (e.g. 2026 = 2026-27 season). */
+  currentSeasonYear: integer("current_season_year"),
+  /** Whether /fixtures/players stats are available for currentSeasonYear. Gates fetchFixturePlayerStats. */
+  coverageFixturePlayerStats: boolean("coverage_fixture_player_stats").notNull().default(false),
+  /** Whether the /injuries endpoint is populated for currentSeasonYear. Gates fetchInjuries. */
+  coverageInjuries: boolean("coverage_injuries").notNull().default(false),
+  lastSeasonSyncRanAt: timestamp("last_season_sync_ran_at"),
 });
 
 /**
@@ -204,21 +212,27 @@ export const playerMatchStats = pgTable("player_match_stats", {
 });
 
 /** breakdown/tiebreakerStats are stored as jsonb, matching the plain object shape of the domain type. */
-export const playerScores = pgTable("player_scores", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  playerId: uuid("player_id")
-    .notNull()
-    .references(() => players.id),
-  matchId: uuid("match_id")
-    .notNull()
-    .references(() => matches.id),
-  gameweekId: uuid("gameweek_id")
-    .notNull()
-    .references(() => gameweeks.id),
-  breakdown: jsonb("breakdown").notNull(),
-  totalPoints: integer("total_points").notNull(),
-  calculatedAt: timestamp("calculated_at").notNull().defaultNow(),
-});
+export const playerScores = pgTable(
+  "player_scores",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    playerId: uuid("player_id")
+      .notNull()
+      .references(() => players.id),
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id),
+    gameweekId: uuid("gameweek_id")
+      .notNull()
+      .references(() => gameweeks.id),
+    breakdown: jsonb("breakdown").notNull(),
+    totalPoints: integer("total_points").notNull(),
+    calculatedAt: timestamp("calculated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("player_scores_player_id_match_id_idx").on(table.playerId, table.matchId),
+  ],
+);
 
 export const teamScores = pgTable("team_scores", {
   id: uuid("id").primaryKey().defaultRandom(),

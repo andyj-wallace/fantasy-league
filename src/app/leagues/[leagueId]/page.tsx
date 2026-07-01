@@ -87,23 +87,32 @@ export default function LeaguePage() {
 
   return (
     <main>
-      <h1>Fantasy League</h1>
-      <button onClick={handleLogout}>Log out</button>
+      <div className="page-header">
+        <h1>Fantasy League</h1>
+        <button className="btn-danger" onClick={handleLogout}>Log out</button>
+      </div>
 
-      {error && <p>{error}</p>}
-      {!error && !teamWithLeague && <p>Loading...</p>}
+      {error && <p className="msg msg-error">{error}</p>}
+      {!error && !teamWithLeague && <p>Loading…</p>}
+
       {teamWithLeague && (
-        <p>
+        <p style={{ marginBottom: "0.75rem" }}>
           <TeamLeagueLinks team={teamWithLeague.team} league={teamWithLeague.league} />
         </p>
       )}
 
       {teamWithLeague && (
-        <p>
-          Invite code: <strong>{teamWithLeague.league.inviteCode}</strong>{" "}
-          <button onClick={() => handleCopyInvite(teamWithLeague.league.inviteCode)}>Copy invite link</button>
-          {copyStatus === "copied" && " Copied!"}
-          {copyStatus === "error" && " Could not copy — copy the code manually."}{" "}
+        <div className="invite-row">
+          <span>Invite code</span>
+          <span className="invite-code">{teamWithLeague.league.inviteCode}</span>
+          <button onClick={() => handleCopyInvite(teamWithLeague.league.inviteCode)}>
+            {copyStatus === "copied" ? "Copied!" : "Copy link"}
+          </button>
+          {copyStatus === "error" && (
+            <span style={{ fontSize: "0.8rem", color: "var(--color-text-muted)" }}>
+              Could not copy — copy the code manually.
+            </span>
+          )}
           <a
             href={`https://wa.me/?text=${encodeURIComponent(
               `Join my Fantasy League "${teamWithLeague.league.name}": ${getInviteUrl(teamWithLeague.league.inviteCode)}`,
@@ -113,54 +122,56 @@ export default function LeaguePage() {
           >
             Share via WhatsApp
           </a>
-        </p>
+        </div>
       )}
 
       <h2>Standings</h2>
-      {standings === null && <p>Loading...</p>}
+      {standings === null && <p>Loading…</p>}
       {standings !== null && standings.length === 0 && (
         <p>No standings yet — these appear once a gameweek's matches have been scored.</p>
       )}
       {standings !== null && standings.length > 0 && (
         <>
-          <table>
-            <thead>
-              <tr>
-                <th>Rank</th>
-                <th>Team</th>
-                <th>Manager</th>
-                <th>Points</th>
-                <th>Goal Total</th>
-                <th>Banked Transfers</th>
-                <th>Season Expenditure</th>
-              </tr>
-            </thead>
-            <tbody>
-              {standings.map((standing) => (
-                <tr key={standing.id}>
-                  <td>{standing.rank}</td>
-                  <td>{standing.teamName}</td>
-                  <td>{standing.managerName}</td>
-                  <td>{standing.totalPoints}</td>
-                  <td>{standing.tiebreakerStats.goalsScoredBySelectedPlayers}</td>
-                  <td>{standing.tiebreakerStats.bankedFreeTransferCount}</td>
-                  <td>£{standing.tiebreakerStats.totalSpentInMillions}M</td>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Team</th>
+                  <th>Manager</th>
+                  <th>Points</th>
+                  <th>Goals</th>
+                  <th>Banked</th>
+                  <th>Spent</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          {lastUpdatedAt && <p>Last updated: {lastUpdatedAt.toLocaleString()}</p>}
+              </thead>
+              <tbody>
+                {standings.map((standing) => (
+                  <tr key={standing.id}>
+                    <td>{standing.rank}</td>
+                    <td>{standing.teamName}</td>
+                    <td>{standing.managerName}</td>
+                    <td style={{ fontWeight: 700 }}>{standing.totalPoints}</td>
+                    <td>{standing.tiebreakerStats.goalsScoredBySelectedPlayers}</td>
+                    <td>{standing.tiebreakerStats.bankedFreeTransferCount}</td>
+                    <td>£{standing.tiebreakerStats.totalSpentInMillions}M</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {lastUpdatedAt && (
+            <p style={{ marginTop: "0.5rem", fontSize: "0.8rem" }}>
+              Last updated {lastUpdatedAt.toLocaleString()}
+            </p>
+          )}
         </>
       )}
 
-      <ul>
-        <li>
-          <Link href="/leagues/create">Create League</Link>
-        </li>
-        <li>
-          <Link href="/leagues/join">Join League</Link>
-        </li>
-      </ul>
+      <div className="link-list">
+        <Link href="/leagues/create">Create League</Link>
+        <Link href="/leagues/join">Join League</Link>
+      </div>
     </main>
   );
 }

@@ -1,5 +1,5 @@
-import { and, eq } from "drizzle-orm";
-import { db } from "../client";
+import { and, count, eq, inArray, sql } from "drizzle-orm";
+import { db, type DbOrTx } from "../client";
 import { leagues, players, teamRosterSlots, teams } from "../schema";
 import { MAX_BANKED_FREE_TRANSFER_COUNT, type League, type StartingFormation, type Team, type TeamRosterSlot } from "../../domain";
 
@@ -53,6 +53,13 @@ export async function findAll(): Promise<TeamRow[]> {
 
 export async function findById(id: string): Promise<TeamRow | null> {
   const [row] = await db.select().from(teams).where(eq(teams.id, id));
+  return row ? toTeamRow(row) : null;
+}
+
+/** Like findById but issues SELECT … FOR UPDATE — must be called inside a transaction to have
+ * any effect. Serializes concurrent transfers that race to read budget/bankedFreeTransferCount. */
+export async function findByIdForUpdate(id: string, tx: DbOrTx): Promise<TeamRow | null> {
+  const [row] = await tx.select().from(teams).where(eq(teams.id, id)).for("update");
   return row ? toTeamRow(row) : null;
 }
 
@@ -137,21 +144,28 @@ export async function insert(input: NewTeamInput): Promise<Team> {
   return toTeam(toTeamRow(row!), []);
 }
 
-/** Replaces a Team's roster and the resulting budget in one transaction — delete-then-insert keeps re-running idempotent. */
+/** Replaces a Team's roster and the resulting budget atomically. Pass an outer `tx` to
+ * participate in a caller-owned transaction; omit to run in its own transaction. */
 export async function replaceRosterSlots(
   teamId: string,
   rosterSlots: TeamRosterSlot[],
   remainingBudgetInMillions: number,
+  tx?: DbOrTx,
 ): Promise<void> {
-  await db.transaction(async (tx) => {
-    await tx.delete(teamRosterSlots).where(eq(teamRosterSlots.teamId, teamId));
+  const execute = async (client: DbOrTx) => {
+    await client.delete(teamRosterSlots).where(eq(teamRosterSlots.teamId, teamId));
     if (rosterSlots.length > 0) {
-      await tx.insert(teamRosterSlots).values(
+      await client.insert(teamRosterSlots).values(
         rosterSlots.map((slot) => ({ teamId, playerId: slot.playerId, isStarting: slot.isStarting })),
       );
     }
-    await tx.update(teams).set({ remainingBudgetInMillions, updatedAt: new Date() }).where(eq(teams.id, teamId));
-  });
+    await client.update(teams).set({ remainingBudgetInMillions, updatedAt: new Date() }).where(eq(teams.id, teamId));
+  };
+  if (tx) {
+    await execute(tx);
+  } else {
+    await db.transaction(execute);
+  }
 }
 
 export async function updateLineup(
@@ -172,8 +186,9 @@ export async function updateLineup(
 export async function updateAfterTransfer(
   teamId: string,
   fields: { remainingBudgetInMillions: number; bankedFreeTransferCount: number },
+  tx?: DbOrTx,
 ): Promise<void> {
-  await db
+  await (tx ?? db)
     .update(teams)
     .set({
       remainingBudgetInMillions: fields.remainingBudgetInMillions,
@@ -202,10 +217,35 @@ export async function findTeamIdsWithPlayerFromClub(club: string): Promise<strin
   return rows.map((row) => row.teamId);
 }
 
-/** Banks `amount` more free transfers for a Team, capped at MAX_BANKED_FREE_TRANSFER_COUNT. */
+/** Total number of Team rows across all leagues — the denominator for ownership and transfer
+ * activity scores in the monthly price update formula. */
+export async function countAll(): Promise<number> {
+  const [row] = await db.select({ value: count() }).from(teams);
+  return row?.value ?? 0;
+}
+
+/** How many teams currently roster each of the given players — the ownership signal for the
+ * monthly price update formula. Players with zero rosters are omitted (ownership = 0 by absence). */
+export async function countRosteringByPlayerIds(
+  playerIds: string[],
+): Promise<{ playerId: string; teamsRostering: number }[]> {
+  if (playerIds.length === 0) return [];
+  const rows = await db
+    .select({ playerId: teamRosterSlots.playerId, teamsRostering: count() })
+    .from(teamRosterSlots)
+    .where(inArray(teamRosterSlots.playerId, playerIds))
+    .groupBy(teamRosterSlots.playerId);
+  return rows.map((row) => ({ playerId: row.playerId, teamsRostering: row.teamsRostering }));
+}
+
+/** Banks `amount` more free transfers for a Team, capped at MAX_BANKED_FREE_TRANSFER_COUNT.
+ * Single atomic UPDATE — no prior SELECT, so concurrent worker calls can't race and lose an increment. */
 export async function incrementBankedFreeTransferCount(teamId: string, amount = 1): Promise<void> {
-  const team = await findById(teamId);
-  if (!team) return;
-  const bankedFreeTransferCount = Math.min(team.bankedFreeTransferCount + amount, MAX_BANKED_FREE_TRANSFER_COUNT);
-  await db.update(teams).set({ bankedFreeTransferCount, updatedAt: new Date() }).where(eq(teams.id, teamId));
+  await db
+    .update(teams)
+    .set({
+      bankedFreeTransferCount: sql`LEAST(${teams.bankedFreeTransferCount} + ${amount}, ${MAX_BANKED_FREE_TRANSFER_COUNT})`,
+      updatedAt: new Date(),
+    })
+    .where(eq(teams.id, teamId));
 }

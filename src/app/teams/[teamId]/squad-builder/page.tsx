@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { authedFetch } from "@/app/lib/apiFetch";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
+import { PlayerNameTapTarget } from "../../../components/PlayerNameTapTarget";
 import {
   formationRequiredCounts,
   MAX_PLAYERS_PER_CLUB,
@@ -221,118 +222,144 @@ export default function SquadBuilderPage() {
     }
   }
 
-  if (loadError) return <main><p>{loadError}</p></main>;
+  if (loadError) return <main><p className="msg msg-error">{loadError}</p></main>;
   if (!team) return null;
 
   return (
     <main>
       <h1>Squad Builder — {team.name}</h1>
-      <p>
-        Budget remaining: £{remainingBudgetInMillions.toFixed(1)}M (of £{STARTING_SQUAD_BUDGET_IN_MILLIONS}M)
-      </p>
-      <p>
-        Squad: {draftRosterSlots.length}/{SQUAD_SIZE} — Goalkeepers: {goalkeeperCount}/{REQUIRED_GOALKEEPER_COUNT}
-      </p>
+
+      <div className="stat-row">
+        <div className="stat-tile">
+          <span className="stat-tile-label">Budget remaining</span>
+          <span className="stat-tile-value">£{remainingBudgetInMillions.toFixed(1)}M</span>
+        </div>
+        <div className="stat-tile">
+          <span className="stat-tile-label">Squad</span>
+          <span className="stat-tile-value">{draftRosterSlots.length}/{SQUAD_SIZE}</span>
+        </div>
+        <div className="stat-tile">
+          <span className="stat-tile-label">Goalkeepers</span>
+          <span className="stat-tile-value">{goalkeeperCount}/{REQUIRED_GOALKEEPER_COUNT}</span>
+        </div>
+      </div>
 
       <h2>Player Discovery</h2>
-      <input placeholder="Search by name" value={nameQuery} onChange={(event) => setNameQuery(event.target.value)} />
-      <select value={positionFilter} onChange={(event) => setPositionFilter(event.target.value as PlayerPosition | "")}>
-        <option value="">All positions</option>
-        {ALL_POSITIONS.map((position) => (
-          <option key={position} value={position}>
-            {position}
-          </option>
-        ))}
-      </select>
-      <select value={clubFilter} onChange={(event) => setClubFilter(event.target.value)}>
-        <option value="">All clubs</option>
-        {clubs.map((club) => (
-          <option key={club} value={club}>
-            {club}
-          </option>
-        ))}
-      </select>
-      <input
-        type="number"
-        placeholder="Max price (£M)"
-        value={maxPriceFilter}
-        onChange={(event) => setMaxPriceFilter(event.target.value)}
-      />
+      <div className="filter-row">
+        <input placeholder="Search by name" value={nameQuery} onChange={(event) => setNameQuery(event.target.value)} />
+        <select value={positionFilter} onChange={(event) => setPositionFilter(event.target.value as PlayerPosition | "")}>
+          <option value="">All positions</option>
+          {ALL_POSITIONS.map((position) => (
+            <option key={position} value={position}>{position}</option>
+          ))}
+        </select>
+        <select value={clubFilter} onChange={(event) => setClubFilter(event.target.value)}>
+          <option value="">All clubs</option>
+          {clubs.map((club) => (
+            <option key={club} value={club}>{club}</option>
+          ))}
+        </select>
+        <input
+          type="number"
+          placeholder="Max price (£M)"
+          value={maxPriceFilter}
+          onChange={(event) => setMaxPriceFilter(event.target.value)}
+        />
+      </div>
 
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Club</th>
-            <th>Position</th>
-            <th>Price</th>
-            <th>Total Points</th>
-            <th>Recent Form</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {filteredPlayers.map((player) => {
-            const inSquad = draftRosterSlots.some((slot) => slot.playerId === player.id);
-            const blockedReason = inSquad ? null : addPlayerError(player);
-            return (
-              <tr key={player.id}>
-                <td>{player.name}</td>
-                <td>{player.club}</td>
-                <td>{player.position}</td>
-                <td>£{player.priceInMillions}M</td>
-                <td>{player.totalFantasyPoints}</td>
-                <td>{describeRecentForm(player)}</td>
-                <td>
-                  {inSquad ? (
-                    <button onClick={() => handleRemovePlayer(player.id)}>Remove</button>
-                  ) : (
-                    <button onClick={() => handleAddPlayer(player)} disabled={!!blockedReason} title={blockedReason ?? ""}>
-                      Add
-                    </button>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Club</th>
+              <th>Pos</th>
+              <th>Price</th>
+              <th>Pts</th>
+              <th>Form</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredPlayers.map((player) => {
+              const inSquad = draftRosterSlots.some((slot) => slot.playerId === player.id);
+              const blockedReason = inSquad ? null : addPlayerError(player);
+              return (
+                <tr key={player.id}>
+                  <td>{player.name}</td>
+                  <td>{player.club}</td>
+                  <td>{player.position}</td>
+                  <td>£{player.priceInMillions}M</td>
+                  <td>{player.totalFantasyPoints}</td>
+                  <td style={{ color: "var(--color-text-muted)", fontSize: "0.8rem" }}>{describeRecentForm(player)}</td>
+                  <td>
+                    {inSquad ? (
+                      <button onClick={() => handleRemovePlayer(player.id)}>Remove</button>
+                    ) : (
+                      <button
+                        className={!blockedReason ? "btn-primary" : ""}
+                        onClick={() => handleAddPlayer(player)}
+                        disabled={!!blockedReason}
+                        title={blockedReason ?? ""}
+                      >
+                        Add
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
 
       <h2>Formation</h2>
-      <select value={selectedFormation} onChange={(event) => handleFormationChange(event.target.value as StartingFormation | "")}>
+      <select
+        value={selectedFormation}
+        onChange={(event) => handleFormationChange(event.target.value as StartingFormation | "")}
+        style={{ maxWidth: 200 }}
+      >
         <option value="">Choose a formation</option>
         {VALID_STARTING_FORMATIONS.map((formation) => (
-          <option key={formation} value={formation}>
-            {formation}
-          </option>
+          <option key={formation} value={formation}>{formation}</option>
         ))}
       </select>
       {formationRequirement && (
-        <p>
-          Starting XI needs: GK {startingCountsByPosition.GK}/{formationRequirement.GK}, DEF{" "}
-          {startingCountsByPosition.DEF}/{formationRequirement.DEF}, MID {startingCountsByPosition.MID}/
-          {formationRequirement.MID}, FWD {startingCountsByPosition.FWD}/{formationRequirement.FWD}
+        <p className="formation-status">
+          GK {startingCountsByPosition.GK}/{formationRequirement.GK} · DEF{" "}
+          {startingCountsByPosition.DEF}/{formationRequirement.DEF} · MID {startingCountsByPosition.MID}/
+          {formationRequirement.MID} · FWD {startingCountsByPosition.FWD}/{formationRequirement.FWD}
         </p>
       )}
 
       <h2>Starting XI</h2>
-      <ul>
+      <ul className="squad-list">
         {starters.map(({ player }) => (
           <li key={player.id}>
-            {player.name} ({player.position}) <button onClick={() => handleToggleStarting(player.id, false)}>Move to Bench</button>
+            <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
+            <span className="badge">{player.position}</span>
+            <button style={{ marginLeft: "auto" }} onClick={() => handleToggleStarting(player.id, false)}>
+              → Bench
+            </button>
           </li>
         ))}
       </ul>
 
       <h2>Bench</h2>
-      <ul>
+      <ul className="squad-list">
         {bench.map(({ player }) => {
           const blockedReason = toggleStartingError(player);
           return (
             <li key={player.id}>
-              {player.name} ({player.position}){" "}
-              <button onClick={() => handleToggleStarting(player.id, true)} disabled={!!blockedReason} title={blockedReason ?? ""}>
-                Move to Starting
+              <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
+              <span className="badge">{player.position}</span>
+              <button
+                style={{ marginLeft: "auto" }}
+                onClick={() => handleToggleStarting(player.id, true)}
+                disabled={!!blockedReason}
+                title={blockedReason ?? ""}
+              >
+                → Starting
               </button>
             </li>
           );
@@ -340,34 +367,36 @@ export default function SquadBuilderPage() {
       </ul>
 
       <h2>Captaincy</h2>
-      <label>
-        Captain:{" "}
-        <select value={captainPlayerId} onChange={(event) => setCaptainPlayerId(event.target.value)}>
-          <option value="">Choose captain</option>
-          {starters.map(({ player }) => (
-            <option key={player.id} value={player.id}>
-              {player.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Vice-Captain:{" "}
-        <select value={viceCaptainPlayerId} onChange={(event) => setViceCaptainPlayerId(event.target.value)}>
-          <option value="">Choose vice-captain</option>
-          {starters.map(({ player }) => (
-            <option key={player.id} value={player.id}>
-              {player.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="captaincy-row">
+        <label>
+          Captain
+          <select value={captainPlayerId} onChange={(event) => setCaptainPlayerId(event.target.value)}>
+            <option value="">Choose captain</option>
+            {starters.map(({ player }) => (
+              <option key={player.id} value={player.id}>{player.name}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Vice-Captain
+          <select value={viceCaptainPlayerId} onChange={(event) => setViceCaptainPlayerId(event.target.value)}>
+            <option value="">Choose vice-captain</option>
+            {starters.map(({ player }) => (
+              <option key={player.id} value={player.id}>{player.name}</option>
+            ))}
+          </select>
+        </label>
+      </div>
 
-      <div>
-        <button onClick={handleSave} disabled={isSaving}>
-          Save
+      <div style={{ marginTop: "1.5rem", display: "flex", flexDirection: "column", gap: "0.5rem", maxWidth: 200 }}>
+        <button className="btn-primary" onClick={handleSave} disabled={isSaving}>
+          Save squad
         </button>
-        {saveMessage && <p>{saveMessage}</p>}
+        {saveMessage && (
+          <p className={`msg ${saveMessage.includes("saved") ? "msg-success" : "msg-error"}`}>
+            {saveMessage}
+          </p>
+        )}
       </div>
     </main>
   );

@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../client";
 import { gameweeks, playerScores } from "../schema";
 import type { PlayerScore, PlayerScoreBreakdown } from "../../domain";
@@ -44,19 +44,29 @@ export async function findManyByPlayerIds(
     .orderBy(desc(gameweeks.number));
 }
 
-/** Replaces every PlayerScore row for a Match — delete-then-insert keeps re-running idempotent. */
-export async function replaceForMatch(matchId: string, scores: PlayerScore[]): Promise<void> {
-  await db.delete(playerScores).where(eq(playerScores.matchId, matchId));
+/** Upserts PlayerScore rows for a Match — idempotent on (playerId, matchId), safe to re-run. */
+export async function replaceForMatch(_matchId: string, scores: PlayerScore[]): Promise<void> {
   if (scores.length === 0) return;
-  await db.insert(playerScores).values(
-    scores.map((score) => ({
-      id: score.id,
-      playerId: score.playerId,
-      matchId: score.matchId,
-      gameweekId: score.gameweekId,
-      breakdown: score.breakdown,
-      totalPoints: score.totalPoints,
-      calculatedAt: score.calculatedAt,
-    })),
-  );
+  await db
+    .insert(playerScores)
+    .values(
+      scores.map((score) => ({
+        id: score.id,
+        playerId: score.playerId,
+        matchId: score.matchId,
+        gameweekId: score.gameweekId,
+        breakdown: score.breakdown,
+        totalPoints: score.totalPoints,
+        calculatedAt: score.calculatedAt,
+      })),
+    )
+    .onConflictDoUpdate({
+      target: [playerScores.playerId, playerScores.matchId],
+      set: {
+        gameweekId: sql`excluded.gameweek_id`,
+        breakdown: sql`excluded.breakdown`,
+        totalPoints: sql`excluded.total_points`,
+        calculatedAt: sql`excluded.calculated_at`,
+      },
+    });
 }

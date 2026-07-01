@@ -68,25 +68,141 @@ For example:
 
 Those edge cases consume a disproportionate amount of development time.
 
-Break it into 3 milestones.
-Milestone 1 (2–3 weeks) Playable internally.
+
+Milestone 0 — COMPLETED. Playable internally.
     Login
     Create league
     Join league
     Build squad
     Save lineup
-No scoring.
-
-Milestone 2 (3–5 weeks) Game actually works.
-    Data import
+    Leaderboard
     Transfers
-    Locking
-    Scoring
-    Leaderboards
+    Player detail
+    (No scoring in this milestone.)
 
-Milestone 3 (2–4 weeks) Production ready.
+Milestone 1 — Active. Game actually works.
+    Build order: do not skip ahead — complete these top to bottom.
+
+    Dev testing without burning API quota (follow this order strictly):
+        [done] Strategy 1: src/db/seedMatchStats.ts (npm run seed:match-stats) — inserts a
+            synthetic Arsenal 2-0 Chelsea match, runs the full scoring cascade, and asserts
+            11 hand-computed expected values (all passing). Zero API calls. Verified 2026-06-30.
+        Strategy 2: Recorded fixture files + OfflineFootballDataProvider.
+            One-time ~4-6 API calls to capture real response shapes, then zero forever.
+            Validates the import layer (importMatchData, status mapping, own-goal attribution).
+            Wire these captured fixtures as vitest regression files in Milestone 2. Do this second.
+        Strategy 3: Single targeted live smoke test (≤10 real API calls, one-time only).
+            Reserved for pre-Milestone 3 launch confirmation — never routine dev, never CI.
+            This is the only run that proves auth, base URL, and real data flow end-to-end.
+            Do this last.
+
+    Scoring engine correctness:
+        [done] playerScores unique constraint on (playerId, matchId) — migration 0004, applied
+        [done] Switch replaceForMatch to upsert
+
+    Locking — API-level enforcement (currently client-side only, P0):
+        [done] assertPlayersNotLocked guard added to makeTransfer
+        [ ] setTeamRoster and setTeamLineup — blocked on open product question: diff semantics
+            for a save that includes a locked player with unchanged status (see item 8)
+
+    Race condition P0 fixes:
+        [done] makeTransfer: wrapped in db.transaction() with FOR UPDATE lock on team row;
+            added missing budget-negative check; DbOrTx threading through three repositories
+        [done] incrementBankedFreeTransferCount: single atomic
+            UPDATE ... SET banked_free_transfer_count = LEAST(banked_free_transfer_count + $1, $2)
+
+    Monthly price-update formula:
+        Decide the formula (ownership-based? form-based? transfer-volume-based?)
+        Implement in runMonthlyPriceUpdate.ts
+
+    First live worker cycle run:
+        [ ] Run npm run db:migrate (migrations 0003 + 0004) against real DB
+        [ ] Watch npm run dev:worker manually with real API key to confirm roster import,
+            fixture discovery, and a no-op live-poll tick all succeed
+            Use a 2024 season fixture — 2026 season data not yet populated on API-Football
+
+    See remaining-gaps-todo.md items: 1, 4, 8, 9
+
+Milestone 2 — Pre-production hardening. (Between game-works and production-ready.)
+    Build order: complete Milestone 1 in full before starting here.
+
+    Test suite:
+        Add vitest (fits the Next.js + tsx stack already in use)
+        Cover calculatePlayerScores, calculateTeamScores (captain/VC fallback), and
+        updateStandings (tiebreaker order) first — highest scoring-engine risk per ROADMAP
+        Wire Strategy 2 recorded fixtures as regression files for import-layer coverage
+
+    Race condition P1/P2 fixes:
+        Add UNIQUE(league_id, user_id) to teams table + upsert-or-409 in joinLeague
+        providerPollState.getOrCreate: INSERT ... ON CONFLICT DO NOTHING then re-SELECT
+        updateStandings: wrap read+compute in REPEATABLE READ transaction
+
+    Auth hardening:
+        Swap StubAuthProvider for real credentials (Cognito — write CognitoAuthProvider,
+        branch in createAuthProviderFromEnv.ts; no handler changes needed)
+        Gate read endpoints behind auth (cookie-based sessions for Next.js server components —
+        getTeam, getAvailableTransfers, getLeague, getPlayer, searchPlayers, getLeagueStandings
+        currently work with no token at all)
+
+    Open design decisions:
+        Confirmation-pass correction: decide whether a late VAR correction re-opens finalized
+        standings (currently it recalculates PlayerScore rows only, not TeamScore/LeagueStanding)
+        Roster diff semantics: define what happens when setTeamRoster/setTeamLineup is submitted
+        with locked players whose values are unchanged vs. changed
+
+    See remaining-gaps-todo.md items: 3, 7, 9 (P1-joins + P2)
+
+Milestone 3 — Production ready.
+    Build order: complete Milestone 2 in full before starting here.
+
+    Deployment infra (AWS — CDK or Serverless Framework)
     Admin tools
-    Testing
-    Monitoring
-    Performance
-    Bug fixing
+    Monitoring and alerting
+    Performance review
+    Beta testing and bug fixing
+    Full player roster hydration (requires paid API-Football plan —
+        re-add importPlayerRoster to hydratePlayerRosterOnce, tune FOOTBALL_DATA_REQUEST_DELAY_MS)
+    Revisit FOOTBALL_DATA_SEASON_YEAR once upcoming season data confirmed on API-Football
+    Pre-launch: run Strategy 3 (single live API-Football smoke test — only real-quota run
+        in the entire dev cycle)
+
+    See remaining-gaps-todo.md item: 6, and any open items carried forward
+
+Milestone 5 — Bonus Points: Game State Goals.
+    Build order: complete Milestone 3 in full before starting here.
+
+    Concept: goals that dramatically change the match outcome carry extra fantasy weight.
+    The exact base bonus/penalty values are TBD (see fantasy_league_v1_design.txt); the
+    framework below is fixed.
+
+    Scenarios:
+        Winning goal   — scorer + assister of the decisive winning goal get heavy bonus
+        Equalizing goal — scorer + assister of any goal that ties a deficit get heavy bonus
+        Losing goal    — GKs and DEFs of the conceding team, plus own-goal scorers, get
+                         heavy penalty for the goal that sealed their loss
+
+    Timing multiplier (applied to the bonus/penalty, not the base event points):
+        0–75 min:   1.0× (no boost)
+        76–80 min:  1.2×
+        81–85 min:  1.6×
+        86–90 min:  2.0×
+        90+ min:    2.5× (all added time and extra time beyond 90)
+
+    Open design decisions (must be resolved before implementation):
+        [ ] Exact base bonus/penalty values for each scenario
+        [x] "Equalizing goal" definition: ✅ only the final equalizer in a draw — mid-match
+            ties subsequently broken do not qualify
+        [ ] Losing-goal penalty scope: all GKs/DEFs on pitch at time of concession, or
+            starters only?
+        [ ] Own-goal as decisive goal: scorer takes the penalty; no assister; no positive
+            bonus (own goals cannot "win" for the scoring side)
+
+    Implementation tasks:
+        [ ] Extend PlayerMatchStat / match event tracking to record goal_minute and
+            compute goal_type (winning / equalizing / losing) post-match from score progression
+        [ ] Add applyGameStateBonus step to calculatePlayerScores, after base event scoring
+        [ ] Add timing multiplier helper (goalMinuteToTimingMultiplier) to domain/
+        [ ] Update seedMatchStats.ts to cover game-state bonus scenarios and assert expected
+            values for each time bracket
+        [ ] Add vitest coverage: all three scenarios × all five time brackets = 15 test cases
+            minimum; plus own-goal edge cases

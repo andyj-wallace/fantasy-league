@@ -5,6 +5,8 @@ export * from "./league";
 export * from "./team";
 export * from "./squadComposition";
 export * from "./player";
+export * from "./playerProfile";
+export * from "./playerPricing";
 export * from "./playerForm";
 export * from "./gameweek";
 export * from "./transfer";

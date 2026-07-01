@@ -29,6 +29,20 @@
       "when": 1782687464350,
       "tag": "0003_thin_imperial_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1782857033291,
+      "tag": "0004_high_psylocke",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1782863937835,
+      "tag": "0005_organic_nova",
+      "breakpoints": true
     }
   ]
 }

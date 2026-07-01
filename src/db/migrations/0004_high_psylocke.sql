@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "player_scores_player_id_match_id_idx" ON "player_scores" USING btree ("player_id","match_id");

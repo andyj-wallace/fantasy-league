@@ -37,12 +37,14 @@ export default function CreateLeaguePage() {
   return (
     <main>
       <h1>Create League</h1>
-      <form onSubmit={handleSubmit}>
-        <input name="name" placeholder="League name" required />
-        <input name="teamName" placeholder="Your team name (optional)" />
-        <button type="submit">Create</button>
-      </form>
-      {error && <p>{error}</p>}
+      <div className="card" style={{ maxWidth: 400 }}>
+        <form className="form-stack" onSubmit={handleSubmit}>
+          <input name="name" placeholder="League name" required />
+          <input name="teamName" placeholder="Your team name (optional)" />
+          <button className="btn-primary" type="submit">Create</button>
+        </form>
+        {error && <p className="msg msg-error" style={{ marginTop: "0.75rem" }}>{error}</p>}
+      </div>
     </main>
   );
 }

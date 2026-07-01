@@ -53,6 +53,8 @@ export default function LoginPage() {
       } else {
         setStep("displayName");
       }
+    } catch {
+      setError("Could not reach the server — make sure the API is running and try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -65,6 +67,8 @@ export default function LoginPage() {
     setIsSubmitting(true);
     try {
       await completeLogin(email, (formData.get("displayName") as string).trim());
+    } catch {
+      setError("Could not reach the server — make sure the API is running and try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -74,14 +78,16 @@ export default function LoginPage() {
     return (
       <main>
         <h1>Welcome!</h1>
-        <p>We haven't seen {email} before — what should we call you?</p>
-        <form onSubmit={handleDisplayNameSubmit}>
-          <input name="displayName" placeholder="Display name" required autoFocus />
-          <button type="submit" disabled={isSubmitting}>
-            Create account
-          </button>
-        </form>
-        {error && <p>{error}</p>}
+        <div className="card" style={{ maxWidth: 400 }}>
+          <p style={{ marginTop: 0 }}>We haven't seen {email} before — what should we call you?</p>
+          <form className="form-stack" onSubmit={handleDisplayNameSubmit}>
+            <input name="displayName" placeholder="Display name" required autoFocus />
+            <button className="btn-primary" type="submit" disabled={isSubmitting}>
+              Create account
+            </button>
+          </form>
+          {error && <p className="msg msg-error" style={{ marginTop: "0.75rem" }}>{error}</p>}
+        </div>
       </main>
     );
   }
@@ -89,13 +95,15 @@ export default function LoginPage() {
   return (
     <main>
       <h1>Login</h1>
-      <form onSubmit={handleEmailSubmit}>
-        <input name="email" type="email" placeholder="Email" required autoFocus />
-        <button type="submit" disabled={isSubmitting}>
-          Continue
-        </button>
-      </form>
-      {error && <p>{error}</p>}
+      <div className="card" style={{ maxWidth: 400 }}>
+        <form className="form-stack" onSubmit={handleEmailSubmit}>
+          <input name="email" type="email" placeholder="Email" required autoFocus />
+          <button className="btn-primary" type="submit" disabled={isSubmitting}>
+            Continue
+          </button>
+        </form>
+        {error && <p className="msg msg-error" style={{ marginTop: "0.75rem" }}>{error}</p>}
+      </div>
     </main>
   );
 }
