@@ -125,24 +125,42 @@ Milestone 1 — COMPLETED. Game actually works (2026-07-01).
 
 Milestone 2 — Pre-production hardening. (Between game-works and production-ready.)
     Build order: complete Milestone 1 in full before starting here.
+    In progress (2026-07-02): test suite + auth hardening done; race conditions + design
+    decisions still open.
 
     Test suite:
-        Add vitest (fits the Next.js + tsx stack already in use)
-        Cover calculatePlayerScores, calculateTeamScores (captain/VC fallback), and
-        updateStandings (tiebreaker order) first — highest scoring-engine risk per ROADMAP
-        Wire Strategy 2 recorded fixtures as regression files for import-layer coverage
+        [done] Added vitest (vitest.config.ts, npm test / npm run test:watch). Pure tests —
+            they mock the db/repositories barrel, so no Postgres needed. Tests co-located as
+            src/**/*.test.ts; shared fixture builders in src/testing/fixtures.ts.
+        [done] Covered calculatePlayerScores (full point table incl. GK/DEF-only clean sheet),
+            calculateTeamScores (captain 2x + vice fallback, bench counts directly), and
+            updateStandings (4-level tiebreaker + shared-rank/gap). Plus SignedTokenAuthProvider,
+            credentialValidation, loginRateLimiter. 50 tests, all green (2026-07-02).
+        [deferred] Wire Strategy 2 recorded fixtures as regression files for import-layer
+            coverage — belongs with the OfflineFootballDataProvider import-layer work, not the
+            scoring pass. Still open.
 
-    Race condition P1/P2 fixes:
+    Race condition P1/P2 fixes: (still open)
         Add UNIQUE(league_id, user_id) to teams table + upsert-or-409 in joinLeague
         providerPollState.getOrCreate: INSERT ... ON CONFLICT DO NOTHING then re-SELECT
         updateStandings: wrap read+compute in REPEATABLE READ transaction
 
     Auth hardening:
-        Swap StubAuthProvider for real credentials (Cognito — write CognitoAuthProvider,
-        branch in createAuthProviderFromEnv.ts; no handler changes needed)
-        Gate read endpoints behind auth (cookie-based sessions for Next.js server components —
-        getTeam, getAvailableTransfers, getLeague, getPlayer, searchPlayers, getLeagueStandings
-        currently work with no token at all)
+        [done] Signed, expiring session tokens — SignedTokenAuthProvider (HMAC over
+            {userId, exp} keyed on AUTH_TOKEN_SECRET) replaces the forgeable stub.<userId>.
+            Default in createAuthProviderFromEnv.ts; AUTH_PROVIDER=stub still available for
+            scripts/tests. (2026-07-02)
+        [done] Gated read endpoints behind requireAuth (getTeam, getAvailableTransfers,
+            getLeague, getPlayer, searchPlayers, getLeagueStandings). Consumers already used
+            authedFetch from client components except the player-detail page — converted it from
+            a server component to a client component so it carries the stored token (rather than
+            introducing cookie-based sessions this pass).
+        [done] Login/check-email input validation (credentialValidation.ts) + per-account and
+            per-IP rate limiting on /auth/login (loginRateLimiter.ts, in-memory sliding window;
+            per-instance — move to a shared store if scaled horizontally).
+        [deferred] Real credential check (Cognito). Login is still passwordless; only the token
+            is hardened. This is the CognitoAuthProvider implements AuthProvider swap in
+            createAuthProviderFromEnv.ts — no handler changes needed. Still open.
 
     Open design decisions:
         Confirmation-pass correction: decide whether a late VAR correction re-opens finalized

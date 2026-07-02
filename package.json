@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "dev:api": "tsx src/api/index.ts",
     "dev:worker": "tsx src/workers/index.ts",
     "dev:worker:price-update": "tsx src/workers/monthlyPriceUpdateIndex.ts",
@@ -23,7 +25,8 @@
     "@types/react-dom": "^19.2.3",
     "drizzle-kit": "^0.31.10",
     "tsx": "^4.22.4",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "vitest": "^4.1.9"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

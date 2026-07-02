@@ -1,8 +1,9 @@
 import { leagueStandingsRepository, teamsRepository, usersRepository } from "../../../db/repositories";
+import { requireAuth } from "../../auth";
 import { jsonResponse } from "../../httpResponse";
 import type { ApiHandler } from "../../types";
 
-export const getLeagueStandings: ApiHandler = async (event) => {
+export const getLeagueStandings: ApiHandler = requireAuth(async (event, _session) => {
   const leagueId = event.pathParameters?.leagueId ?? "";
   const gameweekId = event.queryStringParameters?.gameweekId;
 
@@ -26,4 +27,4 @@ export const getLeagueStandings: ApiHandler = async (event) => {
       };
     }),
   );
-};
+});

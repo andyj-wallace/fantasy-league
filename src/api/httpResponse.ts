@@ -27,3 +27,11 @@ export function unauthorizedResponse(message = "Missing or invalid session"): Ap
 export function forbiddenResponse(message = "Not allowed to modify this resource"): ApiHandlerResult {
   return jsonResponse(403, { message });
 }
+
+export function tooManyRequestsResponse(retryAfterSeconds: number, message = "Too many attempts, try again shortly"): ApiHandlerResult {
+  return {
+    statusCode: 429,
+    headers: { "content-type": "application/json", "retry-after": String(retryAfterSeconds) },
+    body: JSON.stringify({ message }),
+  };
+}

@@ -4,9 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-This repository currently contains **design/planning documents only** — there is no source code, package manifest, build tooling, linter, or test suite yet. Before assuming any commands (`npm install`, `npm test`, etc.) exist, check for a `package.json` or equivalent; if one isn't present, the project hasn't been scaffolded yet and you should ask the user how they want to start rather than guessing a stack.
+The project is scaffolded and Milestones 0–2 are complete. Stack: **Next.js + TypeScript** frontend (`src/app`), a **Node API** (`src/api`, handler-per-route, deployable to Lambda and served locally by `src/api/localServer.ts`), background **workers** (`src/workers`), and **PostgreSQL via Drizzle ORM** (`src/db`). Business logic lives in `src/domain`. The plain-text docs at the repo root remain the authoritative ruleset (see below).
 
-When implementation begins, update this file with real build/lint/test commands.
+Common commands (from `package.json`):
+- `npm run test` / `npm run test:watch` — vitest unit tests (pure; mock the `db/repositories` barrel, no Postgres needed). Config in `vitest.config.ts`; tests are co-located as `src/**/*.test.ts`. Shared fixture builders: `src/testing/fixtures.ts`.
+- `npm run typecheck` — `tsc --noEmit`.
+- `npm run dev:api` / `dev:worker` / `dev:web` — local API, worker, and Next.js dev server.
+- `npm run db:generate` / `db:migrate` — Drizzle migrations. Local Postgres via `docker-compose.yml`.
+- Env lives in `.env` (gitignored; template in `.env.example`). The API needs `AUTH_TOKEN_SECRET` for the default signed-token auth provider.
+
+Test coverage is currently focused on the scoring engine (`calculatePlayerScores`, `calculateTeamScores`, `updateStandings`) and the auth layer — the highest-risk areas. There is still no lint tooling.
 
 ## What the docs are and where to look
 

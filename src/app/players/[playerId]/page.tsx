@@ -1,4 +1,10 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { authedFetch } from "@/app/lib/apiFetch";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
+import { getStoredToken } from "@/app/lib/auth";
 import type { PlayerProfile, PlayerSeasonStatistics, PlayerWithStats } from "../../../domain";
 
 interface PlayerDetailResponse extends PlayerWithStats {
@@ -11,21 +17,50 @@ function describeRecentForm(player: PlayerWithStats): string {
   return player.recentFormPoints.join(", ");
 }
 
-export default async function PlayerDetailPage({
-  params,
-}: {
-  params: Promise<{ playerId: string }>;
-}) {
-  const { playerId } = await params;
-  const response = await fetch(`${getApiBaseUrl()}/players/${playerId}`, { cache: "no-store" });
-  if (!response.ok) {
+/** Client component (was a server component) so the gated GET /players/:id can carry the stored
+ * session token via authedFetch — server components can't read the localStorage token. */
+export default function PlayerDetailPage() {
+  const { playerId } = useParams<{ playerId: string }>();
+  const router = useRouter();
+  const [player, setPlayer] = useState<PlayerDetailResponse | null>(null);
+  const [notFound, setNotFound] = useState(false);
+
+  useEffect(() => {
+    if (!getStoredToken()) {
+      router.push("/login");
+      return;
+    }
+
+    authedFetch(`${getApiBaseUrl()}/players/${playerId}`)
+      .then((response) => {
+        if (!response.ok) {
+          setNotFound(true);
+          return null;
+        }
+        return response.json();
+      })
+      .then((result: PlayerDetailResponse | null) => {
+        if (result) setPlayer(result);
+      })
+      .catch(() => setNotFound(true));
+  }, [playerId, router]);
+
+  if (notFound) {
     return (
       <main>
         <h1>Player not found</h1>
       </main>
     );
   }
-  const player: PlayerDetailResponse = await response.json();
+
+  if (!player) {
+    return (
+      <main>
+        <p>Loading player…</p>
+      </main>
+    );
+  }
+
   const { profile, seasonStatistics } = player;
 
   return (

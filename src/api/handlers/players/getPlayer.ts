@@ -1,5 +1,6 @@
 import { playersRepository } from "../../../db/repositories";
 import { createFootballDataProviderFromEnv } from "../../../workers/apiFootballProvider";
+import { requireAuth } from "../../auth";
 import { jsonResponse, notFoundResponse } from "../../httpResponse";
 import type { ApiHandler } from "../../types";
 import { attachPlayerStats } from "./attachPlayerStats";
@@ -8,7 +9,7 @@ import { attachPlayerStats } from "./attachPlayerStats";
  * lookups below are scoped to when FOOTBALL_DATA_SEASON_YEAR isn't set. */
 const DEFAULT_SEASON_YEAR = 2024;
 
-export const getPlayer: ApiHandler = async (event) => {
+export const getPlayer: ApiHandler = requireAuth(async (event, _session) => {
   const playerId = event.pathParameters?.playerId ?? "";
   const player = await playersRepository.findById(playerId);
   if (!player) return notFoundResponse();
@@ -34,4 +35,4 @@ export const getPlayer: ApiHandler = async (event) => {
   }
 
   return jsonResponse(200, { ...playerWithStats, profile, seasonStatistics });
-};
+});

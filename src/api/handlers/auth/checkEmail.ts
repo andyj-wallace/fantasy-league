@@ -1,4 +1,5 @@
 import { usersRepository } from "../../../db/repositories";
+import { validateEmail } from "../../auth/credentialValidation";
 import { badRequestResponse, jsonResponse } from "../../httpResponse";
 import type { ApiHandler } from "../../types";
 
@@ -13,7 +14,8 @@ interface CheckEmailRequestBody {
  */
 export const checkEmail: ApiHandler = async (event) => {
   const body = JSON.parse(event.body ?? "{}") as CheckEmailRequestBody;
-  if (!body.email) return badRequestResponse("email is required");
+  const emailError = validateEmail(body.email);
+  if (emailError) return badRequestResponse(emailError);
 
   const existingUser = await usersRepository.findByEmail(body.email);
   return jsonResponse(200, { exists: existingUser !== null });

@@ -6,6 +6,7 @@ import {
   transfersRepository,
 } from "../../../db/repositories";
 import { isClubLocked, MAX_BANKED_FREE_TRANSFER_COUNT, POINTS_COST_PER_PAID_TRANSFER } from "../../../domain";
+import { requireAuth } from "../../auth";
 import { jsonResponse, notFoundResponse } from "../../httpResponse";
 import type { ApiHandler } from "../../types";
 import { attachPlayerStats } from "../players/attachPlayerStats";
@@ -16,7 +17,7 @@ import { attachPlayerStats } from "../players/attachPlayerStats";
  * gameweek, and the transfers already made this gameweek. Display-only for now — making a
  * transfer is still POST /teams/:teamId/transfers (see makeTransfer).
  */
-export const getAvailableTransfers: ApiHandler = async (event) => {
+export const getAvailableTransfers: ApiHandler = requireAuth(async (event, _session) => {
   const teamId = event.pathParameters?.teamId ?? "";
   const team = await teamsRepository.findById(teamId);
   if (!team) return notFoundResponse();
@@ -58,4 +59,4 @@ export const getAvailableTransfers: ApiHandler = async (event) => {
     roster,
     transfersThisGameweek: transfersThisGameweekWithNames,
   });
-};
+});

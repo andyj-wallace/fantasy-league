@@ -6,11 +6,11 @@ import {
   matchesRepository,
   playerMatchStatsRepository,
   playersRepository,
-} from "./db/repositories";
-import type { Match, PlayerMatchStat, PlayerPosition } from "./domain";
-import { calculatePlayerScores } from "./workers/calculatePlayerScores";
-import { calculateTeamScores } from "./workers/calculateTeamScores";
-import { updateStandings } from "./workers/updateStandings";
+} from "../db/repositories";
+import type { Match, PlayerMatchStat, PlayerPosition } from "../domain";
+import { calculatePlayerScores } from "../workers/calculatePlayerScores";
+import { calculateTeamScores } from "../workers/calculateTeamScores";
+import { updateStandings } from "../workers/updateStandings";
 
 /**
  * Seeds a 6-gameweek fantasy league MVP smoke test scenario:
