@@ -1,5 +1,5 @@
 import { and, eq, inArray, lte } from "drizzle-orm";
-import { db } from "../client";
+import { db, type DbOrTx } from "../client";
 import { gameweeks, matches, playerMatchStats } from "../schema";
 import type { PlayerMatchStat } from "../../domain";
 
@@ -57,9 +57,10 @@ export async function replaceForMatch(matchId: string, stats: PlayerMatchStat[])
 export async function sumGoalsScoredThroughGameweek(
   playerIds: string[],
   gameweekNumber: number,
+  tx?: DbOrTx,
 ): Promise<number> {
   if (playerIds.length === 0) return 0;
-  const rows = await db
+  const rows = await (tx ?? db)
     .select({ goalsScored: playerMatchStats.goalsScored })
     .from(playerMatchStats)
     .innerJoin(matches, eq(playerMatchStats.matchId, matches.id))

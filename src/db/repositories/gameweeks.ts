@@ -1,6 +1,6 @@
 import { asc, eq, ne, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { db } from "../client";
+import { db, type DbOrTx } from "../client";
 import { gameweeks, matches } from "../schema";
 import type { Gameweek } from "../../domain";
 
@@ -8,8 +8,8 @@ function toGameweek(row: typeof gameweeks.$inferSelect): Gameweek {
   return { id: row.id, number: row.number, deadlineAt: row.deadlineAt, status: row.status };
 }
 
-export async function findById(id: string): Promise<Gameweek | null> {
-  const [row] = await db.select().from(gameweeks).where(eq(gameweeks.id, id));
+export async function findById(id: string, tx?: DbOrTx): Promise<Gameweek | null> {
+  const [row] = await (tx ?? db).select().from(gameweeks).where(eq(gameweeks.id, id));
   return row ? toGameweek(row) : null;
 }
 

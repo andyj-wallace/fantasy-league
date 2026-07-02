@@ -1,5 +1,5 @@
 import { and, eq, lte } from "drizzle-orm";
-import { db } from "../client";
+import { db, type DbOrTx } from "../client";
 import { gameweeks, teamScores } from "../schema";
 import type { TeamScore } from "../../domain";
 
@@ -38,12 +38,14 @@ export async function replaceForGameweek(gameweekId: string, scores: TeamScore[]
   );
 }
 
-/** Cumulative season total for a Team through a given gameweek number — the basis of the leaderboard. */
+/** Cumulative season total for a Team through a given gameweek number — the basis of the leaderboard.
+ * Pass a `tx` to read within a caller-owned transaction (e.g. updateStandings' consistent snapshot). */
 export async function sumTotalPointsThroughGameweek(
   teamId: string,
   gameweekNumber: number,
+  tx?: DbOrTx,
 ): Promise<number> {
-  const rows = await db
+  const rows = await (tx ?? db)
     .select({ totalPoints: teamScores.totalPoints })
     .from(teamScores)
     .innerJoin(gameweeks, eq(teamScores.gameweekId, gameweeks.id))

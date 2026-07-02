@@ -43,6 +43,13 @@
       "when": 1782863937835,
       "tag": "0005_organic_nova",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782971204382,
+      "tag": "0006_pretty_sunset_bain",
+      "breakpoints": true
     }
   ]
 }

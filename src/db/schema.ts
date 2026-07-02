@@ -142,25 +142,31 @@ export const pendingConfirmationPasses = pgTable("pending_confirmation_passes", 
   dueAt: timestamp("due_at").notNull(),
 });
 
-export const teams = pgTable("teams", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  leagueId: uuid("league_id")
-    .notNull()
-    .references(() => leagues.id),
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id),
-  name: text("name").notNull(),
-  // Nullable: a Team exists from the moment a manager joins a league, before they've built a
-  // squad — formation/captain/vice-captain aren't chosen until the squad builder flow runs.
-  formation: startingFormationEnum("formation"),
-  captainPlayerId: uuid("captain_player_id").references(() => players.id),
-  viceCaptainPlayerId: uuid("vice_captain_player_id").references(() => players.id),
-  remainingBudgetInMillions: real("remaining_budget_in_millions").notNull(),
-  bankedFreeTransferCount: integer("banked_free_transfer_count").notNull().default(0),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+export const teams = pgTable(
+  "teams",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    leagueId: uuid("league_id")
+      .notNull()
+      .references(() => leagues.id),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    name: text("name").notNull(),
+    // Nullable: a Team exists from the moment a manager joins a league, before they've built a
+    // squad — formation/captain/vice-captain aren't chosen until the squad builder flow runs.
+    formation: startingFormationEnum("formation"),
+    captainPlayerId: uuid("captain_player_id").references(() => players.id),
+    viceCaptainPlayerId: uuid("vice_captain_player_id").references(() => players.id),
+    remainingBudgetInMillions: real("remaining_budget_in_millions").notNull(),
+    bankedFreeTransferCount: integer("banked_free_transfer_count").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  // Exactly one Team per user per league — the DB backstop for a double-submitted joinLeague
+  // (the handler also uses insertIfAbsent, but this makes the guarantee race-proof).
+  (table) => [uniqueIndex("teams_league_id_user_id_idx").on(table.leagueId, table.userId)],
+);
 
 /** One row per player on a Team's 16-man roster; isStarting distinguishes the XI from the bench. */
 export const teamRosterSlots = pgTable("team_roster_slots", {

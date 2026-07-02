@@ -28,6 +28,10 @@ export function forbiddenResponse(message = "Not allowed to modify this resource
   return jsonResponse(403, { message });
 }
 
+export function conflictResponse(message: string): ApiHandlerResult {
+  return jsonResponse(409, { message });
+}
+
 export function tooManyRequestsResponse(retryAfterSeconds: number, message = "Too many attempts, try again shortly"): ApiHandlerResult {
   return {
     statusCode: 429,

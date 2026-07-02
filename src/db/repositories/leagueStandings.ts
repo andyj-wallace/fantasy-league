@@ -1,5 +1,5 @@
 import { and, asc, desc, eq } from "drizzle-orm";
-import { db } from "../client";
+import { db, type DbOrTx } from "../client";
 import { gameweeks, leagueStandings } from "../schema";
 import type { LeagueStanding, LeagueStandingTiebreakerStats } from "../../domain";
 
@@ -16,17 +16,20 @@ function toLeagueStanding(row: typeof leagueStandings.$inferSelect): LeagueStand
   };
 }
 
-/** Replaces every LeagueStanding row for a (league, gameweek) pair — delete-then-insert keeps re-running idempotent. */
+/** Replaces every LeagueStanding row for a (league, gameweek) pair — delete-then-insert keeps re-running idempotent.
+ * Pass a `tx` so the write joins the same transaction as the reads that computed these rows (updateStandings). */
 export async function replaceForGameweek(
   leagueId: string,
   gameweekId: string,
   rows: LeagueStanding[],
+  tx?: DbOrTx,
 ): Promise<void> {
-  await db
+  const client = tx ?? db;
+  await client
     .delete(leagueStandings)
     .where(and(eq(leagueStandings.leagueId, leagueId), eq(leagueStandings.gameweekId, gameweekId)));
   if (rows.length === 0) return;
-  await db.insert(leagueStandings).values(
+  await client.insert(leagueStandings).values(
     rows.map((row) => ({
       id: row.id,
       leagueId: row.leagueId,

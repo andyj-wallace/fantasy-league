@@ -125,8 +125,9 @@ Milestone 1 — COMPLETED. Game actually works (2026-07-01).
 
 Milestone 2 — Pre-production hardening. (Between game-works and production-ready.)
     Build order: complete Milestone 1 in full before starting here.
-    In progress (2026-07-02): test suite + auth hardening done; race conditions + design
-    decisions still open.
+    In progress (2026-07-02): test suite, auth hardening, and P1/P2 race-condition fixes done.
+    Remaining: the two open design decisions below, plus the deferred Cognito swap and Strategy-2
+    import-layer regression fixtures.
 
     Test suite:
         [done] Added vitest (vitest.config.ts, npm test / npm run test:watch). Pure tests —
@@ -134,16 +135,23 @@ Milestone 2 — Pre-production hardening. (Between game-works and production-rea
             src/**/*.test.ts; shared fixture builders in src/testing/fixtures.ts.
         [done] Covered calculatePlayerScores (full point table incl. GK/DEF-only clean sheet),
             calculateTeamScores (captain 2x + vice fallback, bench counts directly), and
-            updateStandings (4-level tiebreaker + shared-rank/gap). Plus SignedTokenAuthProvider,
-            credentialValidation, loginRateLimiter. 50 tests, all green (2026-07-02).
+            updateStandings (4-level tiebreaker + shared-rank/gap + REPEATABLE READ transaction).
+            Plus SignedTokenAuthProvider, credentialValidation, loginRateLimiter. 51 tests, all
+            green (2026-07-02).
         [deferred] Wire Strategy 2 recorded fixtures as regression files for import-layer
             coverage — belongs with the OfflineFootballDataProvider import-layer work, not the
             scoring pass. Still open.
 
-    Race condition P1/P2 fixes: (still open)
-        Add UNIQUE(league_id, user_id) to teams table + upsert-or-409 in joinLeague
-        providerPollState.getOrCreate: INSERT ... ON CONFLICT DO NOTHING then re-SELECT
-        updateStandings: wrap read+compute in REPEATABLE READ transaction
+    Race condition P1/P2 fixes:
+        [done] UNIQUE(league_id, user_id) on teams (migration 0006) + teamsRepository.insertIfAbsent
+            (INSERT … ON CONFLICT DO NOTHING); joinLeague returns 409 on a duplicate join. Verified
+            with a concurrent double-submit → one 201 + one 409, one row. (2026-07-02)
+        [done] providerPollState.getOrCreate: SELECT-first (keeps any existing row), else INSERT a
+            fixed singleton id with ON CONFLICT DO NOTHING then re-SELECT — concurrent cold starts
+            can't create a second row. (2026-07-02)
+        [done] updateStandings: read+compute+write wrapped in a REPEATABLE READ transaction with tx
+            threaded through every read/write, so tiebreaker stats come from one consistent snapshot.
+            Verified via the 6-gameweek smoke seed + a unit test. (2026-07-02)
 
     Auth hardening:
         [done] Signed, expiring session tokens — SignedTokenAuthProvider (HMAC over

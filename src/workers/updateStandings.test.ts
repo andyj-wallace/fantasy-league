@@ -18,7 +18,12 @@ const mocks = vi.hoisted(() => ({
   findRosterSlots: vi.fn(),
   sumGoals: vi.fn(),
   replaceForGameweek: vi.fn(),
+  // Fake db.transaction: runs the callback with a placeholder tx and ignores the isolation-level
+  // config, so the whole read+compute+write block executes in-process against the mocked repos.
+  transaction: vi.fn(async (fn: (tx: unknown) => Promise<void>, _config?: unknown) => fn({})),
 }));
+
+vi.mock("../db/client", () => ({ db: { transaction: mocks.transaction } }));
 
 vi.mock("../db/repositories", () => ({
   gameweeksRepository: { findById: mocks.findGameweek },
@@ -144,6 +149,16 @@ describe("updateStandings — guards and shape", () => {
     await updateStandings(LEAGUE_ID, "missing");
 
     expect(mocks.replaceForGameweek).not.toHaveBeenCalled();
+  });
+
+  it("runs its read+compute+write inside a single transaction (consistent snapshot)", async () => {
+    await rank([
+      { teamId: "solo", totalPoints: 10, goalsScored: 0, bankedFreeTransferCount: 0, spentInMillions: 0 },
+    ]);
+
+    expect(mocks.transaction).toHaveBeenCalledTimes(1);
+    // The isolation level is passed as the second arg to db.transaction.
+    expect(mocks.transaction.mock.calls[0]![1]).toEqual({ isolationLevel: "repeatable read" });
   });
 
   it("carries totalPoints and tiebreaker stats onto each standing row", async () => {

@@ -63,8 +63,8 @@ export async function findByIdForUpdate(id: string, tx: DbOrTx): Promise<TeamRow
   return row ? toTeamRow(row) : null;
 }
 
-export async function findByLeagueId(leagueId: string): Promise<TeamRow[]> {
-  const rows = await db.select().from(teams).where(eq(teams.leagueId, leagueId));
+export async function findByLeagueId(leagueId: string, tx?: DbOrTx): Promise<TeamRow[]> {
+  const rows = await (tx ?? db).select().from(teams).where(eq(teams.leagueId, leagueId));
   return rows.map(toTeamRow);
 }
 
@@ -97,8 +97,8 @@ export async function findWithLeagueByUserId(userId: string): Promise<{ team: Te
   return rows.map((row) => ({ team: toTeamRow(row.team), league: toLeague(row.league) }));
 }
 
-export async function findRosterSlots(teamId: string): Promise<TeamRosterSlot[]> {
-  return db
+export async function findRosterSlots(teamId: string, tx?: DbOrTx): Promise<TeamRosterSlot[]> {
+  return (tx ?? db)
     .select({ playerId: teamRosterSlots.playerId, isStarting: teamRosterSlots.isStarting })
     .from(teamRosterSlots)
     .where(eq(teamRosterSlots.teamId, teamId));
@@ -142,6 +142,28 @@ export async function insert(input: NewTeamInput): Promise<Team> {
     })
     .returning();
   return toTeam(toTeamRow(row!), []);
+}
+
+/**
+ * Like insert, but returns null instead of creating a duplicate when this user already has a Team
+ * in this league (the teams_league_id_user_id_idx unique index). A single atomic INSERT … ON
+ * CONFLICT DO NOTHING — no read-then-insert window — so a double-submitted joinLeague can't create
+ * two teams for one manager. Used by joinLeague; createLeague keeps insert (first team, no race).
+ */
+export async function insertIfAbsent(input: NewTeamInput): Promise<Team | null> {
+  const [row] = await db
+    .insert(teams)
+    .values({
+      id: input.id,
+      leagueId: input.leagueId,
+      userId: input.userId,
+      name: input.name,
+      remainingBudgetInMillions: input.remainingBudgetInMillions,
+      bankedFreeTransferCount: input.bankedFreeTransferCount,
+    })
+    .onConflictDoNothing()
+    .returning();
+  return row ? toTeam(toTeamRow(row), []) : null;
 }
 
 /** Replaces a Team's roster and the resulting budget atomically. Pass an outer `tx` to
