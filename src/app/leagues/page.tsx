@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { authedFetch } from "@/app/lib/apiFetch";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { clearStoredSession, getStoredToken } from "@/app/lib/auth";
 import { TeamLeagueLinks } from "@/app/components/TeamLeagueLinks";
-import type { League, LeagueStanding } from "../../../domain";
+import type { League, LeagueStanding } from "../../domain";
 
 interface TeamSummary {
   id: string;
@@ -28,9 +28,21 @@ interface StandingEntry extends LeagueStanding {
 /** Landing page for a user who's in exactly one league — home redirects here instead of
  * showing a one-item list. Refetches /me/teams rather than adding a single-league API,
  * since that endpoint already returns everything this page needs. Also where a league's
- * Standings live now — folded in here instead of a separate /leaderboard page. */
+ * Standings live now — folded in here instead of a separate /leaderboard page.
+ * The league is addressed by a ?leagueId= query param rather than a path segment because the
+ * frontend deploys as a static export (see "Deployment (AWS)" in the architecture doc) — runtime
+ * UUIDs can't be enumerated as static paths at build time. The Suspense boundary is required for
+ * useSearchParams under static prerendering. */
 export default function LeaguePage() {
-  const { leagueId } = useParams<{ leagueId: string }>();
+  return (
+    <Suspense fallback={null}>
+      <LeaguePageContent />
+    </Suspense>
+  );
+}
+
+function LeaguePageContent() {
+  const leagueId = useSearchParams().get("leagueId") ?? "";
   const router = useRouter();
   const [teamWithLeague, setTeamWithLeague] = useState<TeamWithLeague | null>(null);
   const [standings, setStandings] = useState<StandingEntry[] | null>(null);

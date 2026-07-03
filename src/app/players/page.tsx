@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { authedFetch } from "@/app/lib/apiFetch";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { getStoredToken } from "@/app/lib/auth";
-import type { PlayerProfile, PlayerSeasonStatistics, PlayerWithStats } from "../../../domain";
+import type { PlayerProfile, PlayerSeasonStatistics, PlayerWithStats } from "../../domain";
 
 interface PlayerDetailResponse extends PlayerWithStats {
   profile: PlayerProfile | null;
@@ -18,9 +18,21 @@ function describeRecentForm(player: PlayerWithStats): string {
 }
 
 /** Client component (was a server component) so the gated GET /players/:id can carry the stored
- * session token via authedFetch — server components can't read the localStorage token. */
+ * session token via authedFetch — server components can't read the localStorage token.
+ * The player is addressed by a ?playerId= query param rather than a path segment because the
+ * frontend deploys as a static export (see "Deployment (AWS)" in the architecture doc) — runtime
+ * UUIDs can't be enumerated as static paths at build time. The Suspense boundary is required for
+ * useSearchParams under static prerendering. */
 export default function PlayerDetailPage() {
-  const { playerId } = useParams<{ playerId: string }>();
+  return (
+    <Suspense fallback={null}>
+      <PlayerDetailPageContent />
+    </Suspense>
+  );
+}
+
+function PlayerDetailPageContent() {
+  const playerId = useSearchParams().get("playerId") ?? "";
   const router = useRouter();
   const [player, setPlayer] = useState<PlayerDetailResponse | null>(null);
   const [notFound, setNotFound] = useState(false);
