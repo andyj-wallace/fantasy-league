@@ -41,6 +41,9 @@ npm run db:generate    # generate a new migration after editing src/db/schema.ts
 | `NEXT_PUBLIC_API_BASE_URL` | no | bundled into client-side JS by Next.js — never put secrets here |
 | `FOOTBALL_DATA_API_BASE_URL` | no | football data provider host, e.g. `https://v3.football.api-sports.io` |
 | `FOOTBALL_DATA_API_KEY` | yes | football data provider key, read only by the worker process, never the frontend |
+| `AUTH_TOKEN_SECRET` | yes | HMAC key for the default signed-token auth provider (local dev) |
+| `AUTH_PROVIDER` | no | unset = signed tokens (local dev); `cognito` = real credential check (deployed); `stub` = scripts/tests only |
+| `COGNITO_USER_POOL_ID`, `COGNITO_APP_CLIENT_ID` | no | only read when `AUTH_PROVIDER=cognito`; provisioned by the M3 CDK stack |
 
 Real values belong only in your local `.env` (gitignored, never committed). `.env.example` is a
 committed template — it should only ever hold placeholders for secret values, never the real
@@ -60,10 +63,11 @@ Decided 2026-07-03 (full rationale in
   distribution (API Gateway as a second origin), so the browser sees one domain and no CORS.
 - **API and workers** — Lambda behind API Gateway plus scheduled worker Lambdas, with Postgres on
   RDS, all in one CDK/Serverless stack alongside the frontend hosting.
-- Prerequisite before the frontend export works: the three dynamic UUID routes
-  (`/players/[playerId]`, `/leagues/[leagueId]`, `/teams/[teamId]/…`) must switch to query-string
-  params — runtime UUIDs can't be enumerated at static-export build time. Tracked under
-  Milestone 3 in `ROADMAP.txt`.
+- The frontend is export-ready (done 2026-07-03): dynamic pages are addressed by query params
+  (`/players?playerId=`, `/leagues?leagueId=`, `/teams/squad-builder?teamId=`,
+  `/teams/transfers?teamId=`) because runtime UUIDs can't be enumerated at static-export build
+  time, and `next.config.ts` sets `output: "export"` — `next build` emits the deployable site
+  to `./out`.
 
 ## Football data polling budget
 

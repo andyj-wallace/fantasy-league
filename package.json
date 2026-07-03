@@ -30,6 +30,7 @@
     "vitest": "^4.1.9"
   },
   "dependencies": {
+    "amazon-cognito-identity-js": "^6.3.18",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "next": "^16.2.9",

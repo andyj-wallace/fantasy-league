@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { authedFetch } from "@/app/lib/apiFetch";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
-import { clearStoredSession, getStoredToken } from "@/app/lib/auth";
+import { getStoredToken } from "@/app/lib/auth";
+import { logOut } from "@/app/lib/cognitoAuth";
 import { TeamLeagueLinks } from "@/app/components/TeamLeagueLinks";
 import type { League } from "../domain";
 
@@ -35,7 +36,7 @@ export default function HomePage() {
       .then((response) => response.json())
       .then((result: TeamWithLeague[]) => {
         if (result.length === 1) {
-          router.push(`/leagues/${result[0]!.league.id}`);
+          router.push(`/leagues?leagueId=${result[0]!.league.id}`);
           return;
         }
         setTeamsWithLeagues(result);
@@ -44,7 +45,7 @@ export default function HomePage() {
   }, [router]);
 
   function handleLogout() {
-    clearStoredSession();
+    logOut();
     setIsLoggedIn(false);
     setTeamsWithLeagues(null);
   }

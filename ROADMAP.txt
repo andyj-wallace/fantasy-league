@@ -125,10 +125,11 @@ Milestone 1 — COMPLETED. Game actually works (2026-07-01).
 
 Milestone 2 — Pre-production hardening. (Between game-works and production-ready.)
     Build order: complete Milestone 1 in full before starting here.
-    Nearly complete (2026-07-02): test suite, auth hardening, P1/P2 race-condition fixes, both
-    design decisions (resolved + implemented), and the Strategy-2 import-layer regression
-    fixtures are all done. Remaining: the deferred Cognito swap only (do at the M3 boundary,
-    closer to deployment).
+    COMPLETE (2026-07-03): test suite, auth hardening, P1/P2 race-condition fixes, both design
+    decisions (resolved + implemented), the Strategy-2 import-layer regression fixtures, and the
+    Cognito real-credential swap — the latter verified live end-to-end against a real user pool.
+    The only Cognito remainder is folding the pool into the M3 CDK stack and setting the Cognito
+    env in the deployed build — see the auth section below.
 
     Test suite:
         [done] Added vitest (vitest.config.ts, npm test / npm run test:watch). Pure tests —
@@ -172,9 +173,22 @@ Milestone 2 — Pre-production hardening. (Between game-works and production-rea
         [done] Login/check-email input validation (credentialValidation.ts) + per-account and
             per-IP rate limiting on /auth/login (loginRateLimiter.ts, in-memory sliding window;
             per-instance — move to a shared store if scaled horizontally).
-        [deferred] Real credential check (Cognito). Login is still passwordless; only the token
-            is hardened. This is the CognitoAuthProvider implements AuthProvider swap in
-            createAuthProviderFromEnv.ts — no handler changes needed. Still open.
+        [done 2026-07-03] Real credential check (Cognito), verified live end-to-end. Credential
+            model: users pick a unique handle (e.g. dondangles) + password at sign-up and log in
+            with handle OR verified email — runs on the alias-mode pool us-east-1_DBETCnAJP with
+            its no-secret SRP SPA client. CognitoAuthProvider (offline ID-token verification
+            against the pool's JWKS; creates the internal User on first verified email) selected
+            via AUTH_PROVIDER=cognito — no handler changes, as planned; 16 unit tests. Frontend
+            sign-up (handle/display name/email/password) / confirm / login / forgot-password
+            flow active in builds with NEXT_PUBLIC_COGNITO_* set, with transparent ID-token
+            refresh in authedFetch. E2E-verified via headless Chromium against the real pool:
+            handle sign-up → confirm → login by handle and by email alias → authed league
+            creation, plus bad/duplicate-handle rejections. Local dev keeps the signed-token
+            provider. Users table linked to Cognito identity (migration 0007): cognito_sub +
+            handle columns; sessions resolve by immutable sub first with email backfill, so an
+            email change can't mint a duplicate User. Remaining at M3: manage the pool in the
+            CDK stack and set the Cognito env in the deployed build (see remaining-gaps-todo.md
+            item 3).
 
     Design decisions — both RESOLVED 2026-07-02:
         [x] Confirmation-pass correction: no cascade. VAR corrections resolve during the match,
@@ -196,8 +210,12 @@ Milestone 3 — Production ready.
     Deployment infra (AWS — CDK or Serverless Framework)
         Frontend hosting decided 2026-07-03: CloudFront + S3 static export, not Amplify (see
         "Deployment (AWS)" in docs/Fantasy League Architecture.txt for the rationale).
-        Prerequisite task: switch the three dynamic UUID routes to query-string params
-        (useParams → useSearchParams) so `output: "export"` can build them.
+        [done 2026-07-03] Prerequisite: dynamic UUID routes switched to query-string params
+        (/leagues?leagueId=, /teams/squad-builder?teamId=, /teams/transfers?teamId=,
+        /players?playerId=) and `output: "export"` enabled — `next build` emits ./out.
+        Verified end-to-end: exported site served statically, full click-through (login →
+        league → squad builder → player detail → transfers deep link) against the local API
+        via headless Chromium, plus missing-param guards on all four pages.
         Route /api/* on the same CloudFront distribution to API Gateway — no CORS.
     Admin tools
     Monitoring and alerting

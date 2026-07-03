@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { authedFetch } from "@/app/lib/apiFetch";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
-import { PlayerNameTapTarget } from "../../../components/PlayerNameTapTarget";
+import { PlayerNameTapTarget } from "../../components/PlayerNameTapTarget";
 import {
   formationRequiredCounts,
   MAX_PLAYERS_PER_CLUB,
@@ -19,7 +19,7 @@ import {
   type StartingFormation,
   type Team,
   type TeamRosterSlot,
-} from "../../../../domain";
+} from "../../../domain";
 
 const ALL_POSITIONS: PlayerPosition[] = ["GK", "DEF", "MID", "FWD"];
 
@@ -28,8 +28,20 @@ function describeRecentForm(player: PlayerWithStats): string {
   return player.recentFormPoints.join(", ");
 }
 
+/** The team is addressed by a ?teamId= query param rather than a path segment because the
+ * frontend deploys as a static export (see "Deployment (AWS)" in the architecture doc) — runtime
+ * UUIDs can't be enumerated as static paths at build time. The Suspense boundary is required for
+ * useSearchParams under static prerendering. */
 export default function SquadBuilderPage() {
-  const { teamId } = useParams<{ teamId: string }>();
+  return (
+    <Suspense fallback={null}>
+      <SquadBuilderPageContent />
+    </Suspense>
+  );
+}
+
+function SquadBuilderPageContent() {
+  const teamId = useSearchParams().get("teamId") ?? "";
 
   const [team, setTeam] = useState<Team | null>(null);
   const [allPlayers, setAllPlayers] = useState<PlayerWithStats[]>([]);
@@ -49,11 +61,19 @@ export default function SquadBuilderPage() {
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
+    if (!teamId) {
+      setLoadError("No team specified — open the Squad Builder from your league page.");
+      return;
+    }
     Promise.all([
       authedFetch(`${getApiBaseUrl()}/teams/${teamId}`).then((response) => response.json()),
       authedFetch(`${getApiBaseUrl()}/players`).then((response) => response.json()),
     ])
       .then(([loadedTeam, players]: [Team, PlayerWithStats[]]) => {
+        if (!loadedTeam?.rosterSlots) {
+          setLoadError("Could not load this team — check the link and try again.");
+          return;
+        }
         setTeam(loadedTeam);
         setAllPlayers(players);
         setDraftRosterSlots(loadedTeam.rosterSlots);

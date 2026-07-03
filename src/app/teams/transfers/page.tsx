@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { authedFetch } from "@/app/lib/apiFetch";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
-import type { PlayerPosition, PlayerWithStats, Team } from "../../../../domain";
+import type { PlayerPosition, PlayerWithStats, Team } from "../../../domain";
 
 interface RosterEntry {
   id: string;
@@ -122,8 +122,20 @@ function TransferPicker({
   );
 }
 
+/** The team is addressed by a ?teamId= query param rather than a path segment because the
+ * frontend deploys as a static export (see "Deployment (AWS)" in the architecture doc) — runtime
+ * UUIDs can't be enumerated as static paths at build time. The Suspense boundary is required for
+ * useSearchParams under static prerendering. */
 export default function TransfersPage() {
-  const { teamId } = useParams<{ teamId: string }>();
+  return (
+    <Suspense fallback={null}>
+      <TransfersPageContent />
+    </Suspense>
+  );
+}
+
+function TransfersPageContent() {
+  const teamId = useSearchParams().get("teamId") ?? "";
 
   const [team, setTeam] = useState<Team | null>(null);
   const [available, setAvailable] = useState<AvailableTransfers | null>(null);
@@ -144,6 +156,10 @@ export default function TransfersPage() {
   }
 
   useEffect(() => {
+    if (!teamId) {
+      setLoadError("No team specified — open Transfers from your league page.");
+      return;
+    }
     loadData().catch(() => setLoadError("Could not load this team's transfers — try refreshing."));
   }, [teamId]);
 

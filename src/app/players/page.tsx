@@ -42,6 +42,10 @@ function PlayerDetailPageContent() {
       router.push("/login");
       return;
     }
+    if (!playerId) {
+      setNotFound(true);
+      return;
+    }
 
     authedFetch(`${getApiBaseUrl()}/players/${playerId}`)
       .then((response) => {

@@ -13,9 +13,9 @@ interface TeamSummary {
 export function TeamLeagueLinks({ team, league }: { team: TeamSummary; league: League }) {
   return (
     <>
-      <Link href={`/leagues/${league.id}`}>{league.name}</Link> — {team.name} (£{team.remainingBudgetInMillions}M
-      remaining) — <Link href={`/teams/${team.id}/squad-builder`}>Squad</Link>{" "}
-      <Link href={`/teams/${team.id}/transfers`}>Transfers</Link>
+      <Link href={`/leagues?leagueId=${league.id}`}>{league.name}</Link> — {team.name} (£{team.remainingBudgetInMillions}M
+      remaining) — <Link href={`/teams/squad-builder?teamId=${team.id}`}>Squad</Link>{" "}
+      <Link href={`/teams/transfers?teamId=${team.id}`}>Transfers</Link>
     </>
   );
 }

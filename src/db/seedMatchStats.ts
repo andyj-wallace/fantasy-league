@@ -180,10 +180,10 @@ async function main(): Promise<void> {
 
   // 5. Users, league, teams
   let userA = await usersRepository.findByEmail(USER_A_EMAIL);
-  if (!userA) userA = await usersRepository.insert({ id: randomUUID(), email: USER_A_EMAIL, displayName: "Seed User A", createdAt: new Date() });
+  if (!userA) userA = await usersRepository.insert({ id: randomUUID(), email: USER_A_EMAIL, displayName: "Seed User A", cognitoSub: null, handle: null, createdAt: new Date() });
 
   let userB = await usersRepository.findByEmail(USER_B_EMAIL);
-  if (!userB) userB = await usersRepository.insert({ id: randomUUID(), email: USER_B_EMAIL, displayName: "Seed User B", createdAt: new Date() });
+  if (!userB) userB = await usersRepository.insert({ id: randomUUID(), email: USER_B_EMAIL, displayName: "Seed User B", cognitoSub: null, handle: null, createdAt: new Date() });
 
   let league = await leaguesRepository.findByInviteCode(LEAGUE_INVITE_CODE);
   if (!league) {

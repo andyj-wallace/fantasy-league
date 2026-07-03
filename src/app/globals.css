@@ -141,6 +141,21 @@ button.btn-danger:hover:not(:disabled) {
   border-color: var(--color-danger-hover);
 }
 
+/* A button that reads as an inline link — for secondary auth actions like "Forgot password?" */
+button.btn-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-primary);
+  font-weight: 500;
+  white-space: normal;
+}
+
+button.btn-link:hover:not(:disabled) {
+  background: none;
+  text-decoration: underline;
+}
+
 /* ── Form elements ────────────────────────────────────────── */
 
 input,

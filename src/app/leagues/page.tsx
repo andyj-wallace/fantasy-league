@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { authedFetch } from "@/app/lib/apiFetch";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
-import { clearStoredSession, getStoredToken } from "@/app/lib/auth";
+import { getStoredToken } from "@/app/lib/auth";
+import { logOut } from "@/app/lib/cognitoAuth";
 import { TeamLeagueLinks } from "@/app/components/TeamLeagueLinks";
 import type { League, LeagueStanding } from "../../domain";
 
@@ -54,6 +55,10 @@ function LeaguePageContent() {
       router.push("/login");
       return;
     }
+    if (!leagueId) {
+      setError("No league specified — open a league from your home page.");
+      return;
+    }
 
     authedFetch(`${getApiBaseUrl()}/me/teams`)
       .then((response) => response.json())
@@ -74,7 +79,7 @@ function LeaguePageContent() {
   }, [leagueId, router]);
 
   function handleLogout() {
-    clearStoredSession();
+    logOut();
     router.push("/");
   }
 

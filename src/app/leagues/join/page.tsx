@@ -37,7 +37,7 @@ export default function JoinLeaguePage() {
       setError(body.message ?? "Could not join league — try again.");
       return;
     }
-    router.push(`/teams/${body.team.id}/squad-builder`);
+    router.push(`/teams/squad-builder?teamId=${body.team.id}`);
   }
 
   return (

@@ -31,7 +31,7 @@ export default function CreateLeaguePage() {
       setError(body.message ?? "Could not create league — try again.");
       return;
     }
-    router.push(`/teams/${body.team.id}/squad-builder`);
+    router.push(`/teams/squad-builder?teamId=${body.team.id}`);
   }
 
   return (

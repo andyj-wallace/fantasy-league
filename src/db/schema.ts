@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   integer,
@@ -50,12 +51,21 @@ export const playerAvailabilityStatusEnum = pgEnum("player_availability_status",
   "QUESTIONABLE",
 ]);
 
-export const users = pgTable("users", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  email: text("email").notNull().unique(),
-  displayName: text("display_name").notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export const users = pgTable(
+  "users",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    email: text("email").notNull().unique(),
+    displayName: text("display_name").notNull(),
+    /** Immutable Cognito account id (`sub` claim) — stable identity link; null pre-Cognito. */
+    cognitoSub: text("cognito_sub").unique(),
+    /** Unique login handle (the Cognito username) — unique case-insensitively, matching the
+     * pool's CaseSensitive=false username configuration. Null for local-dev users. */
+    handle: text("handle"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("users_handle_lower_idx").on(sql`lower(${table.handle})`)],
+);
 
 export const leagues = pgTable("leagues", {
   id: uuid("id").primaryKey().defaultRandom(),

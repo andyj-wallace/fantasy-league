@@ -2,6 +2,10 @@ import path from "node:path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Static export for the CloudFront + S3 deployment (see "Deployment (AWS)" in the architecture
+  // doc): `next build` emits a fully static site to ./out — there is no Next server in production.
+  // This is why dynamic pages are addressed by query params (?teamId=) instead of path segments.
+  output: "export",
   turbopack: {
     root: path.resolve(import.meta.dirname),
   },

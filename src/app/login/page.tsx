@@ -4,10 +4,19 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { setStoredSession } from "@/app/lib/auth";
+import { isCognitoAuthEnabled } from "@/app/lib/cognitoAuth";
+import { CognitoLoginFlow } from "./CognitoLoginFlow";
 
 type LoginStep = "email" | "displayName";
 
+/** Cognito-mode builds (NEXT_PUBLIC_COGNITO_* set — deployed envs) get the real email+password
+ * flow; local dev keeps the passwordless email login against the signed-token provider. */
 export default function LoginPage() {
+  if (isCognitoAuthEnabled()) return <CognitoLoginFlow />;
+  return <PasswordlessDevLoginFlow />;
+}
+
+function PasswordlessDevLoginFlow() {
   const [step, setStep] = useState<LoginStep>("email");
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);

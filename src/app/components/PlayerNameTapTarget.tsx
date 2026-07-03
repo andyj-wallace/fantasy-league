@@ -10,7 +10,7 @@ export function PlayerNameTapTarget({ playerId, playerName }: { playerId: string
   const router = useRouter();
 
   function navigateToPlayer() {
-    router.push(`/players/${playerId}`);
+    router.push(`/players?playerId=${playerId}`);
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLSpanElement>) {

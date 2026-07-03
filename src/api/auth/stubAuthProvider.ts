@@ -19,6 +19,8 @@ export class StubAuthProvider implements AuthProvider {
         id: randomUUID(),
         email: credentials.email,
         displayName: credentials.displayName || credentials.email.split("@")[0]!,
+        cognitoSub: null,
+        handle: null,
         createdAt: new Date(),
       }));
 
