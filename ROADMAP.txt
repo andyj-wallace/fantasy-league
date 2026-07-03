@@ -125,9 +125,10 @@ Milestone 1 — COMPLETED. Game actually works (2026-07-01).
 
 Milestone 2 — Pre-production hardening. (Between game-works and production-ready.)
     Build order: complete Milestone 1 in full before starting here.
-    In progress (2026-07-02): test suite, auth hardening, and P1/P2 race-condition fixes done.
-    Remaining: the two open design decisions below, plus the deferred Cognito swap and Strategy-2
-    import-layer regression fixtures.
+    Nearly complete (2026-07-02): test suite, auth hardening, P1/P2 race-condition fixes, both
+    design decisions (resolved + implemented), and the Strategy-2 import-layer regression
+    fixtures are all done. Remaining: the deferred Cognito swap only (do at the M3 boundary,
+    closer to deployment).
 
     Test suite:
         [done] Added vitest (vitest.config.ts, npm test / npm run test:watch). Pure tests —
@@ -138,9 +139,14 @@ Milestone 2 — Pre-production hardening. (Between game-works and production-rea
             updateStandings (4-level tiebreaker + shared-rank/gap + REPEATABLE READ transaction).
             Plus SignedTokenAuthProvider, credentialValidation, loginRateLimiter. 51 tests, all
             green (2026-07-02).
-        [deferred] Wire Strategy 2 recorded fixtures as regression files for import-layer
-            coverage — belongs with the OfflineFootballDataProvider import-layer work, not the
-            scoring pass. Still open.
+        [done] Strategy 2 recorded fixtures wired as import-layer regression tests (2026-07-02).
+            npm run record:fixtures captured real API-Football envelopes (season fixture list,
+            Tottenham 3-6 Liverpool players+events, injuries) into src/workers/__fixtures__/;
+            OfflineFootballDataProvider (FOOTBALL_DATA_PROVIDER=offline) replays them through
+            the real parsing paths. Regression tests cover gameweek bootstrap, status mapping,
+            externalId-keyed Match upserts, the players+events stat merge, and own-goal
+            attribution (synthetic event in apiFootballProvider.test.ts — the recorded fixture
+            has no own goal).
 
     Race condition P1/P2 fixes:
         [done] UNIQUE(league_id, user_id) on teams (migration 0006) + teamsRepository.insertIfAbsent
@@ -170,18 +176,29 @@ Milestone 2 — Pre-production hardening. (Between game-works and production-rea
             is hardened. This is the CognitoAuthProvider implements AuthProvider swap in
             createAuthProviderFromEnv.ts — no handler changes needed. Still open.
 
-    Open design decisions:
-        Confirmation-pass correction: decide whether a late VAR correction re-opens finalized
-        standings (currently it recalculates PlayerScore rows only, not TeamScore/LeagueStanding)
-        Roster diff semantics: define what happens when setTeamRoster/setTeamLineup is submitted
-        with locked players whose values are unchanged vs. changed
+    Design decisions — both RESOLVED 2026-07-02:
+        [x] Confirmation-pass correction: no cascade. VAR corrections resolve during the match,
+            not after it's marked completed, so a correction landing after the gameweek is
+            finalized is not a real scenario — the pass keeps recalculating PlayerScore rows only
+            and never re-opens TeamScore/LeagueStanding. Documented in confirmationPasses.ts.
+        [x] Roster diff semantics: partial apply. setTeamRoster/setTeamLineup now skip changes
+            touching locked players (the locked player keeps their current slot/captaincy) while
+            the rest of the save applies; each skip is returned in lockedChangeWarnings and shown
+            in the squad builder. If the skips leave the squad invalid (e.g. a locked player
+            couldn't be removed), the save is rejected naming the locked player. Transfers keep
+            the hard rejection — a transfer is atomic. Covered by handler unit tests.
 
-    See remaining-gaps-todo.md items: 3, 7, 9 (P1-joins + P2)
+    See remaining-gaps-todo.md item: 3 (Cognito swap)
 
 Milestone 3 — Production ready.
     Build order: complete Milestone 2 in full before starting here.
 
     Deployment infra (AWS — CDK or Serverless Framework)
+        Frontend hosting decided 2026-07-03: CloudFront + S3 static export, not Amplify (see
+        "Deployment (AWS)" in docs/Fantasy League Architecture.txt for the rationale).
+        Prerequisite task: switch the three dynamic UUID routes to query-string params
+        (useParams → useSearchParams) so `output: "export"` can build them.
+        Route /api/* on the same CloudFront distribution to API Gateway — no CORS.
     Admin tools
     Monitoring and alerting
     Performance review

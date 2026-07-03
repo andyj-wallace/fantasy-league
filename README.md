@@ -48,6 +48,23 @@ thing. Beyond local development (CI, staging, production), don't store secrets i
 inject them as environment variables at deploy time via AWS Secrets Manager or SSM Parameter
 Store.
 
+## Deployment (AWS)
+
+Decided 2026-07-03 (full rationale in
+[`docs/Fantasy League Architecture.txt`](docs/Fantasy%20League%20Architecture.txt) → "Deployment (AWS)"):
+
+- **Frontend** — static export (`next build` with `output: "export"`) to **S3 behind CloudFront**,
+  not Amplify. Every page is a client component with the session token in `localStorage`, so
+  there is no server-side rendering to host — Amplify's Next server adds cost and a second
+  deployment system for nothing. CloudFront also serves the API under `/api/*` on the same
+  distribution (API Gateway as a second origin), so the browser sees one domain and no CORS.
+- **API and workers** — Lambda behind API Gateway plus scheduled worker Lambdas, with Postgres on
+  RDS, all in one CDK/Serverless stack alongside the frontend hosting.
+- Prerequisite before the frontend export works: the three dynamic UUID routes
+  (`/players/[playerId]`, `/leagues/[leagueId]`, `/teams/[teamId]/…`) must switch to query-string
+  params — runtime UUIDs can't be enumerated at static-export build time. Tracked under
+  Milestone 3 in `ROADMAP.txt`.
+
 ## Football data polling budget
 
 The football data provider caps us at 100 requests/day (excluding its free account/quota-status

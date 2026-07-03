@@ -36,7 +36,7 @@ function mapProviderPositionLabel(label: string | null | undefined): PlayerPosit
   return POSITION_BY_PROVIDER_LABEL[label] ?? null;
 }
 
-interface ApiFootballEnvelope<T> {
+export interface ApiFootballEnvelope<T> {
   response: T;
   errors: unknown;
   paging?: { current: number; total: number };
@@ -177,7 +177,9 @@ export class ApiFootballProvider implements FootballDataProvider {
     this.coverageInjuries = coverage.injuries;
   }
 
-  private async request<T>(path: string, params: Record<string, string | number> = {}): Promise<ApiFootballEnvelope<T>> {
+  /** The single HTTP entry point every fetch method funnels through — protected so the offline
+   * and recording providers can substitute recorded response envelopes for the network. */
+  protected async request<T>(path: string, params: Record<string, string | number> = {}): Promise<ApiFootballEnvelope<T>> {
     const url = new URL(path, this.baseUrl);
     for (const [key, value] of Object.entries(params)) {
       url.searchParams.set(key, String(value));
@@ -427,14 +429,4 @@ export class ApiFootballProvider implements FootballDataProvider {
       redCards: statistics.cards.red ?? 0,
     };
   }
-}
-
-/** Builds the real provider from env vars. FOOTBALL_DATA_SEASON_YEAR is an initial fallback only —
- * the worker's monthly season sync overwrites it via setCurrentSeason() once the DB row is resolved. */
-export function createFootballDataProviderFromEnv(): FootballDataProvider {
-  const baseUrl = process.env.FOOTBALL_DATA_API_BASE_URL ?? "https://v3.football.api-sports.io";
-  const apiKey = process.env.FOOTBALL_DATA_API_KEY;
-  if (!apiKey) throw new Error("FOOTBALL_DATA_API_KEY is not set");
-  const seasonYear = Number(process.env.FOOTBALL_DATA_SEASON_YEAR ?? 2024);
-  return new ApiFootballProvider(baseUrl, apiKey, seasonYear);
 }

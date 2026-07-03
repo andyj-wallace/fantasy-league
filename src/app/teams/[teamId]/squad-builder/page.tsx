@@ -216,7 +216,21 @@ export default function SquadBuilderPage() {
       }
 
       setTeam(lineupBody);
-      setSaveMessage("Squad and lineup saved.");
+      const lockedChangeWarnings: string[] = [
+        ...(rosterBody.lockedChangeWarnings ?? []),
+        ...(lineupBody.lockedChangeWarnings ?? []),
+      ];
+      if (lockedChangeWarnings.length > 0) {
+        // A partial apply means the server kept locked players' current values — resync the
+        // draft to what was actually saved so the screen doesn't show the skipped changes.
+        setDraftRosterSlots(lineupBody.rosterSlots);
+        setSelectedFormation(lineupBody.formation ?? "");
+        setCaptainPlayerId(lineupBody.captainPlayerId ?? "");
+        setViceCaptainPlayerId(lineupBody.viceCaptainPlayerId ?? "");
+        setSaveMessage(`Squad and lineup saved, except locked players: ${lockedChangeWarnings.join("; ")}`);
+      } else {
+        setSaveMessage("Squad and lineup saved.");
+      }
     } finally {
       setIsSaving(false);
     }

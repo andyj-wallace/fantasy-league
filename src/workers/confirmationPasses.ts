@@ -6,12 +6,15 @@ import { resolvePlayerMatchStats } from "./importMatchData";
 /**
  * Re-polls any Match whose confirmation pass has come due (~45-60min after MATCH_COMPLETED,
  * per the Live-Match Polling Strategy in Fantasy League Architecture.txt), replacing its
- * PlayerMatchStat rows with the provider's latest (catching late VAR corrections) and
+ * PlayerMatchStat rows with the provider's latest (catching late provider stat corrections) and
  * recalculating that match's PlayerScore rows.
  *
- * Deliberately does not cascade into recalculateTeamScores/updateStandings for a gameweek that's
- * already been marked COMPLETED — re-opening finalized standings on a late correction is a
- * separate design question, tracked as a follow-up in docs/remaining-gaps-todo.md.
+ * Decided 2026-07-02: this pass never cascades into calculateTeamScores/updateStandings for a
+ * gameweek already marked COMPLETED. VAR corrections resolve during the match itself, so a
+ * correction landing after the whole gameweek is finalized is not a real scenario worth
+ * re-opening standings for. The pass remains a safety net for corrections that land while the
+ * gameweek is still open — those flow into calculateTeamScores/updateStandings naturally when
+ * processMatchDataChanges later marks the gameweek COMPLETED.
  */
 export async function runDueConfirmationPasses(provider: FootballDataProvider): Promise<void> {
   const duePasses = await pendingConfirmationPassesRepository.findDue(new Date());

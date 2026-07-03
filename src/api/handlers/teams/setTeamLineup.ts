@@ -10,6 +10,14 @@ interface SetTeamLineupRequestBody {
   viceCaptainPlayerId: string;
 }
 
+/**
+ * Saves a team's formation and captaincy with partial-apply semantics for locked players
+ * (decided 2026-07-02): a captain/vice-captain change onto a locked player is skipped — the
+ * current assignment is kept — while the rest of the save still applies. Each skipped change is
+ * reported in the response's lockedChangeWarnings. If the skips would leave the captain and
+ * vice-captain as the same player (e.g. a captain/vice swap where one side is locked), the save
+ * is rejected instead.
+ */
 export const setTeamLineup: ApiHandler = requireAuth(async (event, session) => {
   const teamId = event.pathParameters?.teamId ?? "";
   const body = JSON.parse(event.body ?? "{}") as SetTeamLineupRequestBody;
@@ -40,30 +48,52 @@ export const setTeamLineup: ApiHandler = requireAuth(async (event, session) => {
   const currentGameweek = await gameweeksRepository.findCurrent();
   const matchesThisGameweek = currentGameweek ? await matchesRepository.findByGameweekId(currentGameweek.id) : [];
 
+  let effectiveCaptainPlayerId = body.captainPlayerId;
+  let effectiveViceCaptainPlayerId = body.viceCaptainPlayerId;
+  const lockedChangeWarnings: string[] = [];
+
   if (matchesThisGameweek.length > 0) {
     const now = new Date();
 
     if (body.captainPlayerId !== team.captainPlayerId) {
       const newCaptain = allRosterPlayersById.get(body.captainPlayerId);
       if (newCaptain && isClubLocked(newCaptain.club, matchesThisGameweek, now)) {
-        return badRequestResponse(`${newCaptain.name} is locked — their match has already kicked off`);
+        if (!team.captainPlayerId) {
+          return badRequestResponse(`${newCaptain.name} is locked and there is no current captain to keep — choose an unlocked captain`);
+        }
+        effectiveCaptainPlayerId = team.captainPlayerId;
+        lockedChangeWarnings.push(`${newCaptain.name} is locked — captain unchanged`);
       }
     }
 
     if (body.viceCaptainPlayerId !== team.viceCaptainPlayerId) {
       const newViceCaptain = allRosterPlayersById.get(body.viceCaptainPlayerId);
       if (newViceCaptain && isClubLocked(newViceCaptain.club, matchesThisGameweek, now)) {
-        return badRequestResponse(`${newViceCaptain.name} is locked — their match has already kicked off`);
+        if (!team.viceCaptainPlayerId) {
+          return badRequestResponse(
+            `${newViceCaptain.name} is locked and there is no current vice-captain to keep — choose an unlocked vice-captain`,
+          );
+        }
+        effectiveViceCaptainPlayerId = team.viceCaptainPlayerId;
+        lockedChangeWarnings.push(`${newViceCaptain.name} is locked — vice-captain unchanged`);
       }
     }
   }
 
+  if (effectiveCaptainPlayerId === effectiveViceCaptainPlayerId) {
+    const collisionExplanation =
+      lockedChangeWarnings.length > 0
+        ? ` after skipping locked-player changes (${lockedChangeWarnings.join("; ")})`
+        : "";
+    return badRequestResponse(`captain and vice-captain must be different players${collisionExplanation}`);
+  }
+
   await teamsRepository.updateLineup(teamId, {
     formation: body.formation,
-    captainPlayerId: body.captainPlayerId,
-    viceCaptainPlayerId: body.viceCaptainPlayerId,
+    captainPlayerId: effectiveCaptainPlayerId,
+    viceCaptainPlayerId: effectiveViceCaptainPlayerId,
   });
 
   const updatedTeam = await teamsRepository.findFullTeamById(teamId);
-  return jsonResponse(200, updatedTeam);
+  return jsonResponse(200, { ...updatedTeam, lockedChangeWarnings });
 });

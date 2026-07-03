@@ -1,5 +1,5 @@
 import { playersRepository } from "../../../db/repositories";
-import { createFootballDataProviderFromEnv } from "../../../workers/apiFootballProvider";
+import { createFootballDataProviderFromEnv } from "../../../workers/createFootballDataProviderFromEnv";
 import { requireAuth } from "../../auth";
 import { jsonResponse, notFoundResponse } from "../../httpResponse";
 import type { ApiHandler } from "../../types";

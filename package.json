@@ -15,6 +15,7 @@
     "seed:mock": "tsx src/db/seedMock.ts",
     "seed:match-stats": "tsx src/db/seedMatchStats.ts",
     "hydrate:roster": "tsx src/workers/hydratePlayerRosterOnce.ts",
+    "record:fixtures": "tsx src/workers/recordProviderFixturesOnce.ts",
     "dev:stop": "lsof -ti tcp:3000,3001 | xargs kill -9"
   },
   "devDependencies": {

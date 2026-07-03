@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { createFootballDataProviderFromEnv } from "./apiFootballProvider";
+import { createFootballDataProviderFromEnv } from "./createFootballDataProviderFromEnv";
 import { startLocalWorkerScheduler } from "./localScheduler";
 
 const intervalMs = Number(process.env.WORKER_INTERVAL_MS ?? 60_000);

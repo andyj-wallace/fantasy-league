@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { playersRepository } from "../db/repositories";
-import { createFootballDataProviderFromEnv } from "./apiFootballProvider";
+import { createFootballDataProviderFromEnv } from "./createFootballDataProviderFromEnv";
 import { importAllPlayersForSeason } from "./importAllPlayersForSeason";
 
 /**

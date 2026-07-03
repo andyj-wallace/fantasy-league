@@ -1,0 +1,17 @@
+{
+  "recordedAt": "2026-07-03T03:22:46.110Z",
+  "seasonYear": 2024,
+  "recordedFixture": {
+    "externalId": "1208191",
+    "homeClub": "Tottenham",
+    "awayClub": "Liverpool",
+    "finalHomeScore": 3,
+    "finalAwayScore": 6,
+    "roundLabel": "Regular Season - 17"
+  },
+  "counts": {
+    "seasonFixtures": 380,
+    "fixturePlayerStats": 40,
+    "injuries": 3168
+  }
+}
