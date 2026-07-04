@@ -558,6 +558,19 @@ tbody tr:hover {
   background: #fafbfd;
 }
 
+/* ── Pagination controls under the player discovery table ── */
+
+.pagination-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
 /* ── Status messages ──────────────────────────────────────── */
 
 .msg {
@@ -801,6 +814,39 @@ tbody tr:hover {
   font-size: 0.85rem;
   color: var(--color-text-muted);
   margin: 0.3rem 0 0;
+}
+
+/* ── Builder row: lineup (right) + captaincy (left) side-by-side ── */
+
+.builder-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.5rem;
+  margin: 1.5rem 0;
+}
+
+.builder-row-captaincy {
+  flex: 0 1 280px;
+  min-width: 220px;
+  order: 1;
+}
+
+.builder-row-lineup {
+  flex: 1 1 420px;
+  min-width: 320px;
+  order: 2;
+}
+
+@media (max-width: 640px) {
+  .builder-row {
+    flex-direction: column;
+  }
+  .builder-row-captaincy,
+  .builder-row-lineup {
+    order: initial;
+    flex-basis: auto;
+    min-width: 0;
+  }
 }
 
 /* ── Invite row ───────────────────────────────────────────── */
