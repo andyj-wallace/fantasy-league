@@ -28,6 +28,11 @@ function describeCognitoError(error: unknown): string {
  * Cognito's standard `name` attribute, which the API's CognitoAuthProvider reads when it creates
  * the internal User on first login. Pre-verification steps (confirmation code, resend) address
  * the account by handle, since Cognito only activates the email alias after verification.
+ *
+ * Each step's <form> carries a distinct `key` so React remounts a fresh, empty form when the
+ * step changes instead of reconciling the uncontrolled inputs by position — without it, the
+ * masked sign-in password node gets reused as the sign-up Display-name text field and reveals
+ * the typed password in plain text.
  */
 export function CognitoLoginFlow() {
   const [step, setStep] = useState<CognitoLoginStep>("signIn");
@@ -108,7 +113,7 @@ export function CognitoLoginFlow() {
     await runSubmit(async () => {
       await confirmCognitoSignUp(accountIdentifier, (formData.get("confirmationCode") as string).trim());
       switchStep("signIn");
-      setNotice("Email confirmed — log in with your handle or email, and your password.");
+      setNotice("Email confirmed — log in with your username or email, and your password.");
     });
   }
 
@@ -149,8 +154,8 @@ export function CognitoLoginFlow() {
       <main>
         <h1>Create account</h1>
         <div className="card" style={{ maxWidth: 400 }}>
-          <form className="form-stack" onSubmit={handleSignUpSubmit}>
-            <input name="handle" placeholder="Handle (e.g. dondangles)" required autoFocus />
+          <form key="signUp" className="form-stack" onSubmit={handleSignUpSubmit}>
+            <input name="handle" placeholder="Username" required autoFocus />
             <input name="displayName" placeholder="Display name" required />
             <input name="email" type="email" placeholder="Email" required />
             <input name="password" type="password" placeholder="Password" required autoComplete="new-password" />
@@ -173,7 +178,7 @@ export function CognitoLoginFlow() {
           <p style={{ marginTop: 0 }}>
             Enter the confirmation code we emailed to {signUpEmail ?? "your email address"}.
           </p>
-          <form className="form-stack" onSubmit={handleConfirmSignUpSubmit}>
+          <form key="confirmSignUp" className="form-stack" onSubmit={handleConfirmSignUpSubmit}>
             <input name="confirmationCode" inputMode="numeric" placeholder="Confirmation code" required autoFocus />
             <button className="btn-primary" type="submit" disabled={isSubmitting}>Confirm</button>
           </form>
@@ -192,8 +197,8 @@ export function CognitoLoginFlow() {
         <h1>Reset password</h1>
         <div className="card" style={{ maxWidth: 400 }}>
           <p style={{ marginTop: 0 }}>Request a reset code, then enter it with your new password.</p>
-          <form className="form-stack" onSubmit={handleResetPasswordSubmit}>
-            <input name="identifier" placeholder="Email or handle" defaultValue={accountIdentifier} required />
+          <form key="resetPassword" className="form-stack" onSubmit={handleResetPasswordSubmit}>
+            <input name="identifier" placeholder="Email or username" defaultValue={accountIdentifier} required />
             <input name="confirmationCode" inputMode="numeric" placeholder="Reset code (leave empty to request one)" />
             <input name="newPassword" type="password" placeholder="New password" autoComplete="new-password" />
             <button className="btn-primary" type="submit" disabled={isSubmitting}>
@@ -213,8 +218,8 @@ export function CognitoLoginFlow() {
     <main>
       <h1>Login</h1>
       <div className="card" style={{ maxWidth: 400 }}>
-        <form className="form-stack" onSubmit={handleSignInSubmit}>
-          <input name="identifier" placeholder="Email or handle" required autoFocus />
+        <form key="signIn" className="form-stack" onSubmit={handleSignInSubmit}>
+          <input name="identifier" placeholder="Email or username" required autoFocus />
           <input name="password" type="password" placeholder="Password" required autoComplete="current-password" />
           <button className="btn-primary" type="submit" disabled={isSubmitting}>Log in</button>
         </form>

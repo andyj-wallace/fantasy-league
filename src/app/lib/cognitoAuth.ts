@@ -20,8 +20,9 @@ import { clearStoredSession, setStoredSession } from "./auth";
  * unchanged.
  *
  * Cognito mode is a build-time switch: it is active when both NEXT_PUBLIC_COGNITO_* values are
- * present (deployed builds), and absent in local dev, where the legacy email-only login against
- * the signed-token provider remains the flow.
+ * present — the standard setup everywhere, local dev included (set them in .env alongside
+ * AUTH_PROVIDER=cognito for the API). Unsetting them falls back to the legacy passwordless
+ * email login against the signed-token provider, for offline work and scripts.
  */
 const userPoolId = process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID;
 const appClientId = process.env.NEXT_PUBLIC_COGNITO_APP_CLIENT_ID;
@@ -50,7 +51,7 @@ const HANDLE_FORMAT = /^[a-zA-Z0-9._-]{3,30}$/;
  * login (the pool is configured CaseSensitive=false). */
 export function validateHandleFormat(handle: string): string | null {
   if (!HANDLE_FORMAT.test(handle)) {
-    return "Handles are 3–30 characters using letters, numbers, dots, dashes or underscores — no spaces or @.";
+    return "Usernames are 3–30 characters using letters, numbers, dots, dashes or underscores — no spaces or @.";
   }
   return null;
 }

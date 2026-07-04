@@ -41,9 +41,22 @@ npm run db:generate    # generate a new migration after editing src/db/schema.ts
 | `NEXT_PUBLIC_API_BASE_URL` | no | bundled into client-side JS by Next.js — never put secrets here |
 | `FOOTBALL_DATA_API_BASE_URL` | no | football data provider host, e.g. `https://v3.football.api-sports.io` |
 | `FOOTBALL_DATA_API_KEY` | yes | football data provider key, read only by the worker process, never the frontend |
-| `AUTH_TOKEN_SECRET` | yes | HMAC key for the default signed-token auth provider (local dev) |
-| `AUTH_PROVIDER` | no | unset = signed tokens (local dev); `cognito` = real credential check (deployed); `stub` = scripts/tests only |
-| `COGNITO_USER_POOL_ID`, `COGNITO_APP_CLIENT_ID` | no | only read when `AUTH_PROVIDER=cognito`; provisioned by the M3 CDK stack |
+| `AUTH_TOKEN_SECRET` | yes | HMAC key for the signed-token fallback auth provider |
+| `AUTH_PROVIDER` | no | `cognito` = real credential check (the standard mode, local dev included); unset = passwordless signed-token fallback for offline work; `stub` = scripts/tests only |
+| `COGNITO_USER_POOL_ID`, `COGNITO_APP_CLIENT_ID` | no | the user pool the API verifies ID tokens against; read when `AUTH_PROVIDER=cognito` |
+| `NEXT_PUBLIC_COGNITO_USER_POOL_ID`, `NEXT_PUBLIC_COGNITO_APP_CLIENT_ID` | no | switches the frontend to the real handle+email+password login; pool/client ids are public by design |
+
+### Logging in during development
+
+With Cognito mode on (the standard `.env` setup), the login page is the real sign-up/sign-in
+flow: pick a handle, verify your email with the emailed code, log in with handle **or** email.
+Two dev conveniences:
+
+- A user created before Cognito (or via the fallback provider) is **linked automatically** on
+  first Cognito login with the same email — teams and leagues carry over.
+- For throwaway test accounts with fake emails, confirm them from the CLI instead of an inbox:
+  `aws cognito-idp admin-confirm-sign-up --user-pool-id <pool> --username <handle>` followed by
+  `aws cognito-idp admin-update-user-attributes --user-pool-id <pool> --username <handle> --user-attributes Name=email_verified,Value=true`.
 
 Real values belong only in your local `.env` (gitignored, never committed). `.env.example` is a
 committed template — it should only ever hold placeholders for secret values, never the real

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { setStoredSession } from "@/app/lib/auth";
@@ -9,11 +9,32 @@ import { CognitoLoginFlow } from "./CognitoLoginFlow";
 
 type LoginStep = "email" | "displayName";
 
-/** Cognito-mode builds (NEXT_PUBLIC_COGNITO_* set — deployed envs) get the real email+password
- * flow; local dev keeps the passwordless email login against the signed-token provider. */
+/** Cognito-mode builds (NEXT_PUBLIC_COGNITO_* set — the standard setup, local dev included) get
+ * the real handle+email+password flow; unsetting those vars falls back to the passwordless
+ * email login against the signed-token provider, for offline work and scripts. */
 export default function LoginPage() {
-  if (isCognitoAuthEnabled()) return <CognitoLoginFlow />;
-  return <PasswordlessDevLoginFlow />;
+  return (
+    <>
+      <SessionExpiredNotice />
+      {isCognitoAuthEnabled() ? <CognitoLoginFlow /> : <PasswordlessDevLoginFlow />}
+    </>
+  );
+}
+
+/** Shown when authedFetch got a 401 and redirected here with ?expired=1 — tells the user why
+ * they're suddenly looking at the login screen. Read via window.location (not useSearchParams)
+ * to avoid needing a Suspense boundary for this one flag under static prerendering. */
+function SessionExpiredNotice() {
+  const [wasRedirectedAfterExpiry, setWasRedirectedAfterExpiry] = useState(false);
+  useEffect(() => {
+    setWasRedirectedAfterExpiry(new URLSearchParams(window.location.search).get("expired") === "1");
+  }, []);
+  if (!wasRedirectedAfterExpiry) return null;
+  return (
+    <div style={{ maxWidth: 920, margin: "1.5rem auto -1rem", padding: "0 1.25rem" }}>
+      <p className="msg msg-info">Your session expired — please log in again.</p>
+    </div>
+  );
 }
 
 function PasswordlessDevLoginFlow() {

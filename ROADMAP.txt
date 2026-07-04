@@ -184,7 +184,9 @@ Milestone 2 — Pre-production hardening. (Between game-works and production-rea
             refresh in authedFetch. E2E-verified via headless Chromium against the real pool:
             handle sign-up → confirm → login by handle and by email alias → authed league
             creation, plus bad/duplicate-handle rejections. Local dev keeps the signed-token
-            provider. Users table linked to Cognito identity (migration 0007): cognito_sub +
+            provider (offline fallback when the Cognito env is unset; since 2026-07-03 local dev
+            runs the real Cognito flow by default). Users table linked to Cognito identity
+            (migration 0007): cognito_sub +
             handle columns; sessions resolve by immutable sub first with email backfill, so an
             email change can't mint a duplicate User. Remaining at M3: manage the pool in the
             CDK stack and set the Cognito env in the deployed build (see remaining-gaps-todo.md

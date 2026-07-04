@@ -4,10 +4,10 @@ import { SignedTokenAuthProvider } from "./signedTokenAuthProvider";
 import { StubAuthProvider } from "./stubAuthProvider";
 
 /** Mirrors createFootballDataProviderFromEnv — the one place that decides which AuthProvider
- * implementation is live. The default is SignedTokenAuthProvider (HMAC-signed, expiring tokens)
- * for local development; `AUTH_PROVIDER=cognito` selects the real credential check against an
- * AWS Cognito user pool (deployed environments, once the M3 CDK stack provisions the pool);
- * `AUTH_PROVIDER=stub` selects the forgeable placeholder, only for local scripts/tests. */
+ * implementation is live. `AUTH_PROVIDER=cognito` is the standard mode everywhere, local dev
+ * included: the real credential check against the AWS Cognito user pool. With AUTH_PROVIDER
+ * unset the fallback is SignedTokenAuthProvider (HMAC-signed, expiring tokens; passwordless) for
+ * offline work; `AUTH_PROVIDER=stub` selects the forgeable placeholder, only for scripts/tests. */
 export function createAuthProviderFromEnv(): AuthProvider {
   if (process.env.AUTH_PROVIDER === "stub") {
     return new StubAuthProvider();
