@@ -23,6 +23,9 @@
   --color-error-bg: #fef2f2;
   --color-error-border: #fecaca;
   --color-error-text: #991b1b;
+  --color-warning-bg: #fffbeb;
+  --color-warning-border: #fde68a;
+  --color-warning-text: #92400e;
   --color-info-bg: #eff6ff;
   --color-info-border: #bfdbfe;
   --color-info-text: #1d4ed8;
@@ -49,6 +52,41 @@ main {
   max-width: 920px;
   margin: 0 auto;
   padding: 2rem 1.25rem 5rem;
+}
+
+/* ── App header: the global chrome bar ────────────────────── */
+
+.app-header {
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.app-header-inner {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 0.6rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.app-header-brand {
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+  color: var(--color-text);
+}
+
+.app-header-brand:hover {
+  text-decoration: none;
+  color: var(--color-primary);
+}
+
+.app-header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 h1 {
@@ -312,7 +350,11 @@ label {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  overflow: hidden;
+  /* Wide tables scroll sideways inside the card instead of clipping — the roster and standings
+     tables run 7 columns and must stay usable on phones. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
   box-shadow: var(--shadow-card);
 }
 
@@ -374,6 +416,13 @@ tbody tr:hover {
   background: var(--color-info-bg);
   border: 1px solid var(--color-info-border);
   color: var(--color-info-text);
+}
+
+/* A partial outcome — some of the save applied, some didn't. Distinct from success and error. */
+.msg-warning {
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+  color: var(--color-warning-text);
 }
 
 /* ── Badges ───────────────────────────────────────────────── */
@@ -584,6 +633,82 @@ tbody tr:hover {
   padding: 0.2rem 0.6rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
+}
+
+/* ── Player discovery header: heading + always-visible budget chip ── */
+
+.discovery-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: var(--color-bg);
+  padding: 0.4rem 0;
+  margin-top: 1.6rem;
+}
+
+.discovery-header h2 {
+  margin: 0;
+}
+
+.budget-chip {
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.25rem 0.7rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-info-bg);
+  color: var(--color-info-text);
+  white-space: nowrap;
+}
+
+/* ── Gameweek banner: season-context strip on every game screen ── */
+
+.gameweek-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.6rem 1rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 0.9rem;
+  margin: 0 0 1rem;
+  box-shadow: var(--shadow-card);
+}
+
+.gameweek-banner-deadline {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+/* ── Fixture list: match rows on the league page ─────────── */
+
+.fixture-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.fixture-teams {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.fixture-score {
+  font-weight: 700;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.fixture-kickoff {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  margin-left: auto;
 }
 
 /* ── Section divider ──────────────────────────────────────── */

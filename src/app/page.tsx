@@ -6,8 +6,8 @@ import { useRouter } from "next/navigation";
 import { authedFetch } from "@/app/lib/apiFetch";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { getStoredToken } from "@/app/lib/auth";
-import { logOut } from "@/app/lib/cognitoAuth";
 import { TeamLeagueLinks } from "@/app/components/TeamLeagueLinks";
+import { LoadingState } from "@/app/components/LoadingState";
 import type { League } from "../domain";
 
 interface TeamSummary {
@@ -19,6 +19,8 @@ interface TeamSummary {
 interface TeamWithLeague {
   team: TeamSummary;
   league: League;
+  rosterCount: number;
+  isLineupSet: boolean;
 }
 
 export default function HomePage() {
@@ -44,13 +46,7 @@ export default function HomePage() {
       .catch(() => setError("Could not load your leagues — try refreshing."));
   }, [router]);
 
-  function handleLogout() {
-    logOut();
-    setIsLoggedIn(false);
-    setTeamsWithLeagues(null);
-  }
-
-  if (isLoggedIn === null) return null;
+  if (isLoggedIn === null) return <LoadingState />;
 
   if (!isLoggedIn) {
     return (
@@ -63,25 +59,20 @@ export default function HomePage() {
     );
   }
 
-  if (!error && teamsWithLeagues === null) return null;
+  if (!error && teamsWithLeagues === null) return <LoadingState label="Loading your leagues…" />;
 
   return (
     <main>
-      <div className="page-header">
-        <h1>Fantasy League</h1>
-        <button className="btn-danger" onClick={handleLogout}>Log out</button>
-      </div>
-
-      <h2>Your leagues</h2>
+      <h1>Your leagues</h1>
       {error && <p className="msg msg-error">{error}</p>}
       {!error && teamsWithLeagues!.length === 0 && (
         <p>You haven't joined or created a league yet.</p>
       )}
       {!error && teamsWithLeagues!.length > 0 && (
         <ul className="league-list">
-          {teamsWithLeagues!.map(({ team, league }) => (
+          {teamsWithLeagues!.map(({ team, league, rosterCount, isLineupSet }) => (
             <li key={team.id}>
-              <TeamLeagueLinks team={team} league={league} />
+              <TeamLeagueLinks team={team} league={league} rosterCount={rosterCount} isLineupSet={isLineupSet} />
             </li>
           ))}
         </ul>

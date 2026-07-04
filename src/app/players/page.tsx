@@ -2,9 +2,11 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { authedFetch } from "@/app/lib/apiFetch";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { getStoredToken } from "@/app/lib/auth";
+import { LoadingState } from "@/app/components/LoadingState";
 import type { PlayerProfile, PlayerSeasonStatistics, PlayerWithStats } from "../../domain";
 
 interface PlayerDetailResponse extends PlayerWithStats {
@@ -25,7 +27,7 @@ function describeRecentForm(player: PlayerWithStats): string {
  * useSearchParams under static prerendering. */
 export default function PlayerDetailPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<LoadingState label="Loading player…" />}>
       <PlayerDetailPageContent />
     </Suspense>
   );
@@ -65,22 +67,24 @@ function PlayerDetailPageContent() {
     return (
       <main>
         <h1>Player not found</h1>
+        <p>
+          <Link href="/">← Back to your leagues</Link>
+        </p>
       </main>
     );
   }
 
-  if (!player) {
-    return (
-      <main>
-        <p>Loading player…</p>
-      </main>
-    );
-  }
+  if (!player) return <LoadingState label="Loading player…" />;
 
   const { profile, seasonStatistics } = player;
 
   return (
     <main>
+      <p style={{ marginBottom: "0.35rem" }}>
+        <button className="btn-link" onClick={() => router.back()}>
+          ← Back
+        </button>
+      </p>
       <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
         {profile?.photoUrl && (
           <img

@@ -2,11 +2,19 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { authedFetch } from "@/app/lib/apiFetch";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { PlayerNameTapTarget } from "../../components/PlayerNameTapTarget";
+import { GameweekBanner } from "@/app/components/GameweekBanner";
+import { AvailabilityBadge } from "@/app/components/AvailabilityBadge";
+import { LoadingState } from "@/app/components/LoadingState";
+import { useCurrentGameweek } from "@/app/lib/useCurrentGameweek";
+import { useRequireAuth } from "@/app/lib/useRequireAuth";
+import { formatDayAndTime } from "@/app/lib/formatDate";
 import {
   formationRequiredCounts,
+  isClubLocked,
   MAX_PLAYERS_PER_CLUB,
   REQUIRED_GOALKEEPER_COUNT,
   SQUAD_SIZE,
@@ -14,6 +22,7 @@ import {
   VALID_STARTING_FORMATIONS,
   deriveStartingFormation,
   validateSquadComposition,
+  type Match,
   type PlayerPosition,
   type PlayerWithStats,
   type StartingFormation,
@@ -28,19 +37,28 @@ function describeRecentForm(player: PlayerWithStats): string {
   return player.recentFormPoints.join(", ");
 }
 
+/** Save feedback in three distinct shapes: full success, partial apply (the server skipped
+ * changes to locked players and returned lockedChangeWarnings), and outright rejection. Kept
+ * structured rather than as one string so partial saves can't be misread as clean successes. */
+interface SaveResult {
+  kind: "success" | "partial" | "error";
+  messages: string[];
+}
+
 /** The team is addressed by a ?teamId= query param rather than a path segment because the
  * frontend deploys as a static export (see "Deployment (AWS)" in the architecture doc) — runtime
  * UUIDs can't be enumerated as static paths at build time. The Suspense boundary is required for
  * useSearchParams under static prerendering. */
 export default function SquadBuilderPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<LoadingState />}>
       <SquadBuilderPageContent />
     </Suspense>
   );
 }
 
 function SquadBuilderPageContent() {
+  useRequireAuth();
   const teamId = useSearchParams().get("teamId") ?? "";
 
   const [team, setTeam] = useState<Team | null>(null);
@@ -57,8 +75,10 @@ function SquadBuilderPageContent() {
   const [clubFilter, setClubFilter] = useState("");
   const [maxPriceFilter, setMaxPriceFilter] = useState("");
 
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [saveResult, setSaveResult] = useState<SaveResult | null>(null);
+  const [isConfirmingSave, setIsConfirmingSave] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const currentGameweek = useCurrentGameweek();
 
   useEffect(() => {
     if (!teamId) {
@@ -117,6 +137,35 @@ function SquadBuilderPageContent() {
 
   const clubs = useMemo(() => [...new Set(allPlayers.map((player) => player.club))].sort(), [allPlayers]);
 
+  const matchesThisGameweek: Match[] = useMemo(() => {
+    const gameweek = currentGameweek?.gameweek;
+    if (!gameweek) return [];
+    return currentGameweek.matches.map((match) => ({
+      id: match.id,
+      externalId: null,
+      gameweekId: gameweek.id,
+      homeClub: match.homeClub,
+      awayClub: match.awayClub,
+      kickoffAt: new Date(match.kickoffAt),
+      status: match.status,
+      finalHomeScore: match.finalHomeScore,
+      finalAwayScore: match.finalAwayScore,
+    }));
+  }, [currentGameweek]);
+
+  /** Same per-club kickoff locking the API enforces on save — surfaced here so users see a
+   * Locked badge before they hit "changes touching locked players" save warnings. */
+  function isPlayerLocked(player: PlayerWithStats): boolean {
+    return isClubLocked(player.club, matchesThisGameweek, new Date());
+  }
+
+  function lockedSinceLabel(player: PlayerWithStats): string | undefined {
+    const clubMatch = matchesThisGameweek.find(
+      (match) => match.homeClub === player.club || match.awayClub === player.club,
+    );
+    return clubMatch ? `Locked — match kicked off ${formatDayAndTime(clubMatch.kickoffAt)}` : undefined;
+  }
+
   const filteredPlayers = useMemo(() => {
     return allPlayers.filter((player) => {
       if (nameQuery && !player.name.toLowerCase().includes(nameQuery.toLowerCase())) return false;
@@ -142,14 +191,21 @@ function SquadBuilderPageContent() {
     return null;
   }
 
+  /** Any edit to the draft invalidates both the last save's feedback and a pending confirmation
+   * summary — the summary must always describe exactly what "Confirm save" would submit. */
+  function clearSaveFeedback() {
+    setSaveResult(null);
+    setIsConfirmingSave(false);
+  }
+
   function handleAddPlayer(player: PlayerWithStats) {
-    setSaveMessage(null);
+    clearSaveFeedback();
     if (addPlayerError(player)) return;
     setDraftRosterSlots((slots) => [...slots, { playerId: player.id, isStarting: false }]);
   }
 
   function handleRemovePlayer(playerId: string) {
-    setSaveMessage(null);
+    clearSaveFeedback();
     setDraftRosterSlots((slots) => slots.filter((slot) => slot.playerId !== playerId));
     if (captainPlayerId === playerId) setCaptainPlayerId("");
     if (viceCaptainPlayerId === playerId) setViceCaptainPlayerId("");
@@ -165,7 +221,7 @@ function SquadBuilderPageContent() {
   }
 
   function handleToggleStarting(playerId: string, makeStarting: boolean) {
-    setSaveMessage(null);
+    clearSaveFeedback();
     if (makeStarting) {
       const player = playersById.get(playerId);
       if (!player || toggleStartingError(player)) return;
@@ -175,41 +231,68 @@ function SquadBuilderPageContent() {
     );
   }
 
+  /** Switching formation keeps every starter who still fits the new shape's per-position counts
+   * (demoting the latest-added overflow to the bench) instead of clearing the whole lineup —
+   * changing strategy shouldn't mean rebuilding the starting XI from scratch. */
   function handleFormationChange(formation: StartingFormation | "") {
-    setSaveMessage(null);
+    clearSaveFeedback();
     setSelectedFormation(formation);
-    setDraftRosterSlots((slots) => slots.map((slot) => ({ ...slot, isStarting: false })));
-    setCaptainPlayerId("");
-    setViceCaptainPlayerId("");
+    if (!formation) return;
+
+    const requiredCounts = formationRequiredCounts(formation);
+    const keptStarterCounts: Record<PlayerPosition, number> = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
+    const updatedSlots = draftRosterSlots.map((slot) => {
+      if (!slot.isStarting) return slot;
+      const player = playersById.get(slot.playerId);
+      if (!player) return { ...slot, isStarting: false };
+      if (keptStarterCounts[player.position] < requiredCounts[player.position]) {
+        keptStarterCounts[player.position]++;
+        return slot;
+      }
+      return { ...slot, isStarting: false };
+    });
+    setDraftRosterSlots(updatedSlots);
+
+    const stillStartingPlayerIds = new Set(updatedSlots.filter((slot) => slot.isStarting).map((slot) => slot.playerId));
+    if (captainPlayerId && !stillStartingPlayerIds.has(captainPlayerId)) setCaptainPlayerId("");
+    if (viceCaptainPlayerId && !stillStartingPlayerIds.has(viceCaptainPlayerId)) setViceCaptainPlayerId("");
   }
 
-  /** Saves the roster then the lineup in one click — sequential because setTeamLineup derives
-   * the formation from whatever roster is already persisted, so the roster save must land first. */
-  async function handleSave() {
-    setSaveMessage(null);
+  /** Step one of saving: run every client-side validation, then show the confirmation summary
+   * instead of submitting straight away — accidental saves of a half-finished squad were a
+   * smoke-test finding. The actual submit happens in handleConfirmedSave. */
+  function handleRequestSave() {
+    setSaveResult(null);
 
     const squadError = validateSquadComposition(draftSquadPlayers.map(({ player }) => player));
     if (squadError) {
-      setSaveMessage(squadError);
+      setSaveResult({ kind: "error", messages: [squadError] });
       return;
     }
     if (!selectedFormation) {
-      setSaveMessage("Pick a formation first.");
+      setSaveResult({ kind: "error", messages: ["Pick a formation first."] });
       return;
     }
     if (deriveStartingFormation(starters.map(({ player }) => player)) !== selectedFormation) {
-      setSaveMessage(`Starting XI must fill every ${selectedFormation} slot before saving.`);
+      setSaveResult({ kind: "error", messages: [`Starting XI must fill every ${selectedFormation} slot before saving.`] });
       return;
     }
     if (!captainPlayerId || !viceCaptainPlayerId) {
-      setSaveMessage("Pick a captain and vice-captain.");
+      setSaveResult({ kind: "error", messages: ["Pick a captain and vice-captain."] });
       return;
     }
     if (captainPlayerId === viceCaptainPlayerId) {
-      setSaveMessage("Captain and vice-captain must be different players.");
+      setSaveResult({ kind: "error", messages: ["Captain and vice-captain must be different players."] });
       return;
     }
 
+    setIsConfirmingSave(true);
+  }
+
+  /** Saves the roster then the lineup — sequential because setTeamLineup derives the formation
+   * from whatever roster is already persisted, so the roster save must land first. */
+  async function handleConfirmedSave() {
+    setIsConfirmingSave(false);
     setIsSaving(true);
     try {
       const rosterResponse = await authedFetch(`${getApiBaseUrl()}/teams/${teamId}/roster`, {
@@ -219,7 +302,7 @@ function SquadBuilderPageContent() {
       });
       const rosterBody = await rosterResponse.json();
       if (!rosterResponse.ok) {
-        setSaveMessage(rosterBody.message ?? "Could not save squad.");
+        setSaveResult({ kind: "error", messages: [rosterBody.message ?? "Could not save squad."] });
         return;
       }
 
@@ -231,7 +314,10 @@ function SquadBuilderPageContent() {
       const lineupBody = await lineupResponse.json();
       if (!lineupResponse.ok) {
         setTeam(rosterBody);
-        setSaveMessage(`Squad saved, but lineup failed: ${lineupBody.message ?? "unknown error"}`);
+        setSaveResult({
+          kind: "error",
+          messages: [`Squad saved, but lineup failed: ${lineupBody.message ?? "unknown error"}`],
+        });
         return;
       }
 
@@ -247,9 +333,9 @@ function SquadBuilderPageContent() {
         setSelectedFormation(lineupBody.formation ?? "");
         setCaptainPlayerId(lineupBody.captainPlayerId ?? "");
         setViceCaptainPlayerId(lineupBody.viceCaptainPlayerId ?? "");
-        setSaveMessage(`Squad and lineup saved, except locked players: ${lockedChangeWarnings.join("; ")}`);
+        setSaveResult({ kind: "partial", messages: lockedChangeWarnings });
       } else {
-        setSaveMessage("Squad and lineup saved.");
+        setSaveResult({ kind: "success", messages: ["Squad and lineup saved."] });
       }
     } finally {
       setIsSaving(false);
@@ -257,11 +343,16 @@ function SquadBuilderPageContent() {
   }
 
   if (loadError) return <main><p className="msg msg-error">{loadError}</p></main>;
-  if (!team) return null;
+  if (!team) return <LoadingState label="Loading your squad…" />;
 
   return (
     <main>
+      <p style={{ marginBottom: "0.35rem" }}>
+        <Link href={`/leagues?leagueId=${team.leagueId}`}>← Back to league</Link>
+      </p>
       <h1>Squad Builder — {team.name}</h1>
+
+      <GameweekBanner current={currentGameweek} />
 
       <div className="stat-row">
         <div className="stat-tile">
@@ -278,7 +369,15 @@ function SquadBuilderPageContent() {
         </div>
       </div>
 
-      <h2>Player Discovery</h2>
+      <div className="discovery-header">
+        <h2>Player Discovery</h2>
+        <span className="budget-chip">£{remainingBudgetInMillions.toFixed(1)}M left</span>
+      </div>
+      <p>
+        All available players this season. Pick {SQUAD_SIZE}: {REQUIRED_GOALKEEPER_COUNT} goalkeepers +{" "}
+        {SQUAD_SIZE - REQUIRED_GOALKEEPER_COUNT} outfield, max {MAX_PLAYERS_PER_CLUB} per club, within £
+        {STARTING_SQUAD_BUDGET_IN_MILLIONS}M.
+      </p>
       <div className="filter-row">
         <input placeholder="Search by name" value={nameQuery} onChange={(event) => setNameQuery(event.target.value)} />
         <select value={positionFilter} onChange={(event) => setPositionFilter(event.target.value as PlayerPosition | "")}>
@@ -320,7 +419,13 @@ function SquadBuilderPageContent() {
               const blockedReason = inSquad ? null : addPlayerError(player);
               return (
                 <tr key={player.id}>
-                  <td>{player.name}</td>
+                  <td>
+                    {player.name}{" "}
+                    {isPlayerLocked(player) && (
+                      <span className="badge badge-red" title={lockedSinceLabel(player)}>Locked</span>
+                    )}{" "}
+                    <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
+                  </td>
                   <td>{player.club}</td>
                   <td>{player.position}</td>
                   <td>£{player.priceInMillions}M</td>
@@ -348,6 +453,10 @@ function SquadBuilderPageContent() {
       </div>
 
       <h2>Formation</h2>
+      <p>
+        Formation numbers are DEF-MID-FWD for your starting XI — every formation also starts exactly 1
+        goalkeeper. Changing formation keeps starters that still fit the new shape.
+      </p>
       <select
         value={selectedFormation}
         onChange={(event) => handleFormationChange(event.target.value as StartingFormation | "")}
@@ -372,6 +481,10 @@ function SquadBuilderPageContent() {
           <li key={player.id}>
             <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
             <span className="badge">{player.position}</span>
+            {isPlayerLocked(player) && (
+              <span className="badge badge-red" title={lockedSinceLabel(player)}>Locked</span>
+            )}
+            <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
             <button style={{ marginLeft: "auto" }} onClick={() => handleToggleStarting(player.id, false)}>
               → Bench
             </button>
@@ -387,6 +500,10 @@ function SquadBuilderPageContent() {
             <li key={player.id}>
               <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
               <span className="badge">{player.position}</span>
+              {isPlayerLocked(player) && (
+                <span className="badge badge-red" title={lockedSinceLabel(player)}>Locked</span>
+              )}
+              <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
               <button
                 style={{ marginLeft: "auto" }}
                 onClick={() => handleToggleStarting(player.id, true)}
@@ -401,10 +518,17 @@ function SquadBuilderPageContent() {
       </ul>
 
       <h2>Captaincy</h2>
+      <p>Your captain scores double points. If they don't play, your vice-captain scores double instead.</p>
       <div className="captaincy-row">
         <label>
           Captain
-          <select value={captainPlayerId} onChange={(event) => setCaptainPlayerId(event.target.value)}>
+          <select
+            value={captainPlayerId}
+            onChange={(event) => {
+              clearSaveFeedback();
+              setCaptainPlayerId(event.target.value);
+            }}
+          >
             <option value="">Choose captain</option>
             {starters.map(({ player }) => (
               <option key={player.id} value={player.id}>{player.name}</option>
@@ -413,7 +537,13 @@ function SquadBuilderPageContent() {
         </label>
         <label>
           Vice-Captain
-          <select value={viceCaptainPlayerId} onChange={(event) => setViceCaptainPlayerId(event.target.value)}>
+          <select
+            value={viceCaptainPlayerId}
+            onChange={(event) => {
+              clearSaveFeedback();
+              setViceCaptainPlayerId(event.target.value);
+            }}
+          >
             <option value="">Choose vice-captain</option>
             {starters.map(({ player }) => (
               <option key={player.id} value={player.id}>{player.name}</option>
@@ -422,14 +552,61 @@ function SquadBuilderPageContent() {
         </label>
       </div>
 
-      <div style={{ marginTop: "1.5rem", display: "flex", flexDirection: "column", gap: "0.5rem", maxWidth: 200 }}>
-        <button className="btn-primary" onClick={handleSave} disabled={isSaving}>
-          Save squad
-        </button>
-        {saveMessage && (
-          <p className={`msg ${saveMessage.includes("saved") ? "msg-success" : "msg-error"}`}>
-            {saveMessage}
-          </p>
+      <div style={{ marginTop: "1.5rem", display: "flex", flexDirection: "column", gap: "0.75rem", maxWidth: 480 }}>
+        {!isConfirmingSave && (
+          <button className="btn-primary" onClick={handleRequestSave} disabled={isSaving} style={{ maxWidth: 200 }}>
+            Save squad
+          </button>
+        )}
+
+        {isConfirmingSave && (
+          <div className="card">
+            <strong>Confirm your squad</strong>
+            <ul style={{ margin: "0.5rem 0 0.75rem" }}>
+              <li>
+                {draftRosterSlots.length}/{SQUAD_SIZE} players — £{totalSpentInMillions.toFixed(1)}M of £
+                {STARTING_SQUAD_BUDGET_IN_MILLIONS}M
+              </li>
+              <li>Formation: {selectedFormation}</li>
+              <li>Captain: {playersById.get(captainPlayerId)?.name ?? "—"}</li>
+              <li>Vice-captain: {playersById.get(viceCaptainPlayerId)?.name ?? "—"}</li>
+            </ul>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button className="btn-primary" onClick={handleConfirmedSave} disabled={isSaving}>
+                Confirm save
+              </button>
+              <button onClick={() => setIsConfirmingSave(false)} disabled={isSaving}>
+                Keep editing
+              </button>
+            </div>
+          </div>
+        )}
+
+        {saveResult?.kind === "success" && (
+          <div className="msg msg-success">
+            <p style={{ margin: 0, color: "inherit" }}>{saveResult.messages.join(" ")}</p>
+            <div className="link-list" style={{ marginTop: "0.5rem" }}>
+              <Link href={`/leagues?leagueId=${team.leagueId}`}>Back to league</Link>
+              <Link href={`/teams/transfers?teamId=${team.id}`}>Transfers</Link>
+            </div>
+          </div>
+        )}
+
+        {saveResult?.kind === "partial" && (
+          <div className="msg msg-warning">
+            <p style={{ margin: 0, color: "inherit" }}>
+              Saved — but these changes were skipped because players are locked:
+            </p>
+            <ul style={{ margin: "0.35rem 0 0", paddingLeft: "1.1rem", listStyle: "disc" }}>
+              {saveResult.messages.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {saveResult?.kind === "error" && (
+          <p className="msg msg-error">{saveResult.messages.join(" ")}</p>
         )}
       </div>
     </main>

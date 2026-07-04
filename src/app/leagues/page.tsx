@@ -6,9 +6,12 @@ import Link from "next/link";
 import { authedFetch } from "@/app/lib/apiFetch";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { getStoredToken } from "@/app/lib/auth";
-import { logOut } from "@/app/lib/cognitoAuth";
 import { TeamLeagueLinks } from "@/app/components/TeamLeagueLinks";
-import type { League, LeagueStanding } from "../../domain";
+import { GameweekBanner } from "@/app/components/GameweekBanner";
+import { LoadingState } from "@/app/components/LoadingState";
+import { useCurrentGameweek, type GameweekMatchSummary } from "@/app/lib/useCurrentGameweek";
+import { formatDayAndTime } from "@/app/lib/formatDate";
+import type { GameweekStatus, League, LeagueStanding, MatchStatus } from "../../domain";
 
 interface TeamSummary {
   id: string;
@@ -19,11 +22,50 @@ interface TeamSummary {
 interface TeamWithLeague {
   team: TeamSummary;
   league: League;
+  rosterCount: number;
+  isLineupSet: boolean;
 }
 
 interface StandingEntry extends LeagueStanding {
   teamName: string;
   managerName: string;
+}
+
+interface StandingsResponse {
+  gameweek: { number: number; status: GameweekStatus } | null;
+  standings: StandingEntry[];
+}
+
+/** The specified tooltip copy for the standings timestamp — see fantasy_league_user_flows_v1.txt. */
+const STANDINGS_UPDATE_TOOLTIP =
+  "Scores update shortly after each match ends. On busier days with several matches finishing close together, it can take a bit longer for every score to come through.";
+
+const fixtureStatusBadges: Record<MatchStatus, { label: string; className: string } | null> = {
+  SCHEDULED: null,
+  IN_PROGRESS: { label: "Live", className: "badge badge-green" },
+  COMPLETED: { label: "Full time", className: "badge" },
+  POSTPONED: { label: "Postponed", className: "badge badge-red" },
+  DELAYED: { label: "Delayed", className: "badge badge-red" },
+  INTERRUPTED: { label: "Interrupted", className: "badge badge-red" },
+};
+
+function FixtureRow({ match }: { match: GameweekMatchSummary }) {
+  const statusBadge = fixtureStatusBadges[match.status];
+  const hasFinalScore = match.finalHomeScore !== null && match.finalAwayScore !== null;
+  return (
+    <li>
+      <span className="fixture-teams">
+        {match.homeClub} v {match.awayClub}
+      </span>
+      {hasFinalScore && (
+        <span className="fixture-score">
+          {match.finalHomeScore}–{match.finalAwayScore}
+        </span>
+      )}
+      {statusBadge && <span className={statusBadge.className}>{statusBadge.label}</span>}
+      <span className="fixture-kickoff">{formatDayAndTime(match.kickoffAt)}</span>
+    </li>
+  );
 }
 
 /** Landing page for a user who's in exactly one league — home redirects here instead of
@@ -36,7 +78,7 @@ interface StandingEntry extends LeagueStanding {
  * useSearchParams under static prerendering. */
 export default function LeaguePage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<LoadingState />}>
       <LeaguePageContent />
     </Suspense>
   );
@@ -46,9 +88,10 @@ function LeaguePageContent() {
   const leagueId = useSearchParams().get("leagueId") ?? "";
   const router = useRouter();
   const [teamWithLeague, setTeamWithLeague] = useState<TeamWithLeague | null>(null);
-  const [standings, setStandings] = useState<StandingEntry[] | null>(null);
+  const [standingsResponse, setStandingsResponse] = useState<StandingsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
+  const currentGameweek = useCurrentGameweek();
 
   useEffect(() => {
     if (!getStoredToken()) {
@@ -74,14 +117,9 @@ function LeaguePageContent() {
 
     authedFetch(`${getApiBaseUrl()}/leagues/${leagueId}/standings`)
       .then((response) => response.json())
-      .then(setStandings)
+      .then(setStandingsResponse)
       .catch(() => setError("Could not load this league's standings — try refreshing."));
   }, [leagueId, router]);
-
-  function handleLogout() {
-    logOut();
-    router.push("/");
-  }
 
   function getInviteUrl(inviteCode: string): string {
     return `${window.location.origin}/leagues/join?code=${inviteCode}`;
@@ -97,6 +135,8 @@ function LeaguePageContent() {
     setTimeout(() => setCopyStatus("idle"), 2000);
   }
 
+  const standings = standingsResponse?.standings ?? null;
+  const standingsGameweek = standingsResponse?.gameweek ?? null;
   const lastUpdatedAt =
     standings && standings.length > 0
       ? new Date(Math.max(...standings.map((standing) => new Date(standing.calculatedAt).getTime())))
@@ -104,17 +144,21 @@ function LeaguePageContent() {
 
   return (
     <main>
-      <div className="page-header">
-        <h1>Fantasy League</h1>
-        <button className="btn-danger" onClick={handleLogout}>Log out</button>
-      </div>
+      <h1>{teamWithLeague?.league.name ?? "League"}</h1>
+
+      <GameweekBanner current={currentGameweek} />
 
       {error && <p className="msg msg-error">{error}</p>}
-      {!error && !teamWithLeague && <p>Loading…</p>}
+      {!error && !teamWithLeague && <p aria-busy="true">Loading…</p>}
 
       {teamWithLeague && (
         <p style={{ marginBottom: "0.75rem" }}>
-          <TeamLeagueLinks team={teamWithLeague.team} league={teamWithLeague.league} />
+          <TeamLeagueLinks
+            team={teamWithLeague.team}
+            league={teamWithLeague.league}
+            rosterCount={teamWithLeague.rosterCount}
+            isLineupSet={teamWithLeague.isLineupSet}
+          />
         </p>
       )}
 
@@ -142,10 +186,36 @@ function LeaguePageContent() {
         </div>
       )}
 
-      <h2>Standings</h2>
+      {currentGameweek?.gameweek && currentGameweek.matches.length > 0 && (
+        <>
+          <h2>This gameweek</h2>
+          <ul className="squad-list fixture-list">
+            {currentGameweek.matches.map((match) => (
+              <FixtureRow key={match.id} match={match} />
+            ))}
+          </ul>
+        </>
+      )}
+
+      <h2>
+        Standings
+        {standingsGameweek && ` — after Gameweek ${standingsGameweek.number}`}
+      </h2>
+      {standingsGameweek && (
+        <p style={{ marginTop: "-0.35rem" }}>
+          {standingsGameweek.status === "COMPLETED"
+            ? "Final for this gameweek."
+            : "Provisional — matches still in progress."}
+        </p>
+      )}
       {standings === null && <p>Loading…</p>}
       {standings !== null && standings.length === 0 && (
-        <p>No standings yet — these appear once a gameweek's matches have been scored.</p>
+        <p>
+          No standings yet —{" "}
+          {currentGameweek?.gameweek
+            ? `Gameweek ${currentGameweek.gameweek.number}'s scores appear here once its matches finish.`
+            : "these appear once a gameweek's matches have been scored."}
+        </p>
       )}
       {standings !== null && standings.length > 0 && (
         <>
@@ -179,7 +249,10 @@ function LeaguePageContent() {
           </div>
           {lastUpdatedAt && (
             <p style={{ marginTop: "0.5rem", fontSize: "0.8rem" }}>
-              Last updated {lastUpdatedAt.toLocaleString()}
+              Updated automatically — busy match days may take a little longer.{" "}
+              <span title={STANDINGS_UPDATE_TOOLTIP} style={{ cursor: "help", textDecoration: "underline dotted" }}>
+                Last updated {lastUpdatedAt.toLocaleString()}
+              </span>
             </p>
           )}
         </>

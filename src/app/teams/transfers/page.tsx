@@ -2,9 +2,28 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { authedFetch } from "@/app/lib/apiFetch";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
-import type { PlayerPosition, PlayerWithStats, Team } from "../../../domain";
+import { AvailabilityBadge } from "@/app/components/AvailabilityBadge";
+import { LoadingState } from "@/app/components/LoadingState";
+import { useRequireAuth } from "@/app/lib/useRequireAuth";
+import { formatDayAndTime } from "@/app/lib/formatDate";
+import type {
+  GameweekStatus,
+  MatchStatus,
+  PlayerAvailabilityStatus,
+  PlayerPosition,
+  PlayerWithStats,
+  Team,
+} from "../../../domain";
+
+interface RosterNextMatch {
+  opponent: string;
+  home: boolean;
+  kickoffAt: string;
+  status: MatchStatus;
+}
 
 interface RosterEntry {
   id: string;
@@ -14,8 +33,11 @@ interface RosterEntry {
   priceInMillions: number;
   totalFantasyPoints: number;
   recentFormPoints: number[] | null;
+  availabilityStatus: PlayerAvailabilityStatus;
+  availabilityReason: string | null;
   isStarting: boolean;
   isLocked: boolean;
+  nextMatch: RosterNextMatch | null;
 }
 
 interface TransferEntry {
@@ -29,12 +51,28 @@ interface TransferEntry {
 }
 
 interface AvailableTransfers {
+  currentGameweek: { number: number; status: GameweekStatus; deadlineAt: string } | null;
   bankedFreeTransferCount: number;
   maxBankedFreeTransferCount: number;
   nextTransferPointsCost: number;
   remainingBudgetInMillions: number;
   roster: RosterEntry[];
   transfersThisGameweek: TransferEntry[];
+}
+
+/** "v Chelsea (H), kicked off Sat 19 Jul, 15:00" / "Locks Sat 19 Jul, 15:00" — the context line
+ * that explains a Locked badge or warns about an upcoming lock. */
+function describeLockContext(player: RosterEntry): string | null {
+  if (!player.nextMatch) return null;
+  const fixture = `v ${player.nextMatch.opponent} (${player.nextMatch.home ? "H" : "A"})`;
+  const kickoff = formatDayAndTime(player.nextMatch.kickoffAt);
+  if (player.isLocked) {
+    return player.nextMatch.status === "COMPLETED"
+      ? `${fixture}, played ${kickoff}`
+      : `${fixture}, kicked off ${kickoff}`;
+  }
+  if (player.nextMatch.status === "POSTPONED") return `${fixture}, postponed`;
+  return `Locks ${kickoff}`;
 }
 
 /**
@@ -128,13 +166,14 @@ function TransferPicker({
  * useSearchParams under static prerendering. */
 export default function TransfersPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<LoadingState />}>
       <TransfersPageContent />
     </Suspense>
   );
 }
 
 function TransfersPageContent() {
+  useRequireAuth();
   const teamId = useSearchParams().get("teamId") ?? "";
 
   const [team, setTeam] = useState<Team | null>(null);
@@ -192,11 +231,25 @@ function TransfersPageContent() {
   }
 
   if (loadError) return <main><p className="msg msg-error">{loadError}</p></main>;
-  if (!team || !available) return null;
+  if (!team || !available) return <LoadingState label="Loading your transfers…" />;
 
   return (
     <main>
+      <p style={{ marginBottom: "0.35rem" }}>
+        <Link href={`/leagues?leagueId=${team.leagueId}`}>← Back to league</Link>
+      </p>
       <h1>Transfers — {team.name}</h1>
+
+      {available.currentGameweek && (
+        <div className="gameweek-banner">
+          <strong>Gameweek {available.currentGameweek.number}</strong>
+          <span className="gameweek-banner-deadline">
+            {new Date(available.currentGameweek.deadlineAt).getTime() < Date.now()
+              ? `Deadline passed (${formatDayAndTime(available.currentGameweek.deadlineAt)}) — players lock at their match's kickoff`
+              : `Deadline ${formatDayAndTime(available.currentGameweek.deadlineAt)}`}
+          </span>
+        </div>
+      )}
 
       <div className="stat-row">
         <div className="stat-tile">
@@ -216,6 +269,13 @@ function TransfersPageContent() {
           <span className="stat-tile-value">£{available.remainingBudgetInMillions}M</span>
         </div>
       </div>
+
+      <p>
+        You get 2 free transfers each gameweek, banked up to {available.maxBankedFreeTransferCount}. Extra
+        transfers cost 10 pts each.
+        {available.currentGameweek &&
+          ` Unused free transfers carry over when Gameweek ${available.currentGameweek.number} completes.`}
+      </p>
 
       {pageMessage && <p className="msg msg-success">{pageMessage}</p>}
 
@@ -245,9 +305,17 @@ function TransfersPageContent() {
                   <td>£{player.priceInMillions}M</td>
                   <td>{player.isStarting ? "Starting" : "Bench"}</td>
                   <td>
-                    {player.isLocked
-                      ? <span className="badge badge-red">Locked</span>
-                      : <span className="badge badge-green">Available</span>}
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", flexWrap: "wrap" }}>
+                      {player.isLocked
+                        ? <span className="badge badge-red">Locked</span>
+                        : <span className="badge badge-green">Available</span>}
+                      <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
+                    </span>
+                    {describeLockContext(player) && (
+                      <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", marginTop: "0.15rem" }}>
+                        {describeLockContext(player)}
+                      </div>
+                    )}
                   </td>
                   <td>
                     {!player.isLocked && (
