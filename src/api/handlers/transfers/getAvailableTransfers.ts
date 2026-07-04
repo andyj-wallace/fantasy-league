@@ -31,11 +31,31 @@ export const getAvailableTransfers: ApiHandler = requireAuth(async (event, _sess
   const matchesThisGameweek = currentGameweek ? await matchesRepository.findByGameweekId(currentGameweek.id) : [];
   const now = new Date();
 
+  const findNextMatchForClub = (club: string) => {
+    const clubMatches = matchesThisGameweek
+      .filter((match) => match.homeClub === club || match.awayClub === club)
+      .sort((firstMatch, secondMatch) => firstMatch.kickoffAt.getTime() - secondMatch.kickoffAt.getTime());
+    const match = clubMatches.find((candidate) => candidate.status !== "COMPLETED") ?? clubMatches.at(-1);
+    if (!match) return null;
+    const playsAtHome = match.homeClub === club;
+    return {
+      opponent: playsAtHome ? match.awayClub : match.homeClub,
+      home: playsAtHome,
+      kickoffAt: match.kickoffAt,
+      status: match.status,
+    };
+  };
+
   const roster = rosterSlots
     .map((slot) => {
       const player = playersWithStatsById.get(slot.playerId);
       if (!player) return null;
-      return { ...player, isStarting: slot.isStarting, isLocked: isClubLocked(player.club, matchesThisGameweek, now) };
+      return {
+        ...player,
+        isStarting: slot.isStarting,
+        isLocked: isClubLocked(player.club, matchesThisGameweek, now),
+        nextMatch: findNextMatchForClub(player.club),
+      };
     })
     .filter((entry) => entry !== null);
 
@@ -52,6 +72,9 @@ export const getAvailableTransfers: ApiHandler = requireAuth(async (event, _sess
   }));
 
   return jsonResponse(200, {
+    currentGameweek: currentGameweek
+      ? { number: currentGameweek.number, status: currentGameweek.status, deadlineAt: currentGameweek.deadlineAt }
+      : null,
     bankedFreeTransferCount: team.bankedFreeTransferCount,
     maxBankedFreeTransferCount: MAX_BANKED_FREE_TRANSFER_COUNT,
     nextTransferPointsCost: team.bankedFreeTransferCount > 0 ? 0 : POINTS_COST_PER_PAID_TRANSFER,

@@ -1,4 +1,9 @@
-import { leagueStandingsRepository, teamsRepository, usersRepository } from "../../../db/repositories";
+import {
+  gameweeksRepository,
+  leagueStandingsRepository,
+  teamsRepository,
+  usersRepository,
+} from "../../../db/repositories";
 import { requireAuth } from "../../auth";
 import { jsonResponse } from "../../httpResponse";
 import type { ApiHandler } from "../../types";
@@ -16,9 +21,14 @@ export const getLeagueStandings: ApiHandler = requireAuth(async (event, _session
   const users = await usersRepository.findManyByIds(teams.map((team) => team.userId));
   const managerNamesByUserId = new Map(users.map((user) => [user.id, user.displayName]));
 
-  return jsonResponse(
-    200,
-    standings.map((standing) => {
+  const standingsGameweek =
+    standings.length > 0 ? await gameweeksRepository.findById(standings[0]!.gameweekId) : null;
+
+  return jsonResponse(200, {
+    gameweek: standingsGameweek
+      ? { number: standingsGameweek.number, status: standingsGameweek.status }
+      : null,
+    standings: standings.map((standing) => {
       const team = teamsById.get(standing.teamId);
       return {
         ...standing,
@@ -26,5 +36,5 @@ export const getLeagueStandings: ApiHandler = requireAuth(async (event, _session
         managerName: team ? managerNamesByUserId.get(team.userId) ?? team.userId : standing.teamId,
       };
     }),
-  );
+  });
 });

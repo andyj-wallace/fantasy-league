@@ -16,6 +16,7 @@ import { getPlayer } from "./handlers/players/getPlayer";
 import { getAvailableTransfers } from "./handlers/transfers/getAvailableTransfers";
 import { makeTransfer } from "./handlers/transfers/makeTransfer";
 import { getLeagueStandings } from "./handlers/leaderboard/getLeagueStandings";
+import { getCurrentGameweek } from "./handlers/gameweeks/getCurrentGameweek";
 
 /**
  * One entry per Lambda. In API Gateway this same {method, path} pairing becomes the resource's
@@ -45,4 +46,5 @@ export const routes: RouteDefinition[] = [
   { method: "GET", path: "/teams/:teamId/transfers/available", handler: getAvailableTransfers },
   { method: "POST", path: "/teams/:teamId/transfers", handler: makeTransfer },
   { method: "GET", path: "/leagues/:leagueId/standings", handler: getLeagueStandings },
+  { method: "GET", path: "/gameweeks/current", handler: getCurrentGameweek },
 ];
