@@ -151,9 +151,9 @@ export function CognitoLoginFlow() {
 
   if (step === "signUp") {
     return (
-      <main>
+      <>
         <h1>Create account</h1>
-        <div className="card" style={{ maxWidth: 400 }}>
+        <div className="card">
           <form key="signUp" className="form-stack" onSubmit={handleSignUpSubmit}>
             <input name="handle" placeholder="Username" required autoFocus />
             <input name="displayName" placeholder="Display name" required />
@@ -166,15 +166,15 @@ export function CognitoLoginFlow() {
             <button className="btn-link" onClick={() => switchStep("signIn")}>Already have an account? Log in</button>
           </p>
         </div>
-      </main>
+      </>
     );
   }
 
   if (step === "confirmSignUp") {
     return (
-      <main>
+      <>
         <h1>Confirm your email</h1>
-        <div className="card" style={{ maxWidth: 400 }}>
+        <div className="card">
           <p style={{ marginTop: 0 }}>
             Enter the confirmation code we emailed to {signUpEmail ?? "your email address"}.
           </p>
@@ -187,15 +187,15 @@ export function CognitoLoginFlow() {
             <button className="btn-link" onClick={handleResendCode} disabled={isSubmitting}>Resend code</button>
           </p>
         </div>
-      </main>
+      </>
     );
   }
 
   if (step === "resetPassword") {
     return (
-      <main>
+      <>
         <h1>Reset password</h1>
-        <div className="card" style={{ maxWidth: 400 }}>
+        <div className="card">
           <p style={{ marginTop: 0 }}>Request a reset code, then enter it with your new password.</p>
           <form key="resetPassword" className="form-stack" onSubmit={handleResetPasswordSubmit}>
             <input name="identifier" placeholder="Email or username" defaultValue={accountIdentifier} required />
@@ -210,7 +210,7 @@ export function CognitoLoginFlow() {
             <button className="btn-link" onClick={() => switchStep("signIn")}>Back to login</button>
           </p>
         </div>
-      </main>
+      </>
     );
   }
 

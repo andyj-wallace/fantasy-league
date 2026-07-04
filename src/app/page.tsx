@@ -8,6 +8,7 @@ import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { getStoredToken } from "@/app/lib/auth";
 import { TeamLeagueLinks } from "@/app/components/TeamLeagueLinks";
 import { LoadingState } from "@/app/components/LoadingState";
+import { LoggedOutLanding } from "@/app/components/LoggedOutLanding";
 import type { League } from "../domain";
 
 interface TeamSummary {
@@ -23,11 +24,13 @@ interface TeamWithLeague {
   isLineupSet: boolean;
 }
 
+type LeaguesStatus = "loading" | "ready" | "error";
+
 export default function HomePage() {
   const router = useRouter();
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
-  const [teamsWithLeagues, setTeamsWithLeagues] = useState<TeamWithLeague[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [teamsWithLeagues, setTeamsWithLeagues] = useState<TeamWithLeague[]>([]);
+  const [status, setStatus] = useState<LeaguesStatus>("loading");
 
   useEffect(() => {
     const token = getStoredToken();
@@ -35,42 +38,46 @@ export default function HomePage() {
     if (!token) return;
 
     authedFetch(`${getApiBaseUrl()}/me/teams`)
-      .then((response) => response.json())
-      .then((result: TeamWithLeague[]) => {
+      .then(async (response) => {
+        // Only a genuine failure (network error, non-2xx) is an error. A 200 with an empty
+        // array means "you're in no leagues yet" — that's a friendly empty state, never an error.
+        if (!response.ok) throw new Error(`GET /me/teams failed: ${response.status}`);
+        const result = (await response.json()) as TeamWithLeague[];
+        if (!Array.isArray(result)) throw new Error("GET /me/teams did not return a list");
         if (result.length === 1) {
           router.push(`/leagues?leagueId=${result[0]!.league.id}`);
-          return;
+          return; // stay in "loading" through the redirect so the list never flashes
         }
         setTeamsWithLeagues(result);
+        setStatus("ready");
       })
-      .catch(() => setError("Could not load your leagues — try refreshing."));
+      .catch(() => setStatus("error"));
   }, [router]);
 
   if (isLoggedIn === null) return <LoadingState />;
-
-  if (!isLoggedIn) {
-    return (
-      <main>
-        <h1>Fantasy League</h1>
-        <p>
-          <Link href="/login">Log in</Link> to see your leagues, or create/join one once you do.
-        </p>
-      </main>
-    );
-  }
-
-  if (!error && teamsWithLeagues === null) return <LoadingState label="Loading your leagues…" />;
+  if (!isLoggedIn) return <LoggedOutLanding />;
+  if (status === "loading") return <LoadingState label="Loading your leagues…" />;
 
   return (
     <main>
       <h1>Your leagues</h1>
-      {error && <p className="msg msg-error">{error}</p>}
-      {!error && teamsWithLeagues!.length === 0 && (
-        <p>You haven't joined or created a league yet.</p>
+
+      {status === "error" && (
+        <p className="msg msg-info">
+          We couldn&apos;t load your leagues just now — you can still create or join one below, or refresh to try again.
+        </p>
       )}
-      {!error && teamsWithLeagues!.length > 0 && (
+
+      {status === "ready" && teamsWithLeagues.length === 0 && (
+        <div className="empty-state">
+          <p className="empty-state-title">No leagues currently</p>
+          <p>Create your own league and invite friends, or join one with an invite code.</p>
+        </div>
+      )}
+
+      {status === "ready" && teamsWithLeagues.length > 0 && (
         <ul className="league-list">
-          {teamsWithLeagues!.map(({ team, league, rosterCount, isLineupSet }) => (
+          {teamsWithLeagues.map(({ team, league, rosterCount, isLineupSet }) => (
             <li key={team.id}>
               <TeamLeagueLinks team={team} league={league} rosterCount={rosterCount} isLineupSet={isLineupSet} />
             </li>

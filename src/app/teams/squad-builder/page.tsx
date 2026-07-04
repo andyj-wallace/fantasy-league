@@ -31,6 +31,7 @@ import {
 } from "../../../domain";
 
 const ALL_POSITIONS: PlayerPosition[] = ["GK", "DEF", "MID", "FWD"];
+const PLAYERS_PER_PAGE = 25;
 
 function describeRecentForm(player: PlayerWithStats): string {
   if (!player.recentFormPoints) return "Insufficient Data";

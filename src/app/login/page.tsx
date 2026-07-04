@@ -14,10 +14,12 @@ type LoginStep = "email" | "displayName";
  * email login against the signed-token provider, for offline work and scripts. */
 export default function LoginPage() {
   return (
-    <>
-      <SessionExpiredNotice />
-      {isCognitoAuthEnabled() ? <CognitoLoginFlow /> : <PasswordlessDevLoginFlow />}
-    </>
+    <main className="login-screen">
+      <div className="login-panel">
+        <SessionExpiredNotice />
+        {isCognitoAuthEnabled() ? <CognitoLoginFlow /> : <PasswordlessDevLoginFlow />}
+      </div>
+    </main>
   );
 }
 
@@ -31,9 +33,9 @@ function SessionExpiredNotice() {
   }, []);
   if (!wasRedirectedAfterExpiry) return null;
   return (
-    <div style={{ maxWidth: 920, margin: "1.5rem auto -1rem", padding: "0 1.25rem" }}>
-      <p className="msg msg-info">Your session expired — please log in again.</p>
-    </div>
+    <p className="msg msg-info" style={{ marginBottom: "1rem" }}>
+      Your session expired — please log in again.
+    </p>
   );
 }
 
@@ -106,9 +108,9 @@ function PasswordlessDevLoginFlow() {
 
   if (step === "displayName") {
     return (
-      <main>
+      <>
         <h1>Welcome!</h1>
-        <div className="card" style={{ maxWidth: 400 }}>
+        <div className="card">
           <p style={{ marginTop: 0 }}>We haven't seen {email} before — what should we call you?</p>
           <form className="form-stack" onSubmit={handleDisplayNameSubmit}>
             <input name="displayName" placeholder="Display name" required autoFocus />
@@ -118,14 +120,14 @@ function PasswordlessDevLoginFlow() {
           </form>
           {error && <p className="msg msg-error" style={{ marginTop: "0.75rem" }}>{error}</p>}
         </div>
-      </main>
+      </>
     );
   }
 
   return (
-    <main>
+    <>
       <h1>Login</h1>
-      <div className="card" style={{ maxWidth: 400 }}>
+      <div className="card">
         <form className="form-stack" onSubmit={handleEmailSubmit}>
           <input name="email" type="email" placeholder="Email" required autoFocus />
           <button className="btn-primary" type="submit" disabled={isSubmitting}>
@@ -134,6 +136,6 @@ function PasswordlessDevLoginFlow() {
         </form>
         {error && <p className="msg msg-error" style={{ marginTop: "0.75rem" }}>{error}</p>}
       </div>
-    </main>
+    </>
   );
 }
