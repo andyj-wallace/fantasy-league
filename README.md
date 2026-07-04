@@ -66,8 +66,7 @@ Store.
 
 ## Deployment (AWS)
 
-Decided 2026-07-03 (full rationale in
-[`docs/Fantasy League Architecture.txt`](docs/Fantasy%20League%20Architecture.txt) → "Deployment (AWS)"):
+Decided 2026-07-03:
 
 - **Frontend** — static export (`next build` with `output: "export"`) to **S3 behind CloudFront**,
   not Amplify. Every page is a client component with the session token in `localStorage`, so
@@ -86,8 +85,7 @@ Decided 2026-07-03 (full rationale in
 
 The football data provider caps us at 100 requests/day (excluding its free account/quota-status
 endpoint). The worker's live-match polling cadence is computed from that budget rather than a
-fixed interval — see [`docs/polling-budget.md`](docs/polling-budget.md) for the full back-of-envelope
-breakdown. Summary:
+fixed interval. Summary:
 
 | Scenario | Fixtures live | Interval | Total calls used |
 |---|---|---|---|
