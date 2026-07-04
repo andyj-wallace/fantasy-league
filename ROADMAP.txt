@@ -92,6 +92,11 @@ Milestone 1 — COMPLETED. Game actually works (2026-07-01).
             Created src/testing/seed6GameweekSmokeTest.ts (verified 2026-07-01). See docs/testing/
             for comprehensive findings on UX gaps (high-priority: season awareness, match schedule,
             scoring visibility; medium-priority: navigation, feedback, onboarding).
+            [done 2026-07-04] Those UX findings were addressed in a three-phase UI/UX pass —
+            see the Resolution section in docs/testing/SMOKE_TEST_FINDINGS.md and the M3
+            "Frontend UX" item below. Companion helper src/testing/completeSeededGameweeks.ts
+            scores GW1-3 + marks them COMPLETED for manual season-awareness testing without the
+            live API.
         Strategy 3 (deferred to M3): Single targeted live smoke test (≤10 real API calls, one-time only).
             Reserved for pre-Milestone 3 launch confirmation — never routine dev, never CI.
 
@@ -219,6 +224,17 @@ Milestone 3 — Production ready.
         league → squad builder → player detail → transfers deep link) against the local API
         via headless Chromium, plus missing-param guards on all four pages.
         Route /api/* on the same CloudFront distribution to API Gateway — no CORS.
+        [note] Static export emits flat .html files (leagues.html, teams/transfers.html), not
+            route/index.html dirs — CloudFront needs an extensionless-URL rewrite (e.g. /login →
+            /login.html) or hard reloads and the 401 redirect (/login?expired=1) will 404.
+    Frontend UX (season awareness + polish)
+        [done 2026-07-04] Addressed the Strategy-2 smoke-test UX gaps (commits 0e02bad, 1df8167,
+            09a6d76): current-gameweek endpoint + banner, league-page fixtures section, contextual
+            standings + required microcopy, player lock context, two-step save with partial-apply
+            warnings, availability + guidance microcopy, global header, loading/error states,
+            mobile table scroll, 401 handling. New handler tests for the touched endpoints.
+            Also fixed a login-flow bug: the sign-in password bled into the sign-up Display-name
+            text field (uncontrolled inputs reused across steps) — fixed with per-step form keys.
     Admin tools
     Monitoring and alerting
     Performance review

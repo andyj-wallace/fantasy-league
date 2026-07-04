@@ -20,6 +20,19 @@ This is a **high-priority UX gap** before launch. The backend scoring logic work
 
 ---
 
+## Resolution (2026-07-04)
+
+The findings below were addressed in a three-phase UI/UX pass (commits `0e02bad`, `1df8167`, `09a6d76`); the checklist at the bottom of this doc is now checked off. Highlights:
+
+- **Season awareness (high priority):** new `GET /gameweeks/current` endpoint; a `GameweekBanner` (number + status + deadline) on the league, transfers, and squad-builder pages plus a compact chip in the new global header; a "This gameweek" fixtures section on the league page (scores + live/postponed badges — a league-page section rather than a dedicated `/matches` route, by decision); standings now headed "after Gameweek N (final / provisional)" with the required "Updated automatically…" microcopy and tooltip; per-player lock context ("kicked off Sat 15:00", upcoming-lock warnings) on transfers and squad builder, computed via the existing `isClubLocked`.
+- **Feedback & onboarding (medium):** two-step save with a confirmation summary card; distinct success / partial (`.msg-warning`) / error rendering for `lockedChangeWarnings`; success state with "Back to league" next-step links; sticky inline budget chip during player discovery; availability badges; first-time help text for formations, captaincy, and squad constraints; labels + double-submit guards on create/join forms.
+- **Navigation (medium):** global `AppHeader` with a single logout; "Squad incomplete (N/16)" / "Ready" indicators on the home list; formation change now keeps starters that still fit (no full rework); invite-code hint on the create-league page.
+- **Also fixed alongside:** blank-screen loading replaced with a shared `LoadingState` + `loading.tsx`/`error.tsx`/`not-found.tsx`; mobile table horizontal scroll (was clipping 7-column tables); 401 → "session expired" redirect in `authedFetch`; consistent auth gating via `useRequireAuth`; page metadata + favicon.
+
+Not done (deliberately): "gameweek completed" **push** notifications remain out of V1 scope — the UI now surfaces gameweek status (Completed badge, "Final for this gameweek") instead. Verified end-to-end against the 6-gameweek seed in headless Chromium (27/27 click-through checks) plus the unit suite; see `docs/remaining-gaps-todo.md` for the follow-up backlog (e.g. player-discovery pagination).
+
+---
+
 ## Test Data Created (Agent 1)
 
 ✅ **Status: READY FOR TESTING**
@@ -267,28 +280,30 @@ npx tsx src/seed6GameweekSmokeTest.ts
 
 ## Summary: High-Priority UX Gaps
 
+_All items resolved 2026-07-04 unless noted — see the Resolution section near the top._
+
 ### Navigation (Medium Priority)
-- [ ] Share link discovery (hidden on league page)
-- [ ] No "next steps" after squad save
-- [ ] No "incomplete squad" indicator on home page
-- [ ] Formation selection workflow (rework on change)
+- [x] Share link discovery (invite-code hint added on the create-league page)
+- [x] No "next steps" after squad save (success state links back to league / transfers)
+- [x] No "incomplete squad" indicator on home page
+- [x] Formation selection workflow (change now keeps starters that still fit)
 
 ### Feedback & Onboarding (Medium Priority)
-- [ ] No confirmation step before save
-- [ ] No "squad complete" success state
-- [ ] Budget not shown inline during player discovery
-- [ ] No first-time user guidance (formation, captaincy, constraints)
-- [ ] Player availability status not visible in squad builder
-- [ ] No help text for formation/captaincy
+- [x] No confirmation step before save (two-step confirm summary card)
+- [x] No "squad complete" success state
+- [x] Budget not shown inline during player discovery (sticky budget chip)
+- [x] No first-time user guidance (formation, captaincy, constraints)
+- [x] Player availability status not visible in squad builder
+- [x] No help text for formation/captaincy
 
 ### Season Awareness (High Priority) ⚠️
-- [ ] **No gameweek indicator anywhere in UI**
-- [ ] **No match schedule / fixture visibility**
-- [ ] **No "scores calculated" messaging**
-- [ ] **No player lock status context**
-- [ ] **Transfer window timing opaque**
-- [ ] **No "gameweek completed" notifications**
-- [ ] **Standings page messaging confusing**
+- [x] **No gameweek indicator anywhere in UI** (GameweekBanner + header chip)
+- [x] **No match schedule / fixture visibility** ("This gameweek" section on the league page)
+- [x] **No "scores calculated" messaging** (standings "after Gameweek N", required microcopy)
+- [x] **No player lock status context** (lock badges with kickoff context)
+- [x] **Transfer window timing opaque** (deadline in banner + free-transfer explainer)
+- [~] **No "gameweek completed" notifications** — gameweek status now shown in-UI; push notifications remain out of V1 scope
+- [x] **Standings page messaging confusing** (contextual heading + final/provisional note)
 
 ---
 

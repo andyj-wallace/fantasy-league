@@ -13,7 +13,9 @@ Common commands (from `package.json`):
 - `npm run db:generate` / `db:migrate` — Drizzle migrations. Local Postgres via `docker-compose.yml`.
 - Env lives in `.env` (gitignored; template in `.env.example`). The API needs `AUTH_TOKEN_SECRET` for the default signed-token auth provider.
 
-Test coverage is currently focused on the scoring engine (`calculatePlayerScores`, `calculateTeamScores`, `updateStandings`) and the auth layer — the highest-risk areas. There is still no lint tooling.
+Test coverage is currently focused on the scoring engine (`calculatePlayerScores`, `calculateTeamScores`, `updateStandings`), the auth layer, and the read handlers that feed the season-awareness UI (`getCurrentGameweek`, `getLeagueStandings`, `getAvailableTransfers`) — the highest-risk areas. There is still no lint tooling.
+
+The frontend is no longer a plain-HTML skeleton: it has a bespoke design system (`src/app/globals.css` — no Tailwind), a global `AppHeader`, and a season-awareness layer (gameweek banner, fixtures on the league page, lock context, standings gameweek labels) fed by `GET /gameweeks/current`. The Strategy-2 smoke-test UX gaps are resolved — see `docs/testing/SMOKE_TEST_FINDINGS.md` (Resolution) and `docs/remaining-gaps-todo.md` item 11. Static export emits flat `.html` files, so CloudFront will need an extensionless-URL rewrite before launch.
 
 ## What the docs are and where to look
 
