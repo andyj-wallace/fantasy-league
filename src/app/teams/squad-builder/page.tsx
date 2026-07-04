@@ -9,6 +9,7 @@ import { PlayerNameTapTarget } from "../../components/PlayerNameTapTarget";
 import { GameweekBanner } from "@/app/components/GameweekBanner";
 import { AvailabilityBadge } from "@/app/components/AvailabilityBadge";
 import { LoadingState } from "@/app/components/LoadingState";
+import { FormationPitch } from "@/app/components/FormationPitch";
 import { useCurrentGameweek } from "@/app/lib/useCurrentGameweek";
 import { useRequireAuth } from "@/app/lib/useRequireAuth";
 import { formatDayAndTime } from "@/app/lib/formatDate";
@@ -80,6 +81,8 @@ function SquadBuilderPageContent() {
   const [saveResult, setSaveResult] = useState<SaveResult | null>(null);
   const [isConfirmingSave, setIsConfirmingSave] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [formationViewMode, setFormationViewMode] = useState<"pitch" | "list">("pitch");
+  const [pendingBenchSwapPlayerId, setPendingBenchSwapPlayerId] = useState<string | null>(null);
   const currentGameweek = useCurrentGameweek();
 
   useEffect(() => {
@@ -213,6 +216,43 @@ function SquadBuilderPageContent() {
   function clearSaveFeedback() {
     setSaveResult(null);
     setIsConfirmingSave(false);
+    setPendingBenchSwapPlayerId(null);
+  }
+
+  function handleSetCaptain(playerId: string) {
+    clearSaveFeedback();
+    setCaptainPlayerId(playerId);
+  }
+
+  function handleSetViceCaptain(playerId: string) {
+    clearSaveFeedback();
+    setViceCaptainPlayerId(playerId);
+  }
+
+  function handleBenchCardTap(benchPlayerId: string) {
+    const benchPlayer = bench.find((entry) => entry.player.id === benchPlayerId)?.player;
+    if (!benchPlayer) return;
+    const error = toggleStartingError(benchPlayer);
+    if (!error) {
+      handleToggleStarting(benchPlayerId, true);
+    } else {
+      setPendingBenchSwapPlayerId(benchPlayerId);
+    }
+  }
+
+  function handleStarterSwapTarget(starterPlayerId: string) {
+    const starterPlayer = starters.find((entry) => entry.player.id === starterPlayerId)?.player;
+    const benchPlayer = bench.find((entry) => entry.player.id === pendingBenchSwapPlayerId)?.player;
+    if (!starterPlayer || !benchPlayer || starterPlayer.position !== benchPlayer.position) return;
+    clearSaveFeedback();
+    setDraftRosterSlots((slots) =>
+      slots.map((slot) => {
+        if (slot.playerId === pendingBenchSwapPlayerId) return { ...slot, isStarting: true };
+        if (slot.playerId === starterPlayerId) return { ...slot, isStarting: false };
+        return slot;
+      }),
+    );
+    setPendingBenchSwapPlayerId(null);
   }
 
   function handleAddPlayer(player: PlayerWithStats) {
@@ -363,13 +403,14 @@ function SquadBuilderPageContent() {
   if (!team) return <LoadingState label="Loading your squad…" />;
 
   return (
-    <main>
+    <main className="page-with-sidebar">
+      <GameweekBanner current={currentGameweek} />
+
+      <div className="page-content">
       <p style={{ marginBottom: "0.35rem" }}>
         <Link href={`/leagues?leagueId=${team.leagueId}`}>← Back to league</Link>
       </p>
       <h1>Squad Builder — {team.name}</h1>
-
-      <GameweekBanner current={currentGameweek} />
 
       <div className="stat-row">
         <div className="stat-tile">
@@ -409,30 +450,48 @@ function SquadBuilderPageContent() {
         </p>
       )}
 
-      <div className="builder-row">
-        <div className="builder-row-lineup">
-          <h2>Starting XI</h2>
-          <ul className="squad-list">
-            {starters.map(({ player }) => (
-              <li key={player.id}>
-                <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
-                <span className="badge">{player.position}</span>
-                {isPlayerLocked(player) && (
-                  <span className="badge badge-red" title={lockedSinceLabel(player)}>Locked</span>
-                )}
-                <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
-                <button style={{ marginLeft: "auto" }} onClick={() => handleToggleStarting(player.id, false)}>
-                  → Bench
-                </button>
-              </li>
-            ))}
-          </ul>
+      <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
+        <h2 style={{ margin: 0 }}>Lineup</h2>
+        <div className="view-toggle">
+          <button
+            className={formationViewMode === "pitch" ? "active" : ""}
+            onClick={() => setFormationViewMode("pitch")}
+          >
+            Pitch View
+          </button>
+          <button
+            className={formationViewMode === "list" ? "active" : ""}
+            onClick={() => setFormationViewMode("list")}
+          >
+            List View
+          </button>
+        </div>
+      </div>
 
-          <h2>Bench</h2>
-          <ul className="squad-list">
-            {bench.map(({ player }) => {
-              const blockedReason = toggleStartingError(player);
-              return (
+      {formationViewMode === "pitch" && (
+        <FormationPitch
+          starters={starters}
+          bench={bench}
+          captainPlayerId={captainPlayerId}
+          viceCaptainPlayerId={viceCaptainPlayerId}
+          pendingBenchSwapPlayerId={pendingBenchSwapPlayerId}
+          isPlayerLocked={isPlayerLocked}
+          lockedSinceLabel={lockedSinceLabel}
+          onStarterCaptain={handleSetCaptain}
+          onStarterViceCaptain={handleSetViceCaptain}
+          onStarterBench={(playerId) => handleToggleStarting(playerId, false)}
+          onBenchStart={handleBenchCardTap}
+          onSwapTarget={handleStarterSwapTarget}
+          onCancelSwap={() => setPendingBenchSwapPlayerId(null)}
+        />
+      )}
+
+      {formationViewMode === "list" && (
+        <div className="builder-row">
+          <div className="builder-row-lineup">
+            <h3>Starting XI</h3>
+            <ul className="squad-list">
+              {starters.map(({ player }) => (
                 <li key={player.id}>
                   <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
                   <span className="badge">{player.position}</span>
@@ -440,57 +499,75 @@ function SquadBuilderPageContent() {
                     <span className="badge badge-red" title={lockedSinceLabel(player)}>Locked</span>
                   )}
                   <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
-                  <button
-                    style={{ marginLeft: "auto" }}
-                    onClick={() => handleToggleStarting(player.id, true)}
-                    disabled={!!blockedReason}
-                    title={blockedReason ?? ""}
-                  >
-                    → Starting
+                  <button style={{ marginLeft: "auto" }} onClick={() => handleToggleStarting(player.id, false)}>
+                    → Bench
                   </button>
                 </li>
-              );
-            })}
-          </ul>
-        </div>
+              ))}
+            </ul>
 
-        <div className="builder-row-captaincy">
-          <h2>Captaincy</h2>
-          <p>Your captain scores double points. If they don't play, your vice-captain scores double instead.</p>
-          <div className="captaincy-row">
-            <label>
-              Captain
-              <select
-                value={captainPlayerId}
-                onChange={(event) => {
-                  clearSaveFeedback();
-                  setCaptainPlayerId(event.target.value);
-                }}
-              >
-                <option value="">Choose captain</option>
-                {starters.map(({ player }) => (
-                  <option key={player.id} value={player.id}>{player.name}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Vice-Captain
-              <select
-                value={viceCaptainPlayerId}
-                onChange={(event) => {
-                  clearSaveFeedback();
-                  setViceCaptainPlayerId(event.target.value);
-                }}
-              >
-                <option value="">Choose vice-captain</option>
-                {starters.map(({ player }) => (
-                  <option key={player.id} value={player.id}>{player.name}</option>
-                ))}
-              </select>
-            </label>
+            <h3>Bench</h3>
+            <ul className="squad-list">
+              {bench.map(({ player }) => {
+                const blockedReason = toggleStartingError(player);
+                return (
+                  <li key={player.id}>
+                    <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
+                    <span className="badge">{player.position}</span>
+                    {isPlayerLocked(player) && (
+                      <span className="badge badge-red" title={lockedSinceLabel(player)}>Locked</span>
+                    )}
+                    <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
+                    <button
+                      style={{ marginLeft: "auto" }}
+                      onClick={() => handleToggleStarting(player.id, true)}
+                      disabled={!!blockedReason}
+                      title={blockedReason ?? ""}
+                    >
+                      → Starting
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+
+          <div className="builder-row-captaincy">
+            <h3>Captaincy</h3>
+            <p>Your captain scores double points. If they don't play, your vice-captain scores double instead.</p>
+            <div className="captaincy-row">
+              <label>
+                Captain
+                <select
+                  value={captainPlayerId}
+                  onChange={(event) => {
+                    handleSetCaptain(event.target.value);
+                  }}
+                >
+                  <option value="">Choose captain</option>
+                  {starters.map(({ player }) => (
+                    <option key={player.id} value={player.id}>{player.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Vice-Captain
+                <select
+                  value={viceCaptainPlayerId}
+                  onChange={(event) => {
+                    handleSetViceCaptain(event.target.value);
+                  }}
+                >
+                  <option value="">Choose vice-captain</option>
+                  {starters.map(({ player }) => (
+                    <option key={player.id} value={player.id}>{player.name}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="discovery-header">
         <h2>Player Discovery</h2>
@@ -645,6 +722,7 @@ function SquadBuilderPageContent() {
         {saveResult?.kind === "error" && (
           <p className="msg msg-error">{saveResult.messages.join(" ")}</p>
         )}
+      </div>
       </div>
     </main>
   );

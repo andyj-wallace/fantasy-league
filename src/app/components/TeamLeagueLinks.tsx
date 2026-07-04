@@ -36,7 +36,7 @@ export function TeamLeagueLinks({
     <>
       <Link href={`/leagues?leagueId=${league.id}`}>{league.name}</Link> — {team.name} (£{team.remainingBudgetInMillions}M
       remaining) <SquadStatusBadge rosterCount={rosterCount} isLineupSet={isLineupSet} /> —{" "}
-      <Link href={`/teams/squad-builder?teamId=${team.id}`}>Squad</Link>{" "}
+      <Link href={`/teams/squad-builder?teamId=${team.id}`}>Squad</Link> |{" "}
       <Link href={`/teams/transfers?teamId=${team.id}`}>Transfers</Link>
     </>
   );

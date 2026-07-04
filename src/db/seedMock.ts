@@ -137,7 +137,8 @@ async function main(): Promise<void> {
     if (row) playerIdByExternalId.set(player.externalId, row.id);
   }
 
-  const gameweek = await gameweeksRepository.upsertByNumber(1, new Date(Date.now() - 24 * 60 * 60 * 1000));
+  // GW1: completed gameweek with historical match results (for testing scoring/leaderboard)
+  const completedGameweek = await gameweeksRepository.upsertByNumber(1, new Date(Date.now() - 72 * 60 * 60 * 1000));
 
   const matchIds: string[] = [];
   for (const mockMatch of MOCK_MATCHES) {
@@ -145,10 +146,10 @@ async function main(): Promise<void> {
     const match: Match = {
       id: existing?.id ?? randomUUID(),
       externalId: mockMatch.externalId,
-      gameweekId: gameweek.id,
+      gameweekId: completedGameweek.id,
       homeClub: mockMatch.homeClub,
       awayClub: mockMatch.awayClub,
-      kickoffAt: new Date(Date.now() - 20 * 60 * 60 * 1000),
+      kickoffAt: new Date(Date.now() - 48 * 60 * 60 * 1000),
       status: "COMPLETED",
       finalHomeScore: mockMatch.finalHomeScore,
       finalAwayScore: mockMatch.finalAwayScore,
@@ -182,10 +183,28 @@ async function main(): Promise<void> {
     await calculatePlayerScores(match.id);
   }
 
-  await calculateTeamScores(gameweek.id);
+  await calculateTeamScores(completedGameweek.id);
   const leagues = await leaguesRepository.findAll();
   for (const league of leagues) {
-    await updateStandings(league.id, gameweek.id);
+    await updateStandings(league.id, completedGameweek.id);
+  }
+
+  // GW2: upcoming gameweek with future fixtures (for testing squad building without player locks)
+  const upcomingGameweek = await gameweeksRepository.upsertByNumber(2, new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+  for (let i = 0; i < MOCK_MATCHES.length; i++) {
+    const mockMatch = MOCK_MATCHES[i];
+    const externalIdForGw2 = `${mockMatch.externalId}-gw2`;
+    await matchesRepository.upsert({
+      id: randomUUID(),
+      externalId: externalIdForGw2,
+      gameweekId: upcomingGameweek.id,
+      homeClub: mockMatch.homeClub,
+      awayClub: mockMatch.awayClub,
+      kickoffAt: new Date(Date.now() + (2 + i * 3) * 24 * 60 * 60 * 1000),
+      status: "PENDING",
+      finalHomeScore: null,
+      finalAwayScore: null,
+    });
   }
 
   console.log(

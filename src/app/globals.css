@@ -925,6 +925,40 @@ tbody tr:hover {
   font-size: 0.85rem;
 }
 
+/* Phones and narrow tablets (<1024px): flat, outlined banner instead of a white card */
+@media (max-width: 1023px) {
+  .gameweek-banner {
+    background: var(--color-bg);
+    box-shadow: none;
+  }
+}
+
+/* Wide screens (>=1024px): widen the page and move the banner into a sticky right sidebar */
+@media (min-width: 1024px) {
+  main.page-with-sidebar {
+    max-width: 1180px;
+    display: grid;
+    grid-template-columns: 1fr 260px;
+    align-items: start;
+    gap: 2rem;
+  }
+
+  main.page-with-sidebar .page-content {
+    grid-column: 1;
+    min-width: 0; /* prevents wide tables (.table-wrap) from blowing out the grid track */
+  }
+
+  main.page-with-sidebar .gameweek-banner {
+    grid-column: 2;
+    grid-row: 1;
+    margin: 0;
+    position: sticky;
+    top: 4rem;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
 /* ── Fixture list: match rows on the league page ─────────── */
 
 .fixture-list li {
@@ -949,6 +983,315 @@ tbody tr:hover {
   color: var(--color-text-muted);
   font-size: 0.85rem;
   margin-left: auto;
+}
+
+/* ── View toggle buttons ──────────────────────────────────── */
+
+.view-toggle {
+  display: inline-flex;
+  gap: 0;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.view-toggle button {
+  padding: 0.5rem 1rem;
+  border: none;
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: inherit;
+  font-weight: 500;
+  transition: background 0.2s, color 0.2s;
+}
+
+.view-toggle button:hover {
+  background: var(--color-secondary-bg);
+}
+
+.view-toggle button.active {
+  background: var(--color-primary);
+  color: var(--color-primary-text);
+}
+
+/* ── Formation pitch view ─────────────────────────────────── */
+
+.pitch-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.pitch-swap-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: var(--color-info-bg);
+  border: 1px solid var(--color-info-border);
+  border-radius: var(--radius-md);
+  color: var(--color-info-text);
+  font-weight: 500;
+}
+
+.pitch-swap-banner button {
+  padding: 0.4rem 0.8rem;
+  background: transparent;
+  border: 1px solid var(--color-info-text);
+  color: var(--color-info-text);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.pitch-swap-banner button:hover {
+  background: var(--color-info-text);
+  color: var(--color-info-bg);
+}
+
+.pitch {
+  position: relative;
+  background: linear-gradient(180deg, #2d5016 0%, #3a6b1f 50%, #2d5016 100%);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem 1rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent,
+    transparent 47%,
+    rgba(255, 255, 255, 0.03) 47%,
+    rgba(255, 255, 255, 0.03) 53%
+  );
+}
+
+.pitch-row {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+
+.pitch-row:last-child {
+  margin-bottom: 0;
+}
+
+.pitch-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: var(--color-surface);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: default;
+  transition: all 0.2s;
+  min-width: 120px;
+  max-width: 140px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  position: relative;
+}
+
+.pitch-card.is-swap-target {
+  border-color: var(--color-primary);
+  background: #f0f7ff;
+  cursor: pointer;
+  animation: pulse-border 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-border {
+  0%, 100% {
+    border-color: var(--color-primary);
+  }
+  50% {
+    border-color: var(--color-primary-hover);
+  }
+}
+
+.pitch-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.pitch-card-header .player-tap-target {
+  cursor: pointer;
+  color: var(--color-primary);
+}
+
+.pitch-card-meta {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.pitch-card-meta .badge {
+  font-size: 0.7rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.pitch-card-actions {
+  display: flex;
+  gap: 0.3rem;
+  align-items: center;
+  margin-top: 0.25rem;
+}
+
+.pitch-armband {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  font-weight: 700;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.pitch-armband:hover:not(:disabled) {
+  transform: scale(1.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.pitch-armband:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pitch-action-btn {
+  flex: 1;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: var(--color-secondary-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.pitch-action-btn:hover:not(:disabled) {
+  background: var(--color-secondary-bg-hover);
+}
+
+.pitch-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pitch-card-swap-indicator {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-primary);
+  color: var(--color-primary-text);
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.pitch-bench {
+  background: var(--color-secondary-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.pitch-bench-card {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  min-width: 100px;
+  flex-shrink: 0;
+}
+
+.pitch-bench-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  flex: 1;
+}
+
+.pitch-bench-card-content .player-tap-target {
+  cursor: pointer;
+  color: var(--color-primary);
+}
+
+.pitch-bench-card-content .badge {
+  font-size: 0.65rem;
+  width: fit-content;
+}
+
+.pitch-bench-btn {
+  padding: 0.4rem 0.6rem;
+  background: var(--color-primary);
+  color: var(--color-primary-text);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+
+.pitch-bench-btn:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
+.pitch-bench-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .pitch {
+    padding: 1rem 0.75rem;
+  }
+
+  .pitch-row {
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .pitch-card {
+    min-width: 100px;
+    max-width: 120px;
+    padding: 0.6rem;
+  }
+
+  .pitch-bench {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding: 0.75rem;
+  }
+
+  .pitch-bench-card {
+    min-width: 85px;
+    padding: 0.6rem;
+  }
 }
 
 /* ── Section divider ──────────────────────────────────────── */

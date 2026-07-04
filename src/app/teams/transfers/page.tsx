@@ -234,12 +234,7 @@ function TransfersPageContent() {
   if (!team || !available) return <LoadingState label="Loading your transfers…" />;
 
   return (
-    <main>
-      <p style={{ marginBottom: "0.35rem" }}>
-        <Link href={`/leagues?leagueId=${team.leagueId}`}>← Back to league</Link>
-      </p>
-      <h1>Transfers — {team.name}</h1>
-
+    <main className="page-with-sidebar">
       {available.currentGameweek && (
         <div className="gameweek-banner">
           <strong>Gameweek {available.currentGameweek.number}</strong>
@@ -250,6 +245,12 @@ function TransfersPageContent() {
           </span>
         </div>
       )}
+
+      <div className="page-content">
+      <p style={{ marginBottom: "0.35rem" }}>
+        <Link href={`/leagues?leagueId=${team.leagueId}`}>← Back to league</Link>
+      </p>
+      <h1>Transfers — {team.name}</h1>
 
       <div className="stat-row">
         <div className="stat-tile">
@@ -350,6 +351,7 @@ function TransfersPageContent() {
           ))}
         </ul>
       )}
+      </div>
     </main>
   );
 }

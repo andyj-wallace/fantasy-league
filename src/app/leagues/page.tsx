@@ -143,10 +143,11 @@ function LeaguePageContent() {
       : null;
 
   return (
-    <main>
-      <h1>{teamWithLeague?.league.name ?? "League"}</h1>
-
+    <main className="page-with-sidebar">
       <GameweekBanner current={currentGameweek} />
+
+      <div className="page-content">
+      <h1>{teamWithLeague?.league.name ?? "League"}</h1>
 
       {error && <p className="msg msg-error">{error}</p>}
       {!error && !teamWithLeague && <p aria-busy="true">Loading…</p>}
@@ -261,6 +262,7 @@ function LeaguePageContent() {
       <div className="link-list">
         <Link href="/leagues/create">Create League</Link>
         <Link href="/leagues/join">Join League</Link>
+      </div>
       </div>
     </main>
   );
