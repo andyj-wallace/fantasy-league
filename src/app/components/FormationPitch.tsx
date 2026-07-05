@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { AvailabilityBadge } from "./AvailabilityBadge";
 import { PlayerNameTapTarget } from "./PlayerNameTapTarget";
 import { formationRequiredCounts, type PlayerPosition, type PlayerWithStats, type StartingFormation } from "@/domain";
@@ -15,6 +16,9 @@ interface FormationPitchProps {
   pendingBenchSwapPlayerId: string | null;
   isPlayerLocked: (player: PlayerWithStats) => boolean;
   lockedSinceLabel: (player: PlayerWithStats) => string | undefined;
+  onStarterCaptain: (playerId: string) => void;
+  onStarterViceCaptain: (playerId: string) => void;
+  onStarterBench: (playerId: string) => void;
   onBenchStart: (benchPlayerId: string) => void;
   onSwapTarget: (starterPlayerId: string) => void;
   onCancelSwap: () => void;
@@ -89,11 +93,20 @@ export function FormationPitch({
   pendingBenchSwapPlayerId,
   isPlayerLocked,
   lockedSinceLabel,
+  onStarterCaptain,
+  onStarterViceCaptain,
+  onStarterBench,
   onBenchStart,
   onSwapTarget,
   onCancelSwap,
 }: FormationPitchProps) {
+  const [selectedStarterPlayerId, setSelectedStarterPlayerId] = useState<string | null>(null);
+
   const pendingBenchPlayer = bench.find((entry) => entry.player.id === pendingBenchSwapPlayerId)?.player;
+  // The swap flow and the tap-to-select action bar are mutually exclusive contextual UIs.
+  const selectedStarter = !pendingBenchSwapPlayerId
+    ? starters.find((entry) => entry.player.id === selectedStarterPlayerId)?.player
+    : undefined;
 
   const startersByPosition = POSITION_ORDER.reduce<Record<PlayerPosition, StarterEntry[]>>(
     (map, position) => {
@@ -136,13 +149,23 @@ export function FormationPitch({
   function renderStarterDot(player: PlayerWithStats, coordinate: PitchCoordinate, isSwapTarget: boolean) {
     const isCaptain = player.id === captainPlayerId;
     const isViceCaptain = player.id === viceCaptainPlayerId;
+    const isSelected = player.id === selectedStarterPlayerId && !pendingBenchSwapPlayerId;
+
+    function handleDotClick() {
+      if (isSwapTarget) {
+        onSwapTarget(player.id);
+        return;
+      }
+      if (pendingBenchSwapPlayerId) return;
+      setSelectedStarterPlayerId((current) => (current === player.id ? null : player.id));
+    }
 
     return (
       <div
         key={player.id}
-        className={`pitch-dot-slot ${isSwapTarget ? "is-swap-target" : ""}`}
+        className={`pitch-dot-slot pitch-dot-slot-filled ${isSwapTarget ? "is-swap-target" : ""} ${isSelected ? "is-selected" : ""}`}
         style={{ left: `${coordinate.xPercent}%`, top: `${coordinate.yPercent}%` }}
-        onClick={() => isSwapTarget && onSwapTarget(player.id)}
+        onClick={handleDotClick}
       >
         {isSwapTarget && <span className="pitch-dot-swap-indicator">Swap</span>}
         <span className="pitch-dot" />
@@ -189,6 +212,49 @@ export function FormationPitch({
           });
         })}
       </div>
+
+      {selectedStarter && (
+        <div className="pitch-action-bar">
+          <span className="pitch-action-bar-name">
+            {selectedStarter.name}
+            {isPlayerLocked(selectedStarter) && (
+              <span className="badge badge-red" title={lockedSinceLabel(selectedStarter)}>Locked</span>
+            )}
+          </span>
+          <div className="pitch-action-bar-buttons">
+            <button
+              disabled={isPlayerLocked(selectedStarter)}
+              onClick={() => {
+                onStarterCaptain(selectedStarter.id);
+                setSelectedStarterPlayerId(null);
+              }}
+            >
+              {selectedStarter.id === captainPlayerId ? "Remove captain" : "Make captain"}
+            </button>
+            <button
+              disabled={isPlayerLocked(selectedStarter) || selectedStarter.id === captainPlayerId}
+              onClick={() => {
+                onStarterViceCaptain(selectedStarter.id);
+                setSelectedStarterPlayerId(null);
+              }}
+            >
+              {selectedStarter.id === viceCaptainPlayerId ? "Remove vice-captain" : "Make vice-captain"}
+            </button>
+            <button
+              disabled={isPlayerLocked(selectedStarter)}
+              onClick={() => {
+                onStarterBench(selectedStarter.id);
+                setSelectedStarterPlayerId(null);
+              }}
+            >
+              Bench
+            </button>
+            <button className="pitch-action-bar-close" onClick={() => setSelectedStarterPlayerId(null)} title="Close">
+              ×
+            </button>
+          </div>
+        </div>
+      )}
 
       {bench.length > 0 && (
         <div className="pitch-bench">

@@ -32,11 +32,47 @@ import {
 } from "../../../domain";
 
 const ALL_POSITIONS: PlayerPosition[] = ["GK", "DEF", "MID", "FWD"];
-const PLAYERS_PER_PAGE = 25;
+const PLAYERS_PER_PAGE = 15;
 
 function describeRecentForm(player: PlayerWithStats): string {
   if (!player.recentFormPoints) return "Insufficient Data";
   return player.recentFormPoints.join(", ");
+}
+
+/** In-progress edits (roster changes, formation, captaincy) mirrored to sessionStorage so they
+ * survive navigating away to a player's detail page and back — that unmounts this whole page,
+ * which would otherwise silently drop everything not yet saved to the server. Cleared once a
+ * save actually lands, so a later fresh visit reflects server state rather than a stale mirror. */
+interface StoredSquadDraft {
+  rosterSlots: TeamRosterSlot[];
+  formation: StartingFormation | "";
+  captainPlayerId: string;
+  viceCaptainPlayerId: string;
+}
+
+function squadDraftStorageKey(teamId: string): string {
+  return `squad-builder-draft:${teamId}`;
+}
+
+function readStoredSquadDraft(teamId: string): StoredSquadDraft | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.sessionStorage.getItem(squadDraftStorageKey(teamId));
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as StoredSquadDraft;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredSquadDraft(teamId: string, draft: StoredSquadDraft): void {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(squadDraftStorageKey(teamId), JSON.stringify(draft));
+}
+
+function clearStoredSquadDraft(teamId: string): void {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(squadDraftStorageKey(teamId));
 }
 
 /** Save feedback in three distinct shapes: full success, partial apply (the server skipped
@@ -101,13 +137,34 @@ function SquadBuilderPageContent() {
         }
         setTeam(loadedTeam);
         setAllPlayers(players);
-        setDraftRosterSlots(loadedTeam.rosterSlots);
-        setSelectedFormation(loadedTeam.formation ?? "4-4-2");
-        setCaptainPlayerId(loadedTeam.captainPlayerId ?? "");
-        setViceCaptainPlayerId(loadedTeam.viceCaptainPlayerId ?? "");
+
+        const storedDraft = readStoredSquadDraft(teamId);
+        if (storedDraft) {
+          setDraftRosterSlots(storedDraft.rosterSlots);
+          setSelectedFormation(storedDraft.formation);
+          setCaptainPlayerId(storedDraft.captainPlayerId);
+          setViceCaptainPlayerId(storedDraft.viceCaptainPlayerId);
+        } else {
+          setDraftRosterSlots(loadedTeam.rosterSlots);
+          setSelectedFormation(loadedTeam.formation ?? "4-4-2");
+          setCaptainPlayerId(loadedTeam.captainPlayerId ?? "");
+          setViceCaptainPlayerId(loadedTeam.viceCaptainPlayerId ?? "");
+        }
       })
       .catch(() => setLoadError("Could not load the squad builder — try refreshing."));
   }, [teamId]);
+
+  // Mirrors the draft to sessionStorage on every edit — gated on `team` so this can't fire (and
+  // overwrite a real draft with blanks) before the load effect above has run.
+  useEffect(() => {
+    if (!team) return;
+    writeStoredSquadDraft(teamId, {
+      rosterSlots: draftRosterSlots,
+      formation: selectedFormation,
+      captainPlayerId,
+      viceCaptainPlayerId,
+    });
+  }, [team, teamId, draftRosterSlots, selectedFormation, captainPlayerId, viceCaptainPlayerId]);
 
   const playersById = useMemo(() => new Map(allPlayers.map((player) => [player.id, player])), [allPlayers]);
 
@@ -379,6 +436,7 @@ function SquadBuilderPageContent() {
       }
 
       setTeam(lineupBody);
+      clearStoredSquadDraft(teamId);
       const lockedChangeWarnings: string[] = [
         ...(rosterBody.lockedChangeWarnings ?? []),
         ...(lineupBody.lockedChangeWarnings ?? []),
@@ -406,7 +464,7 @@ function SquadBuilderPageContent() {
     <main className="page-with-sidebar">
       <GameweekBanner current={currentGameweek} />
 
-      <div className="page-content">
+      <div className="page-content" style={{ paddingBottom: "9rem" }}>
       <p style={{ marginBottom: "0.35rem" }}>
         <Link href={`/leagues?leagueId=${team.leagueId}`}>← Back to league</Link>
       </p>
@@ -478,6 +536,9 @@ function SquadBuilderPageContent() {
           pendingBenchSwapPlayerId={pendingBenchSwapPlayerId}
           isPlayerLocked={isPlayerLocked}
           lockedSinceLabel={lockedSinceLabel}
+          onStarterCaptain={handleSetCaptain}
+          onStarterViceCaptain={handleSetViceCaptain}
+          onStarterBench={(playerId) => handleToggleStarting(playerId, false)}
           onBenchStart={handleBenchCardTap}
           onSwapTarget={handleStarterSwapTarget}
           onCancelSwap={() => setPendingBenchSwapPlayerId(null)}
@@ -664,7 +725,7 @@ function SquadBuilderPageContent() {
         </button>
       </div>
 
-      <div style={{ marginTop: "1.5rem", display: "flex", flexDirection: "column", gap: "0.75rem", maxWidth: 480 }}>
+      <div className="save-bar">
         {!isConfirmingSave && (
           <button className="btn-primary" onClick={handleRequestSave} disabled={isSaving} style={{ maxWidth: 200 }}>
             Save squad
