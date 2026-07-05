@@ -19,6 +19,10 @@ import { updateStandings } from "../workers/updateStandings";
  * for the upcoming season; see docs/remaining-gaps-todo.md item 1). See
  * docs/manual-testing-guide.md for how this fits into a manual test session.
  *
+ * Also reopens whichever gameweek is actually current (see the reopenedGameweek block below) —
+ * without this, "current" resolves to whatever real 2024-25 season gameweek is still UPCOMING,
+ * whose real kickoff dates are long past relative to any future system clock, locking every club.
+ *
  * Safe to re-run: players/matches/gameweek are upserted by a fixed externalId/number, and stats/
  * scores/standings are replaced, not appended. Deliberately does NOT call
  * awardGameweekFreeTransfers or gameweeksRepository.markCompleted — those aren't idempotent
@@ -189,29 +193,52 @@ async function main(): Promise<void> {
     await updateStandings(league.id, completedGameweek.id);
   }
 
-  // GW2: upcoming gameweek with future fixtures (for testing squad building without player locks)
-  const upcomingGameweek = await gameweeksRepository.upsertByNumber(2, new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
-  for (let i = 0; i < MOCK_MATCHES.length; i++) {
-    const mockMatch = MOCK_MATCHES[i];
-    const externalIdForGw2 = `${mockMatch.externalId}-gw2`;
-    await matchesRepository.upsert({
-      id: randomUUID(),
-      externalId: externalIdForGw2,
-      gameweekId: upcomingGameweek.id,
-      homeClub: mockMatch.homeClub,
-      awayClub: mockMatch.awayClub,
-      kickoffAt: new Date(Date.now() + (2 + i * 3) * 24 * 60 * 60 * 1000),
-      status: "PENDING",
-      finalHomeScore: null,
-      finalAwayScore: null,
-    });
-  }
+  // Whichever gameweek is *actually* current (findCurrent(): lowest-numbered one not yet
+  // COMPLETED) is reopened with its real fixtures pushed into the future, so its clubs aren't
+  // stuck locked by stale historical kickoff dates. A hardcoded gameweek number doesn't work here:
+  // upsertByNumber never resets status on conflict, so targeting an already-COMPLETED gameweek
+  // (real season data marks GW1-3 COMPLETED) would never actually become "current" regardless of
+  // what deadline it's given.
+  const currentGameweek = await gameweeksRepository.findCurrent();
+  const reopenedGameweek: { id: string; number: number; newFirstKickoffAt: Date } | null = currentGameweek
+    ? await (async () => {
+        const gameweekMatches = await matchesRepository.findByGameweekId(currentGameweek.id);
+        if (gameweekMatches.length === 0) return null;
+
+        const earliestKickoffAt = gameweekMatches.reduce(
+          (earliest, match) => (match.kickoffAt < earliest ? match.kickoffAt : earliest),
+          gameweekMatches[0]!.kickoffAt,
+        );
+        const daysUntilFirstKickoff = 3;
+        const targetFirstKickoffAt = new Date(Date.now() + daysUntilFirstKickoff * 24 * 60 * 60 * 1000);
+        const offsetDays = Math.ceil(
+          (targetFirstKickoffAt.getTime() - earliestKickoffAt.getTime()) / (24 * 60 * 60 * 1000),
+        );
+        const newFirstKickoffAt = new Date(earliestKickoffAt.getTime() + offsetDays * 24 * 60 * 60 * 1000);
+
+        await matchesRepository.rescheduleGameweekIntoFuture(currentGameweek.id, offsetDays);
+        await gameweeksRepository.reopenForTesting(currentGameweek.id, newFirstKickoffAt);
+        return { id: currentGameweek.id, number: currentGameweek.number, newFirstKickoffAt };
+      })()
+    : null;
 
   console.log(
     JSON.stringify(
       {
-        gameweekId: gameweek.id,
-        matchIds,
+        completedGameweek: {
+          id: completedGameweek.id,
+          number: completedGameweek.number,
+          status: "COMPLETED (with scoring results)",
+          matchIds,
+        },
+        reopenedGameweek: reopenedGameweek
+          ? {
+              id: reopenedGameweek.id,
+              number: reopenedGameweek.number,
+              status: "UPCOMING (real fixtures rescheduled into the future — no locked clubs)",
+              newFirstKickoffAt: reopenedGameweek.newFirstKickoffAt,
+            }
+          : "no current gameweek found — nothing to reopen",
         players: MOCK_PLAYERS.map((player) => ({
           externalId: player.externalId,
           id: playerIdByExternalId.get(player.externalId),

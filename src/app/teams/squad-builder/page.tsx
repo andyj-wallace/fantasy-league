@@ -102,7 +102,7 @@ function SquadBuilderPageContent() {
         setTeam(loadedTeam);
         setAllPlayers(players);
         setDraftRosterSlots(loadedTeam.rosterSlots);
-        setSelectedFormation(loadedTeam.formation ?? "");
+        setSelectedFormation(loadedTeam.formation ?? "4-4-2");
         setCaptainPlayerId(loadedTeam.captainPlayerId ?? "");
         setViceCaptainPlayerId(loadedTeam.viceCaptainPlayerId ?? "");
       })
@@ -470,6 +470,7 @@ function SquadBuilderPageContent() {
 
       {formationViewMode === "pitch" && (
         <FormationPitch
+          formation={selectedFormation || null}
           starters={starters}
           bench={bench}
           captainPlayerId={captainPlayerId}
@@ -477,9 +478,6 @@ function SquadBuilderPageContent() {
           pendingBenchSwapPlayerId={pendingBenchSwapPlayerId}
           isPlayerLocked={isPlayerLocked}
           lockedSinceLabel={lockedSinceLabel}
-          onStarterCaptain={handleSetCaptain}
-          onStarterViceCaptain={handleSetViceCaptain}
-          onStarterBench={(playerId) => handleToggleStarting(playerId, false)}
           onBenchStart={handleBenchCardTap}
           onSwapTarget={handleStarterSwapTarget}
           onCancelSwap={() => setPendingBenchSwapPlayerId(null)}

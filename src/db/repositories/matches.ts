@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, lte, or } from "drizzle-orm";
+import { and, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import { db } from "../client";
 import { matches } from "../schema";
 import type { Match } from "../../domain";
@@ -84,4 +84,21 @@ export async function upsert(match: Match): Promise<void> {
         finalAwayScore: match.finalAwayScore,
       },
     });
+}
+
+/** Test/seed-only: shifts every Match in a gameweek forward by a fixed offset (preserving their
+ * relative kickoff spacing) and resets them to SCHEDULED with no final score — the counterpart to
+ * gameweeksRepository.reopenForTesting. isClubLocked only cares about kickoffAt vs. now, but
+ * leaving old COMPLETED matches/scores behind a future kickoff would still read as inconsistent
+ * in the UI, so those reset too. */
+export async function rescheduleGameweekIntoFuture(gameweekId: string, offsetDays: number): Promise<void> {
+  await db
+    .update(matches)
+    .set({
+      kickoffAt: sql`${matches.kickoffAt} + make_interval(days => ${offsetDays})`,
+      status: "SCHEDULED",
+      finalHomeScore: null,
+      finalAwayScore: null,
+    })
+    .where(eq(matches.gameweekId, gameweekId));
 }

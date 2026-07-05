@@ -1055,52 +1055,50 @@ tbody tr:hover {
 
 .pitch {
   position: relative;
-  background: linear-gradient(180deg, #2d5016 0%, #3a6b1f 50%, #2d5016 100%);
-  border-radius: var(--radius-lg);
-  padding: 1.5rem 1rem;
+  width: min(100%, 42vh);
+  margin: 0 auto;
+  aspect-ratio: 3 / 3;
+  overflow: hidden;
+  border-radius: 4px 4px var(--radius-lg) var(--radius-lg);
+  border-top: 3px solid rgba(203, 213, 225, 0.95);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-  background-image: repeating-linear-gradient(
-    90deg,
-    transparent,
-    transparent 47%,
-    rgba(255, 255, 255, 0.03) 47%,
-    rgba(255, 255, 255, 0.03) 53%
-  );
+  background-image: linear-gradient(0deg, color-mix(in srgb, rgba(74, 102, 80, 0.9) 62%, white) 0%, rgba(74, 102, 80, 0.9) 100%);
 }
 
-.pitch-row {
-  display: flex;
-  justify-content: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-  margin-bottom: 1.25rem;
+/* Halfway-line center circle, drawn hanging down from the pitch's top edge. */
+.pitch-halfway-arc {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 34%;
+  aspect-ratio: 2 / 1;
+  transform: translateX(-50%);
+  border: 2px solid rgba(203, 213, 225, 0.95);
+  border-top: none;
+  border-radius: 0 0 999px 999px;
+  pointer-events: none;
 }
 
-.pitch-row:last-child {
-  margin-bottom: 0;
+.pitch-penalty-box {
+  position: absolute;
+  bottom: 0;
+  left: 20%;
+  width: 60%;
+  height: 24%;
+  border: 2px solid rgba(203, 213, 225, 0.95);
+  border-bottom: none;
+  pointer-events: none;
 }
 
-.pitch-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  background: var(--color-surface);
-  border: 2px solid var(--color-border);
-  border-radius: var(--radius-md);
-  cursor: default;
-  transition: all 0.2s;
-  min-width: 120px;
-  max-width: 140px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  position: relative;
-}
-
-.pitch-card.is-swap-target {
-  border-color: var(--color-primary);
-  background: #f0f7ff;
-  cursor: pointer;
-  animation: pulse-border 1.5s ease-in-out infinite;
+.pitch-six-yard-box {
+  position: absolute;
+  bottom: 0;
+  left: 38%;
+  width: 24%;
+  height: 10%;
+  border: 2px solid rgba(203, 213, 225, 0.95);
+  border-bottom: none;
+  pointer-events: none;
 }
 
 @keyframes pulse-border {
@@ -1112,95 +1110,81 @@ tbody tr:hover {
   }
 }
 
-.pitch-card-header {
+.pitch-dot-slot {
+  position: absolute;
+  transform: translate(-50%, -50%);
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--color-text);
-}
-
-.pitch-card-header .player-tap-target {
-  cursor: pointer;
-  color: var(--color-primary);
-}
-
-.pitch-card-meta {
-  display: flex;
-  gap: 0.4rem;
-  flex-wrap: wrap;
-}
-
-.pitch-card-meta .badge {
-  font-size: 0.7rem;
-  padding: 0.25rem 0.5rem;
-}
-
-.pitch-card-actions {
-  display: flex;
+  align-items: center;
   gap: 0.3rem;
-  align-items: center;
-  margin-top: 0.25rem;
 }
 
-.pitch-armband {
-  width: 28px;
-  height: 28px;
+.pitch-dot-slot.is-swap-target {
+  cursor: pointer;
+}
+
+.pitch-dot {
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  border: 1px solid var(--color-border);
-  font-weight: 700;
-  font-size: 0.75rem;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
+  background: var(--color-surface);
+  border: 2px solid var(--color-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s, border-color 0.2s;
 }
 
-.pitch-armband:hover:not(:disabled) {
-  transform: scale(1.1);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+.pitch-dot-slot.is-swap-target .pitch-dot {
+  border-color: var(--color-danger);
+  animation: pulse-border 1.5s ease-in-out infinite;
 }
 
-.pitch-armband:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+/* An unfilled formation slot — the shape is visible before every position is assigned a player. */
+.pitch-dot-empty {
+  background: transparent;
+  border: 2px dashed rgba(255, 255, 255, 0.9);
+  box-shadow: none;
 }
 
-.pitch-action-btn {
-  flex: 1;
-  padding: 0.35rem 0.5rem;
+/* White fill + a dark stroke/halo — legible whether the label lands on the solid green
+ * (near the goal end) or the faded, near-transparent area near the halfway line, where the
+ * page's light background shows through. Plain --color-primary blue only reads on light. */
+.pitch-dot-label {
   font-size: 0.7rem;
-  font-weight: 600;
-  background: var(--color-secondary-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  font-weight: 700;
+  color: #000;
+  white-space: nowrap;
+  text-align: center;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pitch-dot-label .player-tap-target {
+  color: inherit;
   cursor: pointer;
-  transition: all 0.2s;
 }
 
-.pitch-action-btn:hover:not(:disabled) {
-  background: var(--color-secondary-bg-hover);
+.pitch-dot-label .player-tap-target:hover {
+  text-decoration: none;
 }
 
-.pitch-action-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.pitch-dot-armband {
+  color: #ffd447;
+  font-weight: 700;
 }
 
-.pitch-card-swap-indicator {
+.pitch-dot-swap-indicator {
   position: absolute;
-  top: -8px;
+  top: -20px;
   left: 50%;
   transform: translateX(-50%);
   background: var(--color-primary);
   color: var(--color-primary-text);
-  padding: 0.2rem 0.6rem;
+  padding: 0.15rem 0.5rem;
   border-radius: var(--radius-pill);
-  font-size: 0.65rem;
+  font-size: 0.6rem;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .pitch-bench {
@@ -1267,19 +1251,14 @@ tbody tr:hover {
 }
 
 @media (max-width: 640px) {
-  .pitch {
-    padding: 1rem 0.75rem;
+  .pitch-dot {
+    width: 14px;
+    height: 14px;
   }
 
-  .pitch-row {
-    gap: 0.75rem;
-    margin-bottom: 0.75rem;
-  }
-
-  .pitch-card {
-    min-width: 100px;
-    max-width: 120px;
-    padding: 0.6rem;
+  .pitch-dot-label {
+    font-size: 0.6rem;
+    max-width: 70px;
   }
 
   .pitch-bench {

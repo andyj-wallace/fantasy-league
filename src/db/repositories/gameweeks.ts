@@ -55,3 +55,11 @@ export async function areAllMatchesCompleted(gameweekId: string): Promise<boolea
 export async function markCompleted(gameweekId: string): Promise<void> {
   await db.update(gameweeks).set({ status: "COMPLETED" }).where(eq(gameweeks.id, gameweekId));
 }
+
+/** Test/seed-only: explicitly reopens a gameweek — resets status to UPCOMING and moves its
+ * deadline into the future, regardless of upsertByNumber's LEAST-clamping (which only ever
+ * tightens a deadline, never touches status). Used to turn a long-past, already-COMPLETED
+ * gameweek back into a testable one for local squad-building/transfers. */
+export async function reopenForTesting(gameweekId: string, deadlineAt: Date): Promise<void> {
+  await db.update(gameweeks).set({ status: "UPCOMING", deadlineAt }).where(eq(gameweeks.id, gameweekId));
+}
