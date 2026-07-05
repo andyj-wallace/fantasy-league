@@ -7,16 +7,12 @@ import { authedFetch } from "@/app/lib/apiFetch";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { getStoredToken } from "@/app/lib/auth";
 import { LoadingState } from "@/app/components/LoadingState";
+import { RecentFormBars } from "@/app/components/RecentFormBars";
 import type { PlayerProfile, PlayerSeasonStatistics, PlayerWithStats } from "../../domain";
 
 interface PlayerDetailResponse extends PlayerWithStats {
   profile: PlayerProfile | null;
   seasonStatistics: PlayerSeasonStatistics | null;
-}
-
-function describeRecentForm(player: PlayerWithStats): string {
-  if (!player.recentFormPoints) return "Insufficient Data";
-  return player.recentFormPoints.join(", ");
 }
 
 /** Client component (was a server component) so the gated GET /players/:id can carry the stored
@@ -114,7 +110,7 @@ function PlayerDetailPageContent() {
         </div>
         <div className="stat-tile">
           <span className="stat-tile-label">Recent Form</span>
-          <span className="stat-tile-value" style={{ fontSize: "0.85rem" }}>{describeRecentForm(player)}</span>
+          <span className="stat-tile-value"><RecentFormBars points={player.recentFormPoints} /></span>
         </div>
         <div className="stat-tile">
           <span className="stat-tile-label">Availability</span>

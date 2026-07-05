@@ -11,7 +11,7 @@ const features = [
   },
   {
     title: "Make your moves",
-    body: "Two free transfers every gameweek, banked up to eight. React to form, injuries and fixtures before the deadline locks your players.",
+    body: "Two free transfers every gameweek, with unused ones carrying over. React to form, injuries and fixtures before the deadline locks your players.",
   },
   {
     title: "Climb the table",

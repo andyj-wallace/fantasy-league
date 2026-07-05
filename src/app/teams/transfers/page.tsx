@@ -255,9 +255,7 @@ function TransfersPageContent() {
       <div className="stat-row">
         <div className="stat-tile">
           <span className="stat-tile-label">Free transfers</span>
-          <span className="stat-tile-value">
-            {available.bankedFreeTransferCount}/{available.maxBankedFreeTransferCount}
-          </span>
+          <span className="stat-tile-value">{available.bankedFreeTransferCount}</span>
         </div>
         <div className="stat-tile">
           <span className="stat-tile-label">Next transfer</span>
@@ -272,8 +270,7 @@ function TransfersPageContent() {
       </div>
 
       <p>
-        You get 2 free transfers each gameweek, banked up to {available.maxBankedFreeTransferCount}. Extra
-        transfers cost 10 pts each.
+        You get 2 free transfers each gameweek. Extra transfers cost 10 pts each.
         {available.currentGameweek &&
           ` Unused free transfers carry over when Gameweek ${available.currentGameweek.number} completes.`}
       </p>

@@ -10,6 +10,7 @@ import { GameweekBanner } from "@/app/components/GameweekBanner";
 import { AvailabilityBadge } from "@/app/components/AvailabilityBadge";
 import { LoadingState } from "@/app/components/LoadingState";
 import { FormationPitch } from "@/app/components/FormationPitch";
+import { RecentFormBars } from "@/app/components/RecentFormBars";
 import { useCurrentGameweek } from "@/app/lib/useCurrentGameweek";
 import { useRequireAuth } from "@/app/lib/useRequireAuth";
 import { formatDayAndTime } from "@/app/lib/formatDate";
@@ -34,9 +35,59 @@ import {
 const ALL_POSITIONS: PlayerPosition[] = ["GK", "DEF", "MID", "FWD"];
 const PLAYERS_PER_PAGE = 15;
 
-function describeRecentForm(player: PlayerWithStats): string {
-  if (!player.recentFormPoints) return "Insufficient Data";
-  return player.recentFormPoints.join(", ");
+/** Discovery-table columns the user can sort by, each mapped to the comparable value it sorts on.
+ * Position sorts in on-pitch order (GK→FWD) rather than alphabetically. Form sorts by the most
+ * recent points value, with "Insufficient Data" (null) always sorting last. */
+type SortableColumn = "name" | "club" | "position" | "price" | "points" | "form";
+
+const POSITION_SORT_ORDER: Record<PlayerPosition, number> = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
+
+function playerSortValue(player: PlayerWithStats, column: SortableColumn): string | number {
+  switch (column) {
+    case "name":
+      return player.name.toLowerCase();
+    case "club":
+      return player.club.toLowerCase();
+    case "position":
+      return POSITION_SORT_ORDER[player.position];
+    case "price":
+      return player.priceInMillions;
+    case "points":
+      return player.totalFantasyPoints;
+    case "form":
+      return player.recentFormPoints?.[0] ?? Number.NEGATIVE_INFINITY;
+  }
+}
+
+/** A discovery-table column header that sorts the table on click, showing an arrow for the
+ * currently-active sort column and its direction. */
+function SortableHeader({
+  label,
+  column,
+  activeColumn,
+  direction,
+  onSort,
+}: {
+  label: string;
+  column: SortableColumn;
+  activeColumn: SortableColumn;
+  direction: "asc" | "desc";
+  onSort: (column: SortableColumn) => void;
+}) {
+  const isActive = column === activeColumn;
+  return (
+    <th>
+      <button
+        type="button"
+        className={`sortable-header ${isActive ? "is-active" : ""}`}
+        onClick={() => onSort(column)}
+        aria-sort={isActive ? (direction === "asc" ? "ascending" : "descending") : "none"}
+      >
+        {label}
+        <span className="sortable-header-arrow">{isActive ? (direction === "asc" ? "▲" : "▼") : "↕"}</span>
+      </button>
+    </th>
+  );
 }
 
 /** In-progress edits (roster changes, formation, captaincy) mirrored to sessionStorage so they
@@ -112,6 +163,8 @@ function SquadBuilderPageContent() {
   const [positionFilter, setPositionFilter] = useState<PlayerPosition | "">("");
   const [clubFilter, setClubFilter] = useState("");
   const [maxPriceFilter, setMaxPriceFilter] = useState("");
+  const [sortColumn, setSortColumn] = useState<SortableColumn>("points");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [currentPage, setCurrentPage] = useState(1);
 
   const [saveResult, setSaveResult] = useState<SaveResult | null>(null);
@@ -238,19 +291,43 @@ function SquadBuilderPageContent() {
     });
   }, [allPlayers, nameQuery, positionFilter, clubFilter, maxPriceFilter]);
 
-  // A filter change can shrink the result set out from under whatever page the user was on.
+  const sortedPlayers = useMemo(() => {
+    const directionMultiplier = sortDirection === "asc" ? 1 : -1;
+    return [...filteredPlayers].sort((firstPlayer, secondPlayer) => {
+      const firstValue = playerSortValue(firstPlayer, sortColumn);
+      const secondValue = playerSortValue(secondPlayer, sortColumn);
+      if (firstValue < secondValue) return -1 * directionMultiplier;
+      if (firstValue > secondValue) return 1 * directionMultiplier;
+      // Stable, predictable tiebreak so equal sort values don't shuffle between renders.
+      return firstPlayer.name.localeCompare(secondPlayer.name);
+    });
+  }, [filteredPlayers, sortColumn, sortDirection]);
+
+  /** Clicking a column sorts ascending the first time, then toggles direction on repeat clicks.
+   * Numeric/points columns default to descending (highest first) since that's what users scan for. */
+  function handleSortColumn(column: SortableColumn) {
+    if (column === sortColumn) {
+      setSortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
+    } else {
+      setSortColumn(column);
+      setSortDirection(column === "name" || column === "club" || column === "position" ? "asc" : "desc");
+    }
+    setCurrentPage(1);
+  }
+
+  // A filter or sort change can shift the result set out from under whatever page the user was on.
   useEffect(() => {
     setCurrentPage(1);
   }, [nameQuery, positionFilter, clubFilter, maxPriceFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredPlayers.length / PLAYERS_PER_PAGE));
+  const totalPages = Math.max(1, Math.ceil(sortedPlayers.length / PLAYERS_PER_PAGE));
   // Clamp rather than trust state directly: a filter can shrink totalPages below whatever
   // page the reset effect hasn't caught up to yet on this render.
   const clampedPage = Math.min(currentPage, totalPages);
   const pageStartIndex = (clampedPage - 1) * PLAYERS_PER_PAGE;
   const paginatedPlayers = useMemo(
-    () => filteredPlayers.slice(pageStartIndex, pageStartIndex + PLAYERS_PER_PAGE),
-    [filteredPlayers, pageStartIndex],
+    () => sortedPlayers.slice(pageStartIndex, pageStartIndex + PLAYERS_PER_PAGE),
+    [sortedPlayers, pageStartIndex],
   );
 
   function addPlayerError(player: PlayerWithStats): string | null {
@@ -663,12 +740,12 @@ function SquadBuilderPageContent() {
         <table>
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Club</th>
-              <th>Pos</th>
-              <th>Price</th>
-              <th>Pts</th>
-              <th>Form</th>
+              <SortableHeader label="Name" column="name" activeColumn={sortColumn} direction={sortDirection} onSort={handleSortColumn} />
+              <SortableHeader label="Club" column="club" activeColumn={sortColumn} direction={sortDirection} onSort={handleSortColumn} />
+              <SortableHeader label="Pos" column="position" activeColumn={sortColumn} direction={sortDirection} onSort={handleSortColumn} />
+              <SortableHeader label="Price" column="price" activeColumn={sortColumn} direction={sortDirection} onSort={handleSortColumn} />
+              <SortableHeader label="Pts" column="points" activeColumn={sortColumn} direction={sortDirection} onSort={handleSortColumn} />
+              <SortableHeader label="Form" column="form" activeColumn={sortColumn} direction={sortDirection} onSort={handleSortColumn} />
               <th></th>
             </tr>
           </thead>
@@ -689,7 +766,7 @@ function SquadBuilderPageContent() {
                   <td>{player.position}</td>
                   <td>£{player.priceInMillions}M</td>
                   <td>{player.totalFantasyPoints}</td>
-                  <td style={{ color: "var(--color-text-muted)", fontSize: "0.8rem" }}>{describeRecentForm(player)}</td>
+                  <td><RecentFormBars points={player.recentFormPoints} /></td>
                   <td>
                     {inSquad ? (
                       <button onClick={() => handleRemovePlayer(player.id)}>Remove</button>

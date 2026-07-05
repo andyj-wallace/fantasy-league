@@ -170,7 +170,9 @@ export function FormationPitch({
         {isSwapTarget && <span className="pitch-dot-swap-indicator">Swap</span>}
         <span className="pitch-dot" />
         <span className="pitch-dot-label">
-          <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
+          <span className="pitch-dot-name">
+            <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
+          </span>
           {isCaptain && <span className="pitch-dot-armband"> · C</span>}
           {isViceCaptain && <span className="pitch-dot-armband"> · V</span>}
         </span>
