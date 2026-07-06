@@ -1,6 +1,7 @@
 # Deployment Guide — Deploy Fantasy League from Scratch
 
-Plain-language, step-by-step. The goal: anyone on the team can stand up (or rebuild)
+Plain-language, step-by-step. 
+Goal: anyone on the team can stand up (or rebuild)
 the whole system in one sitting, because everything is Infrastructure as Code (IaC).
 You describe the infrastructure in code (AWS CDK), and one command builds it all. No
 clicking around the AWS console.
