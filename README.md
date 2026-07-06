@@ -92,4 +92,4 @@ fixed interval. Summary:
 | Busiest realistic (Sat 3pm blackout) | 7 | ~22 min | 94 / 100 |
 | Typical day | 3 | ~9 min | 95 / 100 |
 | Light day | 1 | ~3.5 min (floored ~5–10 min) | well under cap |
-| Absolute floor (all 10 PL fixtures simultaneous — never happens) | 10 | ~37 min | 88 / 100 |
+| Absolute floor (all 10 PL fixtures simultaneous — happens only on the final gameweek!) | 10 | ~37 min | 88 / 100 |
