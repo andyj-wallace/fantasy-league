@@ -63,6 +63,14 @@ The code is already deploy-ready:
 
 ## VPC / networking design (the crux)
 
+- **RULE: create a dedicated VPC — never use the account's default VPC.** The stack
+  provisions its own `fantasy-league-<env>-vpc`. Do **not** use `Vpc.fromLookup({ isDefault: true })`
+  or otherwise attach to the default VPC. Reasons: the default VPC auto-assigns public
+  subnets (the DB could end up internet-adjacent), it's shared/mutable across anything
+  else in the account, and it isn't reproducible in a fresh account — all three break
+  our isolation, security, and "rebuild from one command" goals. A dedicated VPC gives
+  a controlled public/private split, guarantees the DB sits in private subnets, and
+  tears down cleanly.
 - **VPC** with **2 AZs** (RDS requires a DB subnet group spanning ≥2 AZs even in
   single-AZ mode). Per AZ: one **public** subnet, one **private** subnet.
 - **NAT instance (fck-nat)** in the AZ-a public subnet, in an **ASG of size 1** with a
@@ -78,6 +86,77 @@ The code is already deploy-ready:
   Cognito JWKS (`https://cognito-idp.us-east-1.amazonaws.com/.../jwks.json`, cached
   in-provider already); all Lambdas → SSM Parameter Store. No interface VPC endpoints
   (they'd be ~$7/mo each — NAT egress is cheaper at this scale).
+
+## Database security (holds user data — a primary goal)
+
+The RDS instance stores user PII: email, handle, display name, and `cognito_sub`.
+**Passwords are never stored here — Cognito owns authentication** — which deliberately
+keeps the blast radius of a DB compromise low. Controls, in priority order:
+
+- [ ] **Private, no public path** — `publiclyAccessible: false`, in private subnets,
+      SG ingress on 5432 from the **Lambda SG only**. Nothing on the internet can open
+      a connection (this is the whole reason we chose the VPC + NAT-instance shape over
+      a public RDS).
+- [ ] **Encryption at rest (KMS)** — `storageEncrypted: true`; automated backups and
+      snapshots inherit the encryption. **TLS in transit enforced** (`rds.force_ssl=1`;
+      `pg` connects with the RDS CA and `rejectUnauthorized: true`).
+- [ ] **App uses a least-privilege Postgres role, not the RDS master.** Migrations use
+      an admin role; the API/worker Lambdas connect as an app role with only DML on the
+      app tables. The master credential is never in the app's runtime path.
+- [ ] **Credentials in SSM SecureString** (KMS-encrypted), read at deploy/runtime; never
+      in the repo or template. *(If managed rotation is later wanted, move the master
+      credential to Secrets Manager — ~$0.40/mo — and enable rotation. SSM is the
+      cost-minimal default.)*
+- [ ] **Deletion protection ON + final snapshot** in prod — the DB can't be deleted by
+      accident.
+- [ ] **Automated backups + point-in-time recovery** — see `RELIABILITY_PLAN.md`.
+- [ ] **No bastion host by default** (smaller attack surface). If direct admin access is
+      ever needed, use SSM Session Manager port-forwarding through the NAT/an SSM-managed
+      host — no permanent public jump box.
+- [ ] **Data minimization** — store only what the app needs; Cognito stays the source of
+      truth for identity, RDS holds a synced copy.
+
+Explicitly **out of scope** at MVP scale (stated so it's a decision, not an oversight):
+WAF, GuardDuty, VPC flow-log retention, and field-level encryption. They add cost/ops
+for little marginal risk reduction given the DB is already private + encrypted and
+stores no credentials. Revisit if the data sensitivity or user count grows.
+
+## Idempotency & existing resources (no duplicate creation)
+
+CDK/CloudFormation is **declarative and idempotent by design**: `cdk deploy` computes a
+diff against the currently-deployed stack and changes only what differs — re-running it
+with no code change is a no-op and **cannot create duplicate resources it already owns.**
+The rules below keep that guarantee intact:
+
+- [ ] **Always `cdk diff` before `cdk deploy`.** It shows exactly what will be
+      added / modified / **replaced** / destroyed. This is the review gate that catches
+      an accidental resource replacement before it happens.
+- [ ] **Stable logical IDs + explicit physical names.** Renaming a construct ID makes
+      CloudFormation destroy-and-recreate the resource — treat construct IDs as
+      immutable once deployed. The explicit `fantasy-league-<env>-*` physical names also
+      make a stray duplicate impossible: a second attempt to create the same name fails
+      fast instead of silently making a parallel copy.
+- [ ] **Reference pre-existing resources — never recreate them.** The **Cognito pool**
+      already exists and is live; import it with `UserPool.fromUserPoolId(...)` /
+      `fromUserPoolClientId(...)` (a read-only reference), never a `new UserPool`. It is
+      the one intentional "existing resource" and is documented as such.
+- [ ] **SSM secret parameters are created out-of-band** (see the guide) and the stack
+      **reads** them via `fromSecureStringParameterAttributes` + a read grant — it does
+      not create or overwrite their values. Rotating a secret is a deliberate
+      `aws ssm put-parameter --overwrite`, never a side effect of a deploy.
+- [ ] **Globally-unique names are collision-guarded.** The S3 bucket name embeds the
+      account id + `<env>` (`fantasy-league-<env>-web-<account-id>`) so redeploys and a
+      second environment can't collide; a genuinely taken name fails the deploy rather
+      than duplicating.
+- [ ] **One stack = one owner; no ClickOps.** These resources are created and changed
+      only through CDK. Manually creating anything in the console is what produces
+      orphaned duplicates and drift — forbidden (already in the best-practice checklist).
+- [ ] **Environments are isolated stacks.** `fantasy-league-dev` / `-staging` / `-prod`
+      are separate CloudFormation stacks with separate names, so one can never mutate or
+      duplicate another's resources.
+- [ ] **Guardrails on the stateful bits:** stack **termination protection** on prod, and
+      a `RETAIN` removal policy on the RDS instance so a stack delete never silently
+      drops the database.
 
 ## Naming conventions & tagging
 
@@ -157,6 +236,12 @@ and checked at review.
 - [ ] **Environment parity** — dev/staging/prod are the same CDK app with different
       `<env>` context, not divergent hand-built stacks.
 - [ ] **Cost guardrail** — an AWS Budgets alarm on the `Project=fantasy-league` tag.
+- [ ] **CloudFront `PriceClass_100`** — serve only from the cheapest (NA/EU) edge
+      locations; fine for the audience and cuts egress cost.
+- [ ] **RDS `gp3` storage with a capped autoscaling ceiling** (e.g. max 50 GB) — gp3 is
+      cheaper/faster than gp2, and the cap prevents a runaway from ballooning cost.
+- [ ] **RDS Performance Insights** left on the free 7-day tier (or off) — not the paid
+      long-retention tier.
 
 ## CDK stack — resources to define (`infra/`)
 
