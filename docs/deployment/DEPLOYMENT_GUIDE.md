@@ -1,6 +1,6 @@
 # Deployment Guide — Deploy Fantasy League from Scratch
 
-Plain-language, step-by-step. 
+- Plain-language, step-by-step. 
 
 Goal: anyone on the team can stand up (or rebuild)
 the whole system in one sitting, because everything is Infrastructure as Code (IaC).
