@@ -21,26 +21,36 @@ function SquadStatusBadge({ rosterCount, isLineupSet }: { rosterCount?: number; 
 /** The team/league summary line shown wherever a user's team needs quick links to its squad
  * and transfers, plus a link to the league page (which carries that league's Standings) — the
  * home page's multi-league list and the single-league page both render this.
- * When `onOpenTransfers` is supplied (the league hub does), Transfers opens in-place as an overlay
- * instead of navigating away; without it (the home page's list) Transfers stays a plain link. */
+ * When `onOpenSquad`/`onOpenTransfers` are supplied (the league hub does), Squad and Transfers open
+ * in-place as overlays instead of navigating away; without them (the home page's list) they stay
+ * plain links. */
 export function TeamLeagueLinks({
   team,
   league,
   rosterCount,
   isLineupSet,
+  onOpenSquad,
   onOpenTransfers,
 }: {
   team: TeamSummary;
   league: League;
   rosterCount?: number;
   isLineupSet?: boolean;
+  onOpenSquad?: (teamId: string) => void;
   onOpenTransfers?: (teamId: string) => void;
 }) {
   return (
     <>
       <Link href={`/leagues?leagueId=${league.id}`}>{league.name}</Link> — {team.name} (£{team.remainingBudgetInMillions}M
       remaining) <SquadStatusBadge rosterCount={rosterCount} isLineupSet={isLineupSet} /> —{" "}
-      <Link href={`/teams/squad-builder?teamId=${team.id}`}>Squad</Link> |{" "}
+      {onOpenSquad ? (
+        <button type="button" className="btn-link" onClick={() => onOpenSquad(team.id)}>
+          Squad
+        </button>
+      ) : (
+        <Link href={`/teams/squad-builder?teamId=${team.id}`}>Squad</Link>
+      )}{" "}
+      |{" "}
       {onOpenTransfers ? (
         <button type="button" className="btn-link" onClick={() => onOpenTransfers(team.id)}>
           Transfers

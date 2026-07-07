@@ -1584,12 +1584,45 @@ tbody tr:hover {
   color: var(--color-text-muted);
 }
 
-/* Lets .player-tap-target render as a bare <button> (roster names in the transfers panel) without
-   inheriting the default button chrome. */
+/* Lets .player-tap-target render as a bare <button> (roster names in the transfers panel, squad
+   discovery table) without inheriting the default button chrome. */
 button.player-tap-target {
   border: none;
   background: none;
   padding: 0;
   font: inherit;
   text-align: left;
+}
+
+/* The squad builder's save bar is `position: fixed` to the viewport on its standalone page. Inside
+   an overlay that would escape the surface and (at z-index 20) fall behind the backdrop, so scope
+   it back to a sticky footer pinned to the bottom of the scrolling overlay body. */
+.overlay-body .save-bar {
+  position: sticky;
+  bottom: -1.25rem;
+  left: auto;
+  right: auto;
+  z-index: 1;
+  margin: 1rem -1.25rem -1.25rem;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.08);
+}
+
+/* ── Standalone-page → hub toggle strip ────────────────────── */
+
+.view-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  padding: 0.5rem 0.85rem;
+  background: var(--color-info-bg);
+  border: 1px solid var(--color-info-border);
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+}
+
+.view-mode-toggle-label {
+  color: var(--color-text-muted);
+  font-weight: 600;
 }

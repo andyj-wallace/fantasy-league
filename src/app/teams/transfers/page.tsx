@@ -4,13 +4,18 @@ import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LoadingState } from "@/app/components/LoadingState";
 import { TransfersPanel } from "@/app/components/TransfersPanel";
+import { StandaloneViewToggle } from "@/app/components/StandaloneViewToggle";
+import { authedFetch } from "@/app/lib/apiFetch";
+import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { useRequireAuth } from "@/app/lib/useRequireAuth";
+import { useStandalonePageGate } from "@/app/lib/standalonePageGate";
+import type { Team } from "../../../domain";
 
-/** Standalone transfers page — kept as a thin wrapper around the shared TransfersPanel so deep
- * links and pre-hub navigation still resolve. The league hub renders the same panel inside a
- * slide-up overlay instead of sending the user here. The team is addressed by a ?teamId= query
- * param because the frontend deploys as a static export — runtime UUIDs can't be enumerated as
- * static paths at build time. The Suspense boundary is required for useSearchParams under static
+/** Standalone transfers page — a thin wrapper around the shared TransfersPanel, kept as a
+ * deep-linkable fallback. The gate (useStandalonePageGate) decides whether to render here or hand
+ * off to the league hub's transfers overlay. The team is addressed by a ?teamId= query param
+ * because the frontend deploys as a static export — runtime UUIDs can't be enumerated as static
+ * paths at build time. The Suspense boundary is required for useSearchParams under static
  * prerendering. */
 export default function TransfersPage() {
   return (
@@ -20,10 +25,33 @@ export default function TransfersPage() {
   );
 }
 
+/** Maps this standalone route to its hub equivalent — the transfers overlay open on the team's
+ * league page. Needs a fetch because the URL only carries teamId, while the hub is addressed by
+ * leagueId. */
+async function resolveTransfersHubUrl(teamId: string): Promise<string | null> {
+  if (!teamId) return null;
+  try {
+    const team: Team = await authedFetch(`${getApiBaseUrl()}/teams/${teamId}`).then((response) => response.json());
+    if (!team?.leagueId) return null;
+    return `/leagues?leagueId=${team.leagueId}&panel=transfers&teamId=${teamId}`;
+  } catch {
+    return null;
+  }
+}
+
 function TransfersPageContent() {
   useRequireAuth();
   const teamId = useSearchParams().get("teamId") ?? "";
   const router = useRouter();
+
+  const gateStatus = useStandalonePageGate(() => resolveTransfersHubUrl(teamId));
+
+  async function openInHub() {
+    const hubUrl = await resolveTransfersHubUrl(teamId);
+    if (hubUrl) router.push(hubUrl);
+  }
+
+  if (gateStatus !== "render") return <LoadingState label="Opening…" />;
 
   return (
     <main>
@@ -32,6 +60,7 @@ function TransfersPageContent() {
           ← Back
         </button>
       </p>
+      <StandaloneViewToggle onOpenInHub={openInHub} />
       <h1>Transfers</h1>
       <TransfersPanel teamId={teamId} onPlayerClick={(playerId) => router.push(`/players?playerId=${playerId}`)} />
     </main>

@@ -64,6 +64,64 @@ thing. Beyond local development (CI, staging, production), don't store secrets i
 inject them as environment variables at deploy time via AWS Secrets Manager or SSM Parameter
 Store.
 
+## Frontend — the League Hub
+
+The league page (`src/app/leagues/page.tsx`) is the **hub**: a signed-in user does almost
+everything for a league without navigating away from it. Standings and fixtures render directly on
+the page; the team's **Squad Builder**, **Transfers**, and any **player's details** open *in-place*
+as overlays on top of it.
+
+### How it's put together
+
+Each screen is a chrome-free panel component that fetches its own data, so the *same* component
+renders both inside a hub overlay and as its standalone page:
+
+| Surface | Panel component | Standalone route (fallback) |
+|---|---|---|
+| Squad builder | `SquadBuilderPanel` | `/teams/squad-builder?teamId=` |
+| Transfers | `TransfersPanel` | `/teams/transfers?teamId=` |
+| Player details | `PlayerDetailPanel` | `/players?playerId=` |
+
+`Overlay` (`src/app/components/Overlay.tsx`) is the one modal primitive — a centered `popup` for
+small/read-only content and a slide-up `panel` for large interactive screens. It owns
+Escape-to-close, backdrop-click, body-scroll lock, focus restore, and a Tab focus trap. It's built
+in the bespoke `globals.css` design system — **no component library, no Tailwind**.
+
+### Overlay state lives in the URL (deep-linkable, Back-button-closable)
+
+Opening a panel pushes a query param; closing pops history (so Back, Escape, and the ✕ all close
+it). A player popup can **stack** on top of a panel by adding `playerId` while `panel` stays set:
+
+- `…/leagues?leagueId=L&panel=squad&teamId=T` — squad overlay
+- `…/leagues?leagueId=L&panel=transfers&teamId=T` — transfers overlay
+- `…&playerId=P` — player popup, stacked over whichever panel is open
+
+Player-name taps deep inside the squad builder (pitch, bench, discovery table) open the popup via
+`PlayerDetailContext` — no callback threading. After a save or transfer, the panel calls
+`onChanged`, which re-fetches the hub's team summary and standings so budget/status/rank update
+live. **No per-request recalculation happens on the read path** — see the architecture doc.
+
+### Standalone pages and the migration toggle (Option A)
+
+The standalone routes are kept as deep-linkable fallbacks; the hub overlays and the standalone
+pages **coexist**. Each standalone page runs through `useStandalonePageGate`
+(`src/app/lib/standalonePageGate.ts`), which decides — render inline vs. hand off to the hub — by
+first-match-wins precedence:
+
+1. `?view=hub` / `?view=standalone` in the URL (per-visit override, wins on any device).
+2. The visitor's saved choice in `localStorage` (set by the on-page "Open in league hub →" toggle)
+   — honoured on any device once chosen.
+3. The **device default**: the hub at desktop width, the standalone page on phones/narrow tablets.
+
+The device default is decided by `hubIsDefaultForViewport()` — a `matchMedia` check against
+`HUB_DEFAULT_MIN_WIDTH` (1024px, the same breakpoint where the league page gains its sidebar
+layout). Desktops land on the hub overlays; small screens land on the standalone full pages, which
+read better than large slide-up overlays there. Both experiences still coexist (Option A) — nothing
+is deleted and deep links keep resolving. When a hand-off is chosen, the gate resolves the
+equivalent hub URL (fetching to discover the team's `leagueId`, which the standalone URL doesn't
+carry) and redirects; if it can't resolve one, it falls back to rendering standalone so no one is
+stranded.
+
 ## Deployment (AWS)
 
 Decided 2026-07-03:

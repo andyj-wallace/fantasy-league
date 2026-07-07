@@ -11,7 +11,9 @@ import { GameweekBanner } from "@/app/components/GameweekBanner";
 import { LoadingState } from "@/app/components/LoadingState";
 import { Overlay } from "@/app/components/Overlay";
 import { TransfersPanel } from "@/app/components/TransfersPanel";
+import { SquadBuilderPanel } from "@/app/components/SquadBuilderPanel";
 import { PlayerDetailPanel } from "@/app/components/PlayerDetailPanel";
+import { PlayerDetailContext } from "@/app/lib/playerDetailContext";
 import { useCurrentGameweek, type GameweekMatchSummary } from "@/app/lib/useCurrentGameweek";
 import { formatDayAndTime } from "@/app/lib/formatDate";
 import type { GameweekStatus, League, LeagueStanding, MatchStatus } from "../../domain";
@@ -138,8 +140,8 @@ function LeaguePageContent() {
   /** Overlay routing lives in the query string so panels are deep-linkable and the browser Back
    * button (and Escape/backdrop) close them: opening pushes a history entry, closing pops it. A
    * player popup can stack on top of the transfers panel by adding ?playerId= while ?panel= stays. */
-  function openTransfers(teamId: string) {
-    const params = new URLSearchParams({ leagueId, panel: "transfers", teamId });
+  function openTeamPanel(panel: "transfers" | "squad", teamId: string) {
+    const params = new URLSearchParams({ leagueId, panel, teamId });
     router.push(`/leagues?${params.toString()}`);
   }
 
@@ -196,7 +198,8 @@ function LeaguePageContent() {
             league={teamWithLeague.league}
             rosterCount={teamWithLeague.rosterCount}
             isLineupSet={teamWithLeague.isLineupSet}
-            onOpenTransfers={openTransfers}
+            onOpenSquad={(teamId) => openTeamPanel("squad", teamId)}
+            onOpenTransfers={(teamId) => openTeamPanel("transfers", teamId)}
           />
         </p>
       )}
@@ -307,6 +310,14 @@ function LeaguePageContent() {
     {openPanel === "transfers" && panelTeamId && (
       <Overlay title="Transfers" variant="panel" onClose={closeTopPanel}>
         <TransfersPanel teamId={panelTeamId} onPlayerClick={openPlayer} onChanged={loadLeague} />
+      </Overlay>
+    )}
+
+    {openPanel === "squad" && panelTeamId && (
+      <Overlay title="Squad Builder" variant="panel" onClose={closeTopPanel}>
+        <PlayerDetailContext.Provider value={{ openPlayer }}>
+          <SquadBuilderPanel teamId={panelTeamId} onChanged={loadLeague} />
+        </PlayerDetailContext.Provider>
       </Overlay>
     )}
 
