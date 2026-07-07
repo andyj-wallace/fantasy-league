@@ -9,6 +9,9 @@ import { getStoredToken } from "@/app/lib/auth";
 import { TeamLeagueLinks } from "@/app/components/TeamLeagueLinks";
 import { GameweekBanner } from "@/app/components/GameweekBanner";
 import { LoadingState } from "@/app/components/LoadingState";
+import { Overlay } from "@/app/components/Overlay";
+import { TransfersPanel } from "@/app/components/TransfersPanel";
+import { PlayerDetailPanel } from "@/app/components/PlayerDetailPanel";
 import { useCurrentGameweek, type GameweekMatchSummary } from "@/app/lib/useCurrentGameweek";
 import { formatDayAndTime } from "@/app/lib/formatDate";
 import type { GameweekStatus, League, LeagueStanding, MatchStatus } from "../../domain";
@@ -85,7 +88,11 @@ export default function LeaguePage() {
 }
 
 function LeaguePageContent() {
-  const leagueId = useSearchParams().get("leagueId") ?? "";
+  const searchParams = useSearchParams();
+  const leagueId = searchParams.get("leagueId") ?? "";
+  const openPanel = searchParams.get("panel");
+  const panelTeamId = searchParams.get("teamId") ?? "";
+  const detailPlayerId = searchParams.get("playerId") ?? "";
   const router = useRouter();
   const [teamWithLeague, setTeamWithLeague] = useState<TeamWithLeague | null>(null);
   const [standingsResponse, setStandingsResponse] = useState<StandingsResponse | null>(null);
@@ -93,16 +100,10 @@ function LeaguePageContent() {
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
   const currentGameweek = useCurrentGameweek();
 
-  useEffect(() => {
-    if (!getStoredToken()) {
-      router.push("/login");
-      return;
-    }
-    if (!leagueId) {
-      setError("No league specified — open a league from your home page.");
-      return;
-    }
-
+  /** Loads (or reloads) the two league-scoped reads the page renders — the user's team summary and
+   * the standings. Reused by the initial mount and by the on-close refresh after a transfer, so a
+   * budget change or a re-rank shows without a full navigation. */
+  function loadLeague() {
     authedFetch(`${getApiBaseUrl()}/me/teams`)
       .then((response) => response.json())
       .then((result: TeamWithLeague[]) => {
@@ -119,7 +120,42 @@ function LeaguePageContent() {
       .then((response) => response.json())
       .then(setStandingsResponse)
       .catch(() => setError("Could not load this league's standings — try refreshing."));
+  }
+
+  useEffect(() => {
+    if (!getStoredToken()) {
+      router.push("/login");
+      return;
+    }
+    if (!leagueId) {
+      setError("No league specified — open a league from your home page.");
+      return;
+    }
+    loadLeague();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leagueId, router]);
+
+  /** Overlay routing lives in the query string so panels are deep-linkable and the browser Back
+   * button (and Escape/backdrop) close them: opening pushes a history entry, closing pops it. A
+   * player popup can stack on top of the transfers panel by adding ?playerId= while ?panel= stays. */
+  function openTransfers(teamId: string) {
+    const params = new URLSearchParams({ leagueId, panel: "transfers", teamId });
+    router.push(`/leagues?${params.toString()}`);
+  }
+
+  function openPlayer(playerId: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("playerId", playerId);
+    router.push(`/leagues?${params.toString()}`);
+  }
+
+  function closeTopPanel() {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.replace(`/leagues?leagueId=${leagueId}`);
+    }
+  }
 
   function getInviteUrl(inviteCode: string): string {
     return `${window.location.origin}/leagues/join?code=${inviteCode}`;
@@ -143,6 +179,7 @@ function LeaguePageContent() {
       : null;
 
   return (
+    <>
     <main className="page-with-sidebar">
       <GameweekBanner current={currentGameweek} />
 
@@ -159,6 +196,7 @@ function LeaguePageContent() {
             league={teamWithLeague.league}
             rosterCount={teamWithLeague.rosterCount}
             isLineupSet={teamWithLeague.isLineupSet}
+            onOpenTransfers={openTransfers}
           />
         </p>
       )}
@@ -265,5 +303,18 @@ function LeaguePageContent() {
       </div>
       </div>
     </main>
+
+    {openPanel === "transfers" && panelTeamId && (
+      <Overlay title="Transfers" variant="panel" onClose={closeTopPanel}>
+        <TransfersPanel teamId={panelTeamId} onPlayerClick={openPlayer} onChanged={loadLeague} />
+      </Overlay>
+    )}
+
+    {detailPlayerId && (
+      <Overlay title="Player details" variant="popup" onClose={closeTopPanel}>
+        <PlayerDetailPanel playerId={detailPlayerId} />
+      </Overlay>
+    )}
+    </>
   );
 }
