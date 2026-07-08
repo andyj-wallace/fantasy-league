@@ -9,20 +9,7 @@ import { getStoredToken } from "@/app/lib/auth";
 import { TeamLeagueLinks } from "@/app/components/TeamLeagueLinks";
 import { LoadingState } from "@/app/components/LoadingState";
 import { LoggedOutLanding } from "@/app/components/LoggedOutLanding";
-import type { League } from "../domain";
-
-interface TeamSummary {
-  id: string;
-  name: string;
-  remainingBudgetInMillions: number;
-}
-
-interface TeamWithLeague {
-  team: TeamSummary;
-  league: League;
-  rosterCount: number;
-  isLineupSet: boolean;
-}
+import type { TeamWithLeague } from "@/app/lib/teamTypes";
 
 type LeaguesStatus = "loading" | "ready" | "error";
 

@@ -1,11 +1,6 @@
 import Link from "next/link";
+import type { TeamSummary } from "@/app/lib/teamTypes";
 import { SQUAD_SIZE, type League } from "../../domain";
-
-interface TeamSummary {
-  id: string;
-  name: string;
-  remainingBudgetInMillions: number;
-}
 
 /** "Is this team ready to score points?" at a glance: squad still short of 16, lineup (formation
  * + captaincy) not saved yet, or all set. Renders nothing when the caller didn't load the state. */

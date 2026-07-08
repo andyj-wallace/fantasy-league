@@ -5,6 +5,7 @@ import { authedFetch } from "@/app/lib/apiFetch";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { LoadingState } from "@/app/components/LoadingState";
 import { RecentFormBars } from "@/app/components/RecentFormBars";
+import { StatTile } from "@/app/components/StatTile";
 import type { PlayerProfile, PlayerSeasonStatistics, PlayerWithStats } from "../../domain";
 
 interface PlayerDetailResponse extends PlayerWithStats {
@@ -75,27 +76,14 @@ export function PlayerDetailPanel({ playerId }: { playerId: string }) {
       </div>
 
       <div className="stat-row">
-        <div className="stat-tile">
-          <span className="stat-tile-label">Price</span>
-          <span className="stat-tile-value">£{player.priceInMillions}m</span>
-        </div>
-        <div className="stat-tile">
-          <span className="stat-tile-label">Total Points</span>
-          <span className="stat-tile-value">{player.totalFantasyPoints}</span>
-        </div>
-        <div className="stat-tile">
-          <span className="stat-tile-label">Recent Form</span>
-          <span className="stat-tile-value">
-            <RecentFormBars points={player.recentFormPoints} />
-          </span>
-        </div>
-        <div className="stat-tile">
-          <span className="stat-tile-label">Availability</span>
-          <span className="stat-tile-value" style={{ fontSize: "0.85rem" }}>
-            {player.availabilityStatus}
-            {player.availabilityReason ? ` (${player.availabilityReason})` : ""}
-          </span>
-        </div>
+        <StatTile label="Price" value={`£${player.priceInMillions}m`} />
+        <StatTile label="Total Points" value={player.totalFantasyPoints} />
+        <StatTile label="Recent Form" value={<RecentFormBars points={player.recentFormPoints} />} />
+        <StatTile
+          label="Availability"
+          valueStyle={{ fontSize: "0.85rem" }}
+          value={`${player.availabilityStatus}${player.availabilityReason ? ` (${player.availabilityReason})` : ""}`}
+        />
       </div>
 
       <h4>Profile</h4>

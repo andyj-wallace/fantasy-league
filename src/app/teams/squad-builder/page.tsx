@@ -6,7 +6,7 @@ import { GameweekBanner } from "@/app/components/GameweekBanner";
 import { LoadingState } from "@/app/components/LoadingState";
 import { SquadBuilderPanel } from "@/app/components/SquadBuilderPanel";
 import { StandaloneViewToggle } from "@/app/components/StandaloneViewToggle";
-import { authedFetch } from "@/app/lib/apiFetch";
+import { fetchJson } from "@/app/lib/apiFetch";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { useRequireAuth } from "@/app/lib/useRequireAuth";
 import { useStandalonePageGate } from "@/app/lib/standalonePageGate";
@@ -30,7 +30,7 @@ export default function SquadBuilderPage() {
 async function resolveSquadHubUrl(teamId: string): Promise<string | null> {
   if (!teamId) return null;
   try {
-    const team: Team = await authedFetch(`${getApiBaseUrl()}/teams/${teamId}`).then((response) => response.json());
+    const team = await fetchJson<Team>(`${getApiBaseUrl()}/teams/${teamId}`);
     if (!team?.leagueId) return null;
     return `/leagues?leagueId=${team.leagueId}&panel=squad&teamId=${teamId}`;
   } catch {

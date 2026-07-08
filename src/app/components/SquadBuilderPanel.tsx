@@ -2,13 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { authedFetch } from "@/app/lib/apiFetch";
+import { authedFetch, fetchJson } from "@/app/lib/apiFetch";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { PlayerNameTapTarget } from "@/app/components/PlayerNameTapTarget";
 import { AvailabilityBadge } from "@/app/components/AvailabilityBadge";
+import { LockedBadge } from "@/app/components/LockedBadge";
 import { LoadingState } from "@/app/components/LoadingState";
 import { FormationPitch } from "@/app/components/FormationPitch";
 import { RecentFormBars } from "@/app/components/RecentFormBars";
+import { StatTile } from "@/app/components/StatTile";
 import { useCurrentGameweek } from "@/app/lib/useCurrentGameweek";
 import { formatDayAndTime } from "@/app/lib/formatDate";
 import {
@@ -168,10 +170,10 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
       return;
     }
     Promise.all([
-      authedFetch(`${getApiBaseUrl()}/teams/${teamId}`).then((response) => response.json()),
-      authedFetch(`${getApiBaseUrl()}/players`).then((response) => response.json()),
+      fetchJson<Team>(`${getApiBaseUrl()}/teams/${teamId}`),
+      fetchJson<PlayerWithStats[]>(`${getApiBaseUrl()}/players`),
     ])
-      .then(([loadedTeam, players]: [Team, PlayerWithStats[]]) => {
+      .then(([loadedTeam, players]) => {
         if (!loadedTeam?.rosterSlots) {
           setLoadError("Could not load this team — check the link and try again.");
           return;
@@ -533,18 +535,9 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
       </p>
 
       <div className="stat-row">
-        <div className="stat-tile">
-          <span className="stat-tile-label">Budget remaining</span>
-          <span className="stat-tile-value">£{remainingBudgetInMillions.toFixed(1)}M</span>
-        </div>
-        <div className="stat-tile">
-          <span className="stat-tile-label">Squad</span>
-          <span className="stat-tile-value">{draftRosterSlots.length}/{SQUAD_SIZE}</span>
-        </div>
-        <div className="stat-tile">
-          <span className="stat-tile-label">Goalkeepers</span>
-          <span className="stat-tile-value">{goalkeeperCount}/{REQUIRED_GOALKEEPER_COUNT}</span>
-        </div>
+        <StatTile label="Budget remaining" value={`£${remainingBudgetInMillions.toFixed(1)}M`} />
+        <StatTile label="Squad" value={`${draftRosterSlots.length}/${SQUAD_SIZE}`} />
+        <StatTile label="Goalkeepers" value={`${goalkeeperCount}/${REQUIRED_GOALKEEPER_COUNT}`} />
       </div>
 
       <h2>Formation</h2>
@@ -616,9 +609,7 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
                 <li key={player.id}>
                   <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
                   <span className="badge">{player.position}</span>
-                  {isPlayerLocked(player) && (
-                    <span className="badge badge-red" title={lockedSinceLabel(player)}>Locked</span>
-                  )}
+                  {isPlayerLocked(player) && <LockedBadge contextLabel={lockedSinceLabel(player)} />}
                   <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
                   <button style={{ marginLeft: "auto" }} onClick={() => handleToggleStarting(player.id, false)}>
                     → Bench
@@ -635,18 +626,18 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
                   <li key={player.id}>
                     <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
                     <span className="badge">{player.position}</span>
-                    {isPlayerLocked(player) && (
-                      <span className="badge badge-red" title={lockedSinceLabel(player)}>Locked</span>
-                    )}
+                    {isPlayerLocked(player) && <LockedBadge contextLabel={lockedSinceLabel(player)} />}
                     <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
-                    <button
-                      style={{ marginLeft: "auto" }}
-                      onClick={() => handleToggleStarting(player.id, true)}
-                      disabled={!!blockedReason}
-                      title={blockedReason ?? ""}
-                    >
-                      → Starting
-                    </button>
+                    <div className="cell-action" style={{ marginLeft: "auto" }}>
+                      <button
+                        onClick={() => handleToggleStarting(player.id, true)}
+                        disabled={!!blockedReason}
+                        title={blockedReason ?? ""}
+                      >
+                        → Starting
+                      </button>
+                      {blockedReason && <span className="action-hint">{blockedReason}</span>}
+                    </div>
                   </li>
                 );
               })}
@@ -732,9 +723,7 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
                 <tr key={player.id}>
                   <td>
                     <PlayerNameTapTarget playerId={player.id} playerName={player.name} />{" "}
-                    {isPlayerLocked(player) && (
-                      <span className="badge badge-red" title={lockedSinceLabel(player)}>Locked</span>
-                    )}{" "}
+                    {isPlayerLocked(player) && <LockedBadge contextLabel={lockedSinceLabel(player)} />}{" "}
                     <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
                   </td>
                   <td>{player.club}</td>
@@ -746,14 +735,17 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
                     {inSquad ? (
                       <button onClick={() => handleRemovePlayer(player.id)}>Remove</button>
                     ) : (
-                      <button
-                        className={!blockedReason ? "btn-primary" : ""}
-                        onClick={() => handleAddPlayer(player)}
-                        disabled={!!blockedReason}
-                        title={blockedReason ?? ""}
-                      >
-                        Add
-                      </button>
+                      <div className="cell-action">
+                        <button
+                          className={!blockedReason ? "btn-primary" : ""}
+                          onClick={() => handleAddPlayer(player)}
+                          disabled={!!blockedReason}
+                          title={blockedReason ?? ""}
+                        >
+                          Add
+                        </button>
+                        {blockedReason && <span className="action-hint">{blockedReason}</span>}
+                      </div>
                     )}
                   </td>
                 </tr>

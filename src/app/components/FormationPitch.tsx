@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { AvailabilityBadge } from "./AvailabilityBadge";
+import { LockedBadge } from "./LockedBadge";
 import { PlayerNameTapTarget } from "./PlayerNameTapTarget";
 import { formationRequiredCounts, type PlayerPosition, type PlayerWithStats, type StartingFormation } from "@/domain";
 
@@ -108,6 +109,17 @@ export function FormationPitch({
     ? starters.find((entry) => entry.player.id === selectedStarterPlayerId)?.player
     : undefined;
 
+  // The swap banner and action bar are contextual UIs that mount/unmount on tap; screen readers get
+  // no signal from that alone. This persistent visually-hidden live region (rendered below, always
+  // in the DOM) announces the current context whenever this text changes — reliable in a way a
+  // freshly-inserted live node is not.
+  const contextAnnouncement =
+    pendingBenchPlayer !== undefined
+      ? `Swapping in ${pendingBenchPlayer.name}. Choose a ${pendingBenchPlayer.position} on the pitch to replace, or cancel.`
+      : selectedStarter !== undefined
+        ? `${selectedStarter.name} selected. Captain, vice-captain, and bench actions available below.`
+        : "";
+
   const startersByPosition = POSITION_ORDER.reduce<Record<PlayerPosition, StarterEntry[]>>(
     (map, position) => {
       map[position] = starters.filter((entry) => entry.player.position === position);
@@ -160,15 +172,28 @@ export function FormationPitch({
       setSelectedStarterPlayerId((current) => (current === player.id ? null : player.id));
     }
 
+    const captaincySuffix = isCaptain ? ", captain" : isViceCaptain ? ", vice-captain" : "";
+    const dotAriaLabel = isSwapTarget
+      ? `Swap in for ${player.name}`
+      : `${player.name}${captaincySuffix} — player actions`;
+
+    // The dot itself is the interactive control (not the wrapping slot) so it can be a real
+    // <button> — the slot also holds the player-name link, and a focusable link nested inside a
+    // button is invalid. State classes stay on the slot so the existing CSS selectors still match.
     return (
       <div
         key={player.id}
         className={`pitch-dot-slot pitch-dot-slot-filled ${isSwapTarget ? "is-swap-target" : ""} ${isSelected ? "is-selected" : ""}`}
         style={{ left: `${coordinate.xPercent}%`, top: `${coordinate.yPercent}%` }}
-        onClick={handleDotClick}
       >
         {isSwapTarget && <span className="pitch-dot-swap-indicator">Swap</span>}
-        <span className="pitch-dot" />
+        <button
+          type="button"
+          className="pitch-dot"
+          onClick={handleDotClick}
+          aria-label={dotAriaLabel}
+          aria-pressed={isSelected}
+        />
         <span className="pitch-dot-label">
           <span className="pitch-dot-name">
             <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
@@ -182,6 +207,10 @@ export function FormationPitch({
 
   return (
     <div className="pitch-wrapper">
+      <div className="sr-only" role="status" aria-live="polite">
+        {contextAnnouncement}
+      </div>
+
       {pendingBenchSwapPlayerId && pendingBenchPlayer && (
         <div className="pitch-swap-banner">
           <span>
@@ -216,12 +245,10 @@ export function FormationPitch({
       </div>
 
       {selectedStarter && (
-        <div className="pitch-action-bar">
+        <div className="pitch-action-bar" role="group" aria-label={`Actions for ${selectedStarter.name}`}>
           <span className="pitch-action-bar-name">
             {selectedStarter.name}
-            {isPlayerLocked(selectedStarter) && (
-              <span className="badge badge-red" title={lockedSinceLabel(selectedStarter)}>Locked</span>
-            )}
+            {isPlayerLocked(selectedStarter) && <LockedBadge contextLabel={lockedSinceLabel(selectedStarter)} />}
           </span>
           <div className="pitch-action-bar-buttons">
             <button
@@ -267,7 +294,7 @@ export function FormationPitch({
                 <div className="pitch-bench-card-content">
                   <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
                   <span className="badge">{player.position}</span>
-                  {locked && <span className="badge badge-red" title={lockedSinceLabel(player)}>Locked</span>}
+                  {locked && <LockedBadge contextLabel={lockedSinceLabel(player)} />}
                   <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
                 </div>
                 <button

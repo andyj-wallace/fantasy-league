@@ -19,3 +19,12 @@ export async function authedFetch(path: string, init: RequestInit = {}): Promise
   }
   return response;
 }
+
+/** authedFetch followed by `.json()`, for the many GET reads that only need the parsed body and
+ * leave failures to a caller-level `.catch`. Deliberately does not check `response.ok` — callers
+ * that branch on status (a save that reads an error body, a 404 treated as "not found") should use
+ * authedFetch directly. */
+export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await authedFetch(path, init);
+  return response.json() as Promise<T>;
+}

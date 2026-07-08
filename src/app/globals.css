@@ -3,6 +3,12 @@
 }
 
 :root {
+  /* Light-only for now. Dark mode is a deferred nice-to-have — the token system below makes it a
+   * cheap add via prefers-color-scheme in a future release. Until then, pinning color-scheme keeps
+   * native controls (inputs, selects, scrollbars, autofill) light on dark-OS devices instead of
+   * letting the browser's dark UA styling clash with this light design. Flip here when dark ships. */
+  color-scheme: light;
+
   --color-bg: #f7f8fc;
   --color-surface: #ffffff;
   --color-border: #e2e8f0;
@@ -382,6 +388,19 @@ select:focus,
 textarea:focus {
   border-color: var(--color-border-focus);
   box-shadow: 0 0 0 3px rgba(147, 197, 253, 0.3);
+}
+
+/* Keyboard focus ring for every interactive control — form fields already have their own :focus
+ * style above; this covers the buttons, links, and role-based controls that otherwise fell back to
+ * inconsistent browser defaults. :focus-visible keeps it keyboard-only (no ring on mouse click).
+ * The outline follows each element's own border-radius, so no shape change is needed. */
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible,
+[role="button"]:focus-visible,
+[role="link"]:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 input::placeholder {
@@ -982,6 +1001,37 @@ tbody tr:hover {
   white-space: nowrap;
 }
 
+/* Visually hidden but exposed to screen readers — carries reasons (e.g. why a player is locked)
+ * that would otherwise live only in a native title tooltip, which touch and AT never surface. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Pairs a disabled Add / →Starting button with a visible, always-present reason so the block is
+ * explained on touch and to screen readers — not hidden in a hover-only title tooltip. */
+.cell-action {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2rem;
+}
+
+.action-hint {
+  font-size: 0.7rem;
+  line-height: 1.25;
+  color: var(--color-text-muted);
+  text-align: right;
+  max-width: 12rem;
+}
+
 /* ── Gameweek banner: season-context strip on every game screen ── */
 
 .gameweek-banner {
@@ -1209,6 +1259,19 @@ tbody tr:hover {
   border: 2px solid var(--color-primary);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   transition: transform 0.2s, border-color 0.2s;
+}
+
+/* The filled dots are <button>s; strip native chrome so they render like the empty-slot span. */
+button.pitch-dot {
+  padding: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.pitch-dot:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
 }
 
 .pitch-dot-slot.is-swap-target .pitch-dot {

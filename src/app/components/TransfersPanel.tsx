@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { authedFetch } from "@/app/lib/apiFetch";
+import { authedFetch, fetchJson } from "@/app/lib/apiFetch";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { AvailabilityBadge } from "@/app/components/AvailabilityBadge";
+import { LockedBadge } from "@/app/components/LockedBadge";
 import { LoadingState } from "@/app/components/LoadingState";
+import { StatTile } from "@/app/components/StatTile";
 import { formatDayAndTime } from "@/app/lib/formatDate";
 import type {
   GameweekStatus,
@@ -184,10 +186,10 @@ export function TransfersPanel({
 
   function loadData() {
     return Promise.all([
-      authedFetch(`${getApiBaseUrl()}/teams/${teamId}`).then((response) => response.json()),
-      authedFetch(`${getApiBaseUrl()}/teams/${teamId}/transfers/available`).then((response) => response.json()),
-      authedFetch(`${getApiBaseUrl()}/players`).then((response) => response.json()),
-    ]).then(([loadedTeam, loadedAvailable, players]: [Team, AvailableTransfers, PlayerWithStats[]]) => {
+      fetchJson<Team>(`${getApiBaseUrl()}/teams/${teamId}`),
+      fetchJson<AvailableTransfers>(`${getApiBaseUrl()}/teams/${teamId}/transfers/available`),
+      fetchJson<PlayerWithStats[]>(`${getApiBaseUrl()}/players`),
+    ]).then(([loadedTeam, loadedAvailable, players]) => {
       setTeam(loadedTeam);
       setAvailable(loadedAvailable);
       setAllPlayers(players);
@@ -249,20 +251,12 @@ export function TransfersPanel({
       )}
 
       <div className="stat-row">
-        <div className="stat-tile">
-          <span className="stat-tile-label">Free transfers</span>
-          <span className="stat-tile-value">{available.bankedFreeTransferCount}</span>
-        </div>
-        <div className="stat-tile">
-          <span className="stat-tile-label">Next transfer</span>
-          <span className="stat-tile-value">
-            {available.nextTransferPointsCost === 0 ? "Free" : `-${available.nextTransferPointsCost}pts`}
-          </span>
-        </div>
-        <div className="stat-tile">
-          <span className="stat-tile-label">Budget</span>
-          <span className="stat-tile-value">£{available.remainingBudgetInMillions}M</span>
-        </div>
+        <StatTile label="Free transfers" value={available.bankedFreeTransferCount} />
+        <StatTile
+          label="Next transfer"
+          value={available.nextTransferPointsCost === 0 ? "Free" : `-${available.nextTransferPointsCost}pts`}
+        />
+        <StatTile label="Budget" value={`£${available.remainingBudgetInMillions}M`} />
       </div>
 
       <p>
@@ -308,11 +302,7 @@ export function TransfersPanel({
                   <td>{player.isStarting ? "Starting" : "Bench"}</td>
                   <td>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", flexWrap: "wrap" }}>
-                      {player.isLocked ? (
-                        <span className="badge badge-red">Locked</span>
-                      ) : (
-                        <span className="badge badge-green">Available</span>
-                      )}
+                      {player.isLocked ? <LockedBadge /> : <span className="badge badge-green">Available</span>}
                       <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
                     </span>
                     {describeLockContext(player) && (

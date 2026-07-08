@@ -5,15 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { LoadingState } from "@/app/components/LoadingState";
 import { PlayerDetailPanel } from "@/app/components/PlayerDetailPanel";
 import { StandaloneViewToggle } from "@/app/components/StandaloneViewToggle";
-import { authedFetch } from "@/app/lib/apiFetch";
+import { fetchJson } from "@/app/lib/apiFetch";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { useRequireAuth } from "@/app/lib/useRequireAuth";
 import { useStandalonePageGate } from "@/app/lib/standalonePageGate";
-import type { League } from "../../domain";
-
-interface TeamWithLeague {
-  league: League;
-}
+import type { TeamWithLeague } from "@/app/lib/teamTypes";
 
 /** Standalone player page — a thin wrapper around the shared PlayerDetailPanel, kept as a
  * deep-linkable fallback. The gate (useStandalonePageGate) decides whether to render here or hand
@@ -34,7 +30,7 @@ export default function PlayerDetailPage() {
 async function resolvePlayerHubUrl(playerId: string): Promise<string | null> {
   if (!playerId) return null;
   try {
-    const teams: TeamWithLeague[] = await authedFetch(`${getApiBaseUrl()}/me/teams`).then((response) => response.json());
+    const teams = await fetchJson<TeamWithLeague[]>(`${getApiBaseUrl()}/me/teams`);
     const firstLeagueId = teams[0]?.league?.id;
     if (!firstLeagueId) return null;
     return `/leagues?leagueId=${firstLeagueId}&playerId=${playerId}`;
