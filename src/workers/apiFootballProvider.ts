@@ -17,11 +17,74 @@ const PREMIER_LEAGUE_ID = 39;
  * rate-limit per minute well below what a tight loop of ~20 calls produces with no delay at all,
  * so both loops below pace themselves against this. Configurable since the right value depends
  * on plan tier; default errs conservative since hitting it means a wasted, partially-completed
- * run. */
+ * run. With header-driven per-minute pacing now in request() as well, this fixed delay is the
+ * floor for cold starts and header-less providers — a candidate to tune down once the header
+ * pacing has been observed working against the live API. */
 const INTER_REQUEST_DELAY_MS = Number(process.env.FOOTBALL_DATA_REQUEST_DELAY_MS ?? 7_000);
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** API-Football appends these rate-limit headers to every response. The "requests" pair tracks
+ * the daily subscription quota; the bare pair tracks the per-minute call cap. Header lookup via
+ * Headers.get() is case-insensitive, so the documented mixed-case forms match these too. */
+const API_SPORTS_DAILY_LIMIT_HEADER = "x-ratelimit-requests-limit";
+const API_SPORTS_DAILY_REMAINING_HEADER = "x-ratelimit-requests-remaining";
+const API_SPORTS_PER_MINUTE_LIMIT_HEADER = "x-ratelimit-limit";
+const API_SPORTS_PER_MINUTE_REMAINING_HEADER = "x-ratelimit-remaining";
+
+const PER_MINUTE_WINDOW_MS = 60_000;
+/** Padding added when waiting out the per-minute window, since we only know when we *observed*
+ * the exhausted counter, not when the provider's window actually started. */
+const PER_MINUTE_WINDOW_RESET_BUFFER_MS = 2_000;
+/** Dispatch is paused while the observed per-minute remaining is at or below this. One (not
+ * zero) so the concurrent pair in fetchFixturePlayerStats can't race past an almost-spent
+ * window between snapshot reads. */
+const PER_MINUTE_REMAINING_RESERVE = 1;
+/** Upper bound on the single 429 retry wait — a full per-minute window plus buffer. */
+const MAX_RATE_LIMITED_RETRY_WAIT_MS = 65_000;
+/** Upper bound when a 429's Retry-After header names the wait itself — the server's answer is
+ * better than our window estimate, but never trust a header into an unbounded sleep. */
+const MAX_RETRY_AFTER_WAIT_MS = 120_000;
+
+/** The rate-limit state observed on the most recent real HTTP response. Null until the first
+ * response lands (and forever null in the offline/in-memory providers, which replace request()
+ * wholesale) — every consumer treats a missing snapshot as "no information, change nothing". */
+interface ProviderRateLimitSnapshot {
+  dailyRequestLimit: number | null;
+  dailyRequestsRemaining: number | null;
+  perMinuteRequestLimit: number | null;
+  perMinuteRequestsRemaining: number | null;
+  observedAt: Date;
+}
+
+function parseNumericHeader(headers: Headers, name: string): number | null {
+  const raw = headers.get(name);
+  if (raw === null) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** The delay-seconds form of a 429's Retry-After header, in milliseconds. Null for a missing
+ * header, garbage, or the rare HTTP-date form — callers fall back to the per-minute window
+ * estimate in those cases. */
+function parseRetryAfterMs(headers: Headers): number | null {
+  const raw = headers.get("retry-after");
+  if (raw === null) return null;
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
+  return seconds * 1_000;
+}
+
+/** The provider's daily quota resets at UTC midnight, so a snapshot is only trustworthy for
+ * daily-quota purposes within the UTC calendar day it was observed in. */
+function isSameUtcCalendarDay(a: Date, b: Date): boolean {
+  return (
+    a.getUTCFullYear() === b.getUTCFullYear() &&
+    a.getUTCMonth() === b.getUTCMonth() &&
+    a.getUTCDate() === b.getUTCDate()
+  );
 }
 
 const POSITION_BY_PROVIDER_LABEL: Record<string, PlayerPosition> = {
@@ -162,6 +225,7 @@ export class ApiFootballProvider implements FootballDataProvider {
   private seasonYear: number;
   private coverageFixturePlayerStats = false;
   private coverageInjuries = false;
+  private latestRateLimitSnapshot: ProviderRateLimitSnapshot | null = null;
 
   constructor(
     private readonly baseUrl: string,
@@ -178,14 +242,32 @@ export class ApiFootballProvider implements FootballDataProvider {
   }
 
   /** The single HTTP entry point every fetch method funnels through — protected so the offline
-   * and recording providers can substitute recorded response envelopes for the network. */
+   * and recording providers can substitute recorded response envelopes for the network. Paces
+   * itself against the per-minute rate limit observed on previous responses, and retries once
+   * (after waiting out the minute window) on a 429 — a second 429 fails like any other error. */
   protected async request<T>(path: string, params: Record<string, string | number> = {}): Promise<ApiFootballEnvelope<T>> {
     const url = new URL(path, this.baseUrl);
     for (const [key, value] of Object.entries(params)) {
       url.searchParams.set(key, String(value));
     }
 
-    const res = await fetch(url, { headers: { "x-apisports-key": this.apiKey } });
+    await this.waitOutPerMinuteRateLimitWindowIfNearlyExhausted();
+    let res = await this.dispatchRequestAndCaptureRateLimitHeaders(url);
+
+    // A per-minute-cap 429 is recoverable by waiting for the window; a daily-cap 429 is not, so
+    // don't burn a minute sleeping when the 429's own headers show the day's quota is spent.
+    // Prefer the server's own Retry-After answer over our window estimate when it sends one.
+    if (res.status === 429 && this.latestRateLimitSnapshot?.dailyRequestsRemaining !== 0) {
+      const retryAfterMs = parseRetryAfterMs(res.headers);
+      const retryWaitMs =
+        retryAfterMs !== null
+          ? Math.min(MAX_RETRY_AFTER_WAIT_MS, retryAfterMs)
+          : Math.min(MAX_RATE_LIMITED_RETRY_WAIT_MS, this.millisecondsUntilPerMinuteWindowLikelyResets());
+      console.warn(`[provider] 429 rate-limited on ${path} — waiting ${retryWaitMs}ms for the per-minute window, then retrying once`);
+      await delay(retryWaitMs);
+      res = await this.dispatchRequestAndCaptureRateLimitHeaders(url);
+    }
+
     if (!res.ok) {
       throw new Error(`API-Football request failed: ${res.status} ${res.statusText} (${path})`);
     }
@@ -197,6 +279,73 @@ export class ApiFootballProvider implements FootballDataProvider {
     }
 
     return body;
+  }
+
+  private async dispatchRequestAndCaptureRateLimitHeaders(url: URL): Promise<Response> {
+    const snapshot = this.latestRateLimitSnapshot;
+    if (snapshot?.perMinuteRequestsRemaining != null) {
+      // Optimistic pre-decrement so concurrent callers (the Promise.all pair in
+      // fetchFixturePlayerStats) see this dispatch before its response headers land.
+      snapshot.perMinuteRequestsRemaining = Math.max(0, snapshot.perMinuteRequestsRemaining - 1);
+    }
+    const res = await fetch(url, { headers: { "x-apisports-key": this.apiKey } });
+    this.captureRateLimitSnapshotFromResponseHeaders(res.headers);
+    return res;
+  }
+
+  private captureRateLimitSnapshotFromResponseHeaders(headers: Headers): void {
+    const snapshot: ProviderRateLimitSnapshot = {
+      dailyRequestLimit: parseNumericHeader(headers, API_SPORTS_DAILY_LIMIT_HEADER),
+      dailyRequestsRemaining: parseNumericHeader(headers, API_SPORTS_DAILY_REMAINING_HEADER),
+      perMinuteRequestLimit: parseNumericHeader(headers, API_SPORTS_PER_MINUTE_LIMIT_HEADER),
+      perMinuteRequestsRemaining: parseNumericHeader(headers, API_SPORTS_PER_MINUTE_REMAINING_HEADER),
+      observedAt: new Date(),
+    };
+    const parsedAnyHeader =
+      snapshot.dailyRequestLimit !== null ||
+      snapshot.dailyRequestsRemaining !== null ||
+      snapshot.perMinuteRequestLimit !== null ||
+      snapshot.perMinuteRequestsRemaining !== null;
+    // A header-less response (stripping proxy, unexpected error page) must not wipe out a good
+    // snapshot from the previous response.
+    if (parsedAnyHeader) this.latestRateLimitSnapshot = snapshot;
+  }
+
+  private millisecondsUntilPerMinuteWindowLikelyResets(): number {
+    const snapshot = this.latestRateLimitSnapshot;
+    if (!snapshot || snapshot.perMinuteRequestsRemaining == null) {
+      return PER_MINUTE_WINDOW_MS + PER_MINUTE_WINDOW_RESET_BUFFER_MS;
+    }
+    const elapsedMs = Date.now() - snapshot.observedAt.getTime();
+    return Math.max(0, PER_MINUTE_WINDOW_MS - elapsedMs + PER_MINUTE_WINDOW_RESET_BUFFER_MS);
+  }
+
+  private async waitOutPerMinuteRateLimitWindowIfNearlyExhausted(): Promise<void> {
+    const snapshot = this.latestRateLimitSnapshot;
+    if (!snapshot || snapshot.perMinuteRequestsRemaining == null) return;
+    if (snapshot.perMinuteRequestsRemaining > PER_MINUTE_REMAINING_RESERVE) return;
+    const elapsedMs = Date.now() - snapshot.observedAt.getTime();
+    if (elapsedMs >= PER_MINUTE_WINDOW_MS) return; // the observed window has already rolled over
+    const waitMs = PER_MINUTE_WINDOW_MS - elapsedMs + PER_MINUTE_WINDOW_RESET_BUFFER_MS;
+    console.warn(
+      `[provider] per-minute rate limit nearly exhausted (${snapshot.perMinuteRequestsRemaining} remaining) — waiting ${waitMs}ms for the window to reset`,
+    );
+    await delay(waitMs);
+  }
+
+  /** Daily quota derived from the most recent response's rate-limit headers, or null when no
+   * usable snapshot exists (no real call yet, header-less provider) or the snapshot predates
+   * today's UTC-midnight quota reset. Within the same UTC day a snapshot is exact, not merely
+   * fresh — this process is the only consumer of the key, so the counter only moves via our own
+   * calls. */
+  private quotaStatusFromRateLimitSnapshotObservedToday(): QuotaStatus | null {
+    const snapshot = this.latestRateLimitSnapshot;
+    if (!snapshot || snapshot.dailyRequestLimit === null || snapshot.dailyRequestsRemaining === null) return null;
+    if (!isSameUtcCalendarDay(snapshot.observedAt, new Date())) return null;
+    return {
+      requestsUsedToday: snapshot.dailyRequestLimit - snapshot.dailyRequestsRemaining,
+      requestsLimitPerDay: snapshot.dailyRequestLimit,
+    };
   }
 
   async fetchSeasonFixtures(): Promise<ProviderFixture[]> {
@@ -381,6 +530,8 @@ export class ApiFootballProvider implements FootballDataProvider {
   }
 
   async fetchQuotaStatus(): Promise<QuotaStatus> {
+    const quotaFromHeaders = this.quotaStatusFromRateLimitSnapshotObservedToday();
+    if (quotaFromHeaders) return quotaFromHeaders;
     const { response } = await this.request<RawStatusResponse>("status");
     return { requestsUsedToday: response.requests.current, requestsLimitPerDay: response.requests.limit_day };
   }

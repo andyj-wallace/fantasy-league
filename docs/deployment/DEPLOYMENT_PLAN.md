@@ -262,8 +262,21 @@ One stack, roughly:
 5. **Worker Lambdas:** two `NodejsFunction`s (`src/workers/handler.ts`,
    `src/workers/monthlyPriceUpdateHandler.ts`), in VPC, with **EventBridge Schedule
    rules** (match poll `rate(1 minute)`–`rate(5 minutes)`; price update
-   `cron(...monthly...)`). Reasonable `timeout` (e.g. worker 60–120 s) + small
-   reserved concurrency.
+   `cron(...monthly...)`). **Timeout 300 s for both**, sized to the worst-case cycle,
+   not the typical one:
+   - Worst-case live cycle: 15 calls (7 concurrent fixtures) can cross the provider's
+     per-minute cap once or twice → up to ~2 × 62 s header-driven pre-flight waits +
+     one bounded 429 retry wait (≤120 s with Retry-After, ≤65 s estimated) + call
+     latency ≈ ~4 min.
+   - Worst-case roster-import cycle: ~21 calls × 7 s `INTER_REQUEST_DELAY_MS` ≈ 147 s
+     + possible waits ≈ ~5 min (this exceeded the previously penciled-in 60–120 s
+     even before header pacing existed).
+   - The price-update Lambda runs `fetchAllPlayersForSeason` (paginated, same 7 s
+     inter-page delays) — same 300 s reasoning.
+   **Reserved concurrency 1** on the match-poll worker is what makes timeout >
+   schedule rate safe: overlapping ticks are skipped, and a tick that does fire while
+   another runs no-ops cheaply via the DB-persisted `nextLivePollDueAt` gate in
+   `src/workers/liveMatchPolling.ts`.
 6. **Migration Lambda:** `NodejsFunction`, entry `src/db/migrateLambda.ts` (new,
    below), in VPC. Not scheduled — invoked by CI after deploy.
 7. **Frontend:** private `Bucket` + `Distribution` with S3 origin (OAC), a

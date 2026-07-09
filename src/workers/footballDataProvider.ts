@@ -79,7 +79,9 @@ export interface FootballDataProvider {
   fetchAllPlayersForSeason(): Promise<ProviderRosterEntry[]>;
   /** Today's injury/suspension report for the whole league. */
   fetchInjuries(): Promise<ProviderInjuryEntry[]>;
-  /** Free call (per polling-budget.md) — today's remaining request budget. */
+  /** Today's remaining request budget. Served from the rate-limit headers of the most recent
+   * response when one was observed this UTC day (zero calls); falls back to the free /status
+   * call otherwise (per polling-budget.md). */
   fetchQuotaStatus(): Promise<QuotaStatus>;
   /** Monthly: resolves the current PL season year and what data is actually covered by the provider
    * for that season. Drives setCurrentSeason — null means provider unreachable, keep existing. */

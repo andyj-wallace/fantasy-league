@@ -40,7 +40,7 @@ npm run db:generate    # generate a new migration after editing src/db/schema.ts
 | `DATABASE_URL` | yes | local Postgres connection string |
 | `NEXT_PUBLIC_API_BASE_URL` | no | bundled into client-side JS by Next.js — never put secrets here |
 | `FOOTBALL_DATA_API_BASE_URL` | no | football data provider host, e.g. `https://v3.football.api-sports.io` |
-| `FOOTBALL_DATA_API_KEY` | yes | football data provider key, read only by the worker process, never the frontend |
+| `FOOTBALL_DATA_API_KEY` | yes | football data provider key, read only by the worker process, never the frontend. The worker assumes it is the key's **only** consumer — don't run `record:fixtures` / `hydrate:roster` against the same key while a worker is polling, or its header-derived quota snapshot turns optimistic (occasional drift is absorbed by the 429 retry) |
 | `AUTH_TOKEN_SECRET` | yes | HMAC key for the signed-token fallback auth provider |
 | `AUTH_PROVIDER` | no | `cognito` = real credential check (the standard mode, local dev included); unset = passwordless signed-token fallback for offline work; `stub` = scripts/tests only |
 | `COGNITO_USER_POOL_ID`, `COGNITO_APP_CLIENT_ID` | no | the user pool the API verifies ID tokens against; read when `AUTH_PROVIDER=cognito` |
