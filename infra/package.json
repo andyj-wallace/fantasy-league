@@ -1,0 +1,22 @@
+{
+  "name": "fantasy-league-infra",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "cdk": "cdk",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "aws-cdk": "^2.1100.0",
+    "cdk-assets": "^4.5.1",
+    "esbuild": "^0.25.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.220.0",
+    "cdk-fck-nat": "^1.5.0",
+    "constructs": "^10.4.2"
+  }
+}

@@ -11,6 +11,11 @@ If you only read one thing: **the entire stack is created and destroyed with
 `cdk deploy` and `cdk destroy`. Nothing is set up by hand.** That is what makes it
 repeatable.
 
+> **Status (2026-07-11): this guide has been executed for real.** `fantasy-league-prod`
+> is live. The exact as-run commands (with the flags and gotchas this overview glosses
+> over — tunnel TLS, the six SSM parameters, Lambda concurrency quota) are in
+> **`DEPLOYMENT_RUNBOOK.md`** — prefer it when actually typing commands.
+
 See `DEPLOYMENT_PLAN.md` for the full technical spec and `RELIABILITY_PLAN.md` for
 backups and recovery.
 
@@ -77,8 +82,12 @@ aws ssm put-parameter --name /fantasy-league/prod/cognito-app-client-id \
     --type SecureString --value "8rv8u5ctrdranj2ev6d0en122"
 ```
 
-(The database connection string is created automatically by the stack from the RDS
-credentials — you don't set it by hand.)
+Two more parameters exist in practice (see the runbook): `db-password` (the RDS
+master password — CloudFormation reads it when creating the database) and
+`db-app-password` (the least-privilege `fantasy_app` role the API/workers connect
+as; the migration Lambda provisions that role). The full `DATABASE_URL` is composed
+inside each Lambda at cold start from these plus the stack-injected host/port/name —
+you never set it by hand.
 
 ### Step 3 — Build the whole stack
 
@@ -158,8 +167,12 @@ Same code, isolated resources, separate database. Nothing is copied by hand.
   `cdk deploy` from an earlier checkout. Infra and code roll back together.
 - **Read logs:** each Lambda logs to a CloudWatch log group named after the function
   (`/aws/lambda/fantasy-league-prod-api`, etc.).
-- **Tear it all down (non-prod):** `cdk destroy fantasy-league-dev`. Prod has deletion
-  protection on the database, on purpose — see the reliability plan before touching it.
+- **Tear it all down:** `npm run destroy` — it prints the ordered plan first and only
+  acts with `-- --execute`. Important: a bare `cdk destroy` is *not* a complete
+  teardown — the web bucket and (in prod) the database are deliberately retained, and
+  the SSM secrets live outside the stack; the script sweeps all of them in the right
+  order. Full explanation in `DEPLOYMENT_RUNBOOK.md` §Teardown. Prod is quadruple-guarded
+  (termination protection, RDS deletion protection, typed confirmation, `ALLOW_PROD_DESTROY=yes`).
 
 ---
 

@@ -17,6 +17,10 @@ function getConfiguredApiBaseUrl(): string {
 export function getApiBaseUrl(): string {
   const configured = getConfiguredApiBaseUrl();
 
+  // A path-only value ("/api") means the deployed same-origin API behind CloudFront — the
+  // browser resolves it against the page's own origin, so no hostname handling applies.
+  if (configured.startsWith("/")) return configured;
+
   if (typeof window === "undefined") return configured;
 
   const configuredUrl = new URL(configured);

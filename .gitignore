@@ -7,3 +7,6 @@ docs/*
 !docs/testing/
 !docs/deployment/
 /out/
+# CDK build artifacts (infra/cdk.context.json IS committed — it pins the fck-nat AMI lookup)
+infra/cdk.out/
+infra/cdk-outputs.json
