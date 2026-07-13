@@ -68,6 +68,13 @@ const HAND_PLACED_OUTFIELD_SHAPES: Partial<Record<string, Record<OutfieldPositio
   },
 };
 
+/** The pitch dot label has little horizontal room before it collides with its neighbors, so it
+ * shows only the surname — the last whitespace-separated token of the full name. */
+function surnameOf(fullName: string): string {
+  const tokens = fullName.trim().split(/\s+/);
+  return tokens[tokens.length - 1] ?? fullName;
+}
+
 function evenlySpacedXPercentages(count: number): number[] {
   return Array.from({ length: count }, (_, index) => ((index + 1) / (count + 1)) * 100);
 }
@@ -196,7 +203,7 @@ export function FormationPitch({
         />
         <span className="pitch-dot-label">
           <span className="pitch-dot-name">
-            <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
+            <PlayerNameTapTarget playerId={player.id} playerName={surnameOf(player.name)} accessibleName={player.name} />
           </span>
           {isCaptain && <span className="pitch-dot-armband"> · C</span>}
           {isViceCaptain && <span className="pitch-dot-armband"> · V</span>}
