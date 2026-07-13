@@ -5,8 +5,8 @@ import type { TeamScore } from "../domain";
 /**
  * Turns each Team's roster of PlayerScores into one TeamScore for the gameweek. Bench players
  * count directly (no auto-subs in V1) and the captain's points are added a second time to
- * realize the 2x bonus — falling back to the vice-captain if the captain has no score this
- * gameweek (didn't play).
+ * realize the 2x bonus — falling back to the vice-captain if the captain didn't play, which
+ * means either no PlayerScore row at all or one with zero appearance points (an unused sub).
  */
 export async function calculateTeamScores(gameweekId: string): Promise<void> {
   const teams = await teamsRepository.findAll();
@@ -26,7 +26,7 @@ export async function calculateTeamScores(gameweekId: string): Promise<void> {
       let captainBonusPlayerId: string | null = null;
       if (team.captainPlayerId) {
         const captainScore = await playerScoresRepository.findByPlayerAndGameweek(team.captainPlayerId, gameweekId);
-        if (captainScore) {
+        if (captainScore && captainScore.breakdown.appearancePoints > 0) {
           totalPoints += captainScore.totalPoints;
           captainBonusPlayerId = team.captainPlayerId;
         }
@@ -36,7 +36,7 @@ export async function calculateTeamScores(gameweekId: string): Promise<void> {
           team.viceCaptainPlayerId,
           gameweekId,
         );
-        if (viceCaptainScore) {
+        if (viceCaptainScore && viceCaptainScore.breakdown.appearancePoints > 0) {
           totalPoints += viceCaptainScore.totalPoints;
           captainBonusPlayerId = team.viceCaptainPlayerId;
         }

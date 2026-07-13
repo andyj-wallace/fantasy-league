@@ -1,10 +1,11 @@
 import type { MatchStatus } from "../domain";
 
 /**
- * Maps API-Football's fixture status short codes onto our MatchStatus enum. PST/CANC/ABD/AWD/WO
- * all collapse to POSTPONED: none represent a normally-completed result, and V1's MatchStatus
- * has no separate "abandoned/awarded" terminal state — POSTPONED is the closest fit, and keeps
- * these fixtures out of the scoring engine until manually resolved.
+ * Maps API-Football's fixture status short codes onto our MatchStatus enum. PST (postponed) is
+ * the only one of these expected to be rescheduled and eventually reach COMPLETED. CANC/ABD/AWD/WO
+ * (cancelled/abandoned/awarded/walkover) map to VOIDED instead: none represent a normally-completed
+ * result, but they're also terminal — the fixture will never be replayed, so VOIDED keeps them out
+ * of the scoring engine (no PlayerMatchStat to import) while still letting their gameweek resolve.
  */
 const STATUS_CODE_TO_MATCH_STATUS: Record<string, MatchStatus> = {
   NS: "SCHEDULED",
@@ -21,10 +22,10 @@ const STATUS_CODE_TO_MATCH_STATUS: Record<string, MatchStatus> = {
   AET: "COMPLETED",
   PEN: "COMPLETED",
   PST: "POSTPONED",
-  CANC: "POSTPONED",
-  ABD: "POSTPONED",
-  AWD: "POSTPONED",
-  WO: "POSTPONED",
+  CANC: "VOIDED",
+  ABD: "VOIDED",
+  AWD: "VOIDED",
+  WO: "VOIDED",
 };
 
 export function mapApiFootballStatusToMatchStatus(shortCode: string): MatchStatus {

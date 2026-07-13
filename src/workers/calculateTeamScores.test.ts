@@ -25,20 +25,25 @@ vi.mock("../db/repositories", () => ({
 
 import { calculateTeamScores } from "./calculateTeamScores";
 
-/** Minimal PlayerScore stub carrying only the field calculateTeamScores reads. */
-function playerScoreOf(totalPoints: number): PlayerScore {
-  return { totalPoints } as PlayerScore;
+/** Minimal PlayerScore stub carrying only the fields calculateTeamScores reads. `appearancePoints`
+ * defaults to 1 (played); pass 0 to simulate a PlayerScore row for a player who didn't appear
+ * (e.g. an unused substitute reported with 0 minutes). */
+function playerScoreOf(totalPoints: number, appearancePoints = 1): PlayerScore {
+  return { totalPoints, breakdown: { appearancePoints } } as PlayerScore;
 }
 
 /**
  * Sets up a single team whose roster is `rosterPlayerIds` (all starters unless noted) and whose
  * players have the given per-gameweek points, then runs the scorer and returns the one TeamScore.
+ * `didNotAppearPlayerIds` marks players whose PlayerScore row exists but has zero appearance
+ * points (an unused sub) rather than no row at all.
  */
 async function scoreSingleTeam(options: {
   captainPlayerId?: string | null;
   viceCaptainPlayerId?: string | null;
   rosterPlayerIds: string[];
   pointsByPlayerId: Record<string, number | undefined>;
+  didNotAppearPlayerIds?: string[];
 }): Promise<TeamScore> {
   const team = buildTeam({
     id: "team1",
@@ -49,7 +54,9 @@ async function scoreSingleTeam(options: {
   mocks.findRosterSlots.mockResolvedValue(options.rosterPlayerIds.map((playerId) => ({ playerId, isStarting: true })));
   mocks.findPlayerScore.mockImplementation(async (playerId: string) => {
     const points = options.pointsByPlayerId[playerId];
-    return points === undefined ? null : playerScoreOf(points);
+    if (points === undefined) return null;
+    const appearancePoints = options.didNotAppearPlayerIds?.includes(playerId) ? 0 : 1;
+    return playerScoreOf(points, appearancePoints);
   });
 
   await calculateTeamScores(GAMEWEEK_ID);
@@ -101,6 +108,20 @@ describe("calculateTeamScores — captain bonus", () => {
     });
 
     // base 0 + 4 + 2 = 6, plus vice bonus 4 = 10
+    expect(score.totalPoints).toBe(10);
+    expect(score.captainBonusPlayerId).toBe("vice");
+  });
+
+  it("falls back to the vice-captain when the captain has a score row but didn't appear (0 minutes)", async () => {
+    const score = await scoreSingleTeam({
+      captainPlayerId: "cap",
+      viceCaptainPlayerId: "vice",
+      rosterPlayerIds: ["cap", "vice", "x"],
+      pointsByPlayerId: { cap: 0, vice: 4, x: 2 },
+      didNotAppearPlayerIds: ["cap"],
+    });
+
+    // base 0 + 4 + 2 = 6, plus vice bonus 4 = 10 (captain's 0 is worthless and must not double)
     expect(score.totalPoints).toBe(10);
     expect(score.captainBonusPlayerId).toBe("vice");
   });

@@ -43,13 +43,16 @@ export async function findCurrent(): Promise<Gameweek | null> {
   return row ? toGameweek(row) : null;
 }
 
-/** True only once the gameweek has at least one Match and every one of them has reached COMPLETED. */
+/** True only once the gameweek has at least one Match and every one of them has reached a
+ * terminal state — COMPLETED (scored normally) or VOIDED (cancelled/abandoned/awarded/walkover,
+ * so it will never be replayed and is excluded from scoring). A POSTPONED match still holds the
+ * gameweek open, since it's expected to be rescheduled and eventually reach one of those two. */
 export async function areAllMatchesCompleted(gameweekId: string): Promise<boolean> {
   const rows = await db
     .select({ status: matches.status })
     .from(matches)
     .where(eq(matches.gameweekId, gameweekId));
-  return rows.length > 0 && rows.every((row) => row.status === "COMPLETED");
+  return rows.length > 0 && rows.every((row) => row.status === "COMPLETED" || row.status === "VOIDED");
 }
 
 export async function markCompleted(gameweekId: string): Promise<void> {

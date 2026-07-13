@@ -79,7 +79,7 @@ describe("importMatchData — recorded season discovery import", () => {
 
     // First-time discovery of already-completed matches must not fire the scoring pipeline.
     expect(result.newlyCompletedMatchIds).toEqual([]);
-    expect(result.newlyPostponedMatchIds).toEqual([]);
+    expect(result.newlyDisruptedMatchIds).toEqual([]);
     expect(mocks.insertManyPlayerMatchStats).not.toHaveBeenCalled();
     expect(mocks.scheduleConfirmationPass).not.toHaveBeenCalled();
   });

@@ -25,23 +25,33 @@ dev servers or database. Proof artifacts land in `artifacts/recorded-smoke/` (gi
 `report/index.html` (Playwright report with full-run video + trace) and `checkpoints/*.png`
 (named per-checkpoint screenshots).
 
-Findings the suite documents rather than fixes (all observed 2026-07-13):
-- A POSTPONED match keeps the gameweek open indefinitely (`areAllMatchesCompleted` requires
-  every match COMPLETED) — checkpoint E shows GW1 held open until the replay.
+Findings the suite documented but did not fix, at the time (all observed 2026-07-13):
+- ~~A POSTPONED match keeps the gameweek open indefinitely~~ — **fixed 2026-07-13.** The real gap
+  was that API-Football's CANC/ABD/AWD/WO codes all collapsed onto the same POSTPONED status as a
+  genuinely-rescheduled PST, so a fixture that will *never* be replayed (cancelled, abandoned,
+  awarded, walkover) held its gameweek open forever. Added a `VOIDED` MatchStatus — terminal like
+  COMPLETED, but excluded from scoring — and `footballMatchStatusMapping` now maps CANC/ABD/AWD/WO
+  to it instead of POSTPONED. `areAllMatchesCompleted` treats COMPLETED or VOIDED as resolved; a
+  genuine PST still holds the gameweek open as before. `importMatchData`'s postponed-transfer
+  trigger (renamed `newlyDisruptedMatchIds`) now also fires on a transition into VOIDED, so those
+  clubs get the same free-transfer award as a normal postponement. New migration
+  `0008_worried_sleepwalker.sql` adds the enum value (additive, not yet applied to any database).
 - Once a postponed match's *original* kickoff time passes (before the fixture is rescheduled),
   `isClubLocked` reads its clubs as locked again, with a "kicked off" label for a match that
-  never kicked off — checkpoint E asserts this as-is.
+  never kicked off — checkpoint E asserts this as-is. **Not fixed** — a VOIDED match's original
+  kickoff will hit this same pre-existing `isClubLocked`/label quirk; out of scope for the
+  gameweek-completion fix above.
 - The roster table's layout is bistable: the transfer picker's `width: 100%` search input inside
   an auto-layout table cell means any style invalidation (e.g. the focus change caused by a
   mousedown) can re-solve column widths a few px differently, re-wrapping the lock-context text
   and shifting every row ~19px. A real click can land mousedown on Confirm and mouseup beside
   it, and the browser then targets the click at their common ancestor — silently swallowing the
   press. The suite works around it (`transferPlayerOut` dispatches the click event directly);
-  a product fix would be `table-layout: fixed` or a fixed picker-column width.
-- `calculateTeamScores` treats "captain played" as "a PlayerScore row exists": a captain
-  reported by the provider with 0 minutes (an unused sub) still claims the 2x bonus — worth
-  +0 — and suppresses the vice-captain fallback. The suite's captain has no stat line at all,
-  which is what the design doc's fallback rule needs to fire.
+  a product fix would be `table-layout: fixed` or a fixed picker-column width. **Not fixed.**
+- ~~`calculateTeamScores` treats "captain played" as "a PlayerScore row exists"~~ — **fixed
+  2026-07-13.** A captain (or vice-captain) `PlayerScore` row now only counts as "played" when
+  `breakdown.appearancePoints > 0`; a 0-minute unused-sub row no longer claims the worthless 2x
+  and blocks the vice-captain fallback.
 
 One production bug it caught outright (fixed 2026-07-13): `matchesRepository.upsert` never
 updated `kickoffAt` on re-import, so a postponed fixture's rescheduled date could never land —

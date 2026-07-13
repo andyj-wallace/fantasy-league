@@ -32,6 +32,7 @@ export const matchStatusEnum = pgEnum("match_status", [
   "IN_PROGRESS",
   "COMPLETED",
   "POSTPONED",
+  "VOIDED",
   "DELAYED",
   "INTERRUPTED",
 ]);

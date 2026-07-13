@@ -11,14 +11,20 @@ export type StartingFormation =
   | "5-3-2"
   | "5-4-1";
 
-/** Lifecycle status of a real-world fixture as reported by the football data provider. */
-export type MatchStatus = "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "POSTPONED" | "DELAYED" | "INTERRUPTED";
+/**
+ * Lifecycle status of a real-world fixture as reported by the football data provider. VOIDED is
+ * distinct from POSTPONED: POSTPONED means "rescheduled, will eventually reach COMPLETED";
+ * VOIDED means the fixture will never be played as a normal match (cancelled, abandoned, awarded,
+ * or a walkover) and is a terminal state like COMPLETED, just with no PlayerMatchStat to score.
+ */
+export type MatchStatus = "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "POSTPONED" | "VOIDED" | "DELAYED" | "INTERRUPTED";
 
 /**
  * Lifecycle status of a gameweek, driving the GAMEWEEK_COMPLETED worker event.
- * COMPLETED requires every Match in the gameweek to have reached a final state — a gameweek
- * with one postponed Match stays IN_PROGRESS (not stuck, just not done) until that match is
- * replayed and scored, which re-triggers calculateTeamScores/updateStandings for this gameweek.
+ * COMPLETED requires every Match in the gameweek to have reached a final state (COMPLETED or
+ * VOIDED) — a gameweek with one postponed Match stays IN_PROGRESS (not stuck, just not done)
+ * until that match is replayed and scored or resolved as VOIDED, which re-triggers
+ * calculateTeamScores/updateStandings for this gameweek.
  */
 export type GameweekStatus = "UPCOMING" | "LOCKED" | "IN_PROGRESS" | "COMPLETED";
 

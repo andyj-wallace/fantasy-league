@@ -10,7 +10,7 @@ const MIN_POLL_INTERVAL_MS = 5 * 60 * 1000;
 /** Cadence (and ceiling on "wake for the next kickoff") when nothing is currently live. */
 const IDLE_POLL_INTERVAL_CAP_MS = 30 * 60 * 1000;
 
-const NO_OP_RESULT: ImportMatchDataResult = { newlyCompletedMatchIds: [], newlyPostponedMatchIds: [] };
+const NO_OP_RESULT: ImportMatchDataResult = { newlyCompletedMatchIds: [], newlyDisruptedMatchIds: [] };
 
 /**
  * Self-throttling adaptive live-tracking tick from the Live-Match Polling Strategy in

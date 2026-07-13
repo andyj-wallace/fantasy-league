@@ -9,6 +9,7 @@ const fixtureStatusBadges: Record<MatchStatus, { label: string; className: strin
   IN_PROGRESS: { label: "Live", className: "badge badge-green" },
   COMPLETED: { label: "Full time", className: "badge" },
   POSTPONED: { label: "Postponed", className: "badge badge-red" },
+  VOIDED: { label: "Voided", className: "badge badge-red" },
   DELAYED: { label: "Delayed", className: "badge badge-red" },
   INTERRUPTED: { label: "Interrupted", className: "badge badge-red" },
 };

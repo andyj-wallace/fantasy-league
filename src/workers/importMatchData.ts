@@ -13,8 +13,10 @@ import { mapApiFootballStatusToMatchStatus } from "./footballMatchStatusMapping"
 export interface ImportMatchDataResult {
   /** Matches that just reached COMPLETED — drives calculatePlayerScores. */
   newlyCompletedMatchIds: string[];
-  /** Matches that just reached POSTPONED — drives awardPostponedMatchTransfers. */
-  newlyPostponedMatchIds: string[];
+  /** Matches that just reached POSTPONED or VOIDED — drives awardPostponedMatchTransfers. Either
+   * way the fixture isn't happening as scheduled, so the affected clubs' players get the same
+   * free-transfer award (fantasy_league_v1_design.txt's "Postponed Matches" rule). */
+  newlyDisruptedMatchIds: string[];
 }
 
 /** How long before a round's earliest known kickoff its Gameweek deadline locks. */
@@ -61,8 +63,8 @@ export async function resolvePlayerMatchStats(matchId: string, providerStats: Pr
  * poll). For each fixture: resolves/creates its Gameweek, maps its status, and upserts the Match
  * by externalId. For any Match that just reached COMPLETED (and only then), also imports its raw
  * per-player stats and schedules a confirmation re-poll. Returns the IDs of matches that just
- * transitioned into COMPLETED or POSTPONED so the caller can drive the right downstream worker
- * off of exactly the right set.
+ * transitioned into COMPLETED or into a disrupted state (POSTPONED/VOIDED) so the caller can
+ * drive the right downstream worker off of exactly the right set.
  */
 export async function importMatchData(
   provider: FootballDataProvider,
@@ -70,7 +72,7 @@ export async function importMatchData(
 ): Promise<ImportMatchDataResult> {
   console.log(`[importMatchData] processing ${fixtures.length} fixtures...`);
   const newlyCompletedMatchIds: string[] = [];
-  const newlyPostponedMatchIds: string[] = [];
+  const newlyDisruptedMatchIds: string[] = [];
 
   for (const fixture of fixtures) {
     const gameweekNumber = parseGameweekNumber(fixture.roundLabel);
@@ -108,11 +110,13 @@ export async function importMatchData(
       newlyCompletedMatchIds.push(match.id);
     }
 
-    if (status === "POSTPONED" && previousStatus !== "POSTPONED") {
-      newlyPostponedMatchIds.push(match.id);
+    const isDisrupted = status === "POSTPONED" || status === "VOIDED";
+    const wasAlreadyDisrupted = previousStatus === "POSTPONED" || previousStatus === "VOIDED";
+    if (isDisrupted && !wasAlreadyDisrupted) {
+      newlyDisruptedMatchIds.push(match.id);
     }
   }
 
-  console.log(`[importMatchData] done — ${newlyCompletedMatchIds.length} newly completed, ${newlyPostponedMatchIds.length} newly postponed`);
-  return { newlyCompletedMatchIds, newlyPostponedMatchIds };
+  console.log(`[importMatchData] done — ${newlyCompletedMatchIds.length} newly completed, ${newlyDisruptedMatchIds.length} newly disrupted`);
+  return { newlyCompletedMatchIds, newlyDisruptedMatchIds };
 }

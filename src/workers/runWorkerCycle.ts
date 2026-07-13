@@ -25,7 +25,7 @@ function isStale(lastRanAt: Date | null, gateMs: number, now: Date): boolean {
 function mergeResults(a: ImportMatchDataResult, b: ImportMatchDataResult): ImportMatchDataResult {
   return {
     newlyCompletedMatchIds: [...a.newlyCompletedMatchIds, ...b.newlyCompletedMatchIds],
-    newlyPostponedMatchIds: [...a.newlyPostponedMatchIds, ...b.newlyPostponedMatchIds],
+    newlyDisruptedMatchIds: [...a.newlyDisruptedMatchIds, ...b.newlyDisruptedMatchIds],
   };
 }
 
@@ -99,7 +99,7 @@ export async function runWorkerCycle(provider: FootballDataProvider = new StubFo
     console.log("[worker] availability sync skipped (not stale)");
   }
 
-  let result: ImportMatchDataResult = { newlyCompletedMatchIds: [], newlyPostponedMatchIds: [] };
+  let result: ImportMatchDataResult = { newlyCompletedMatchIds: [], newlyDisruptedMatchIds: [] };
 
   if (isStale(pollState.lastDiscoveryRanAt, DISCOVERY_GATE_MS, now)) {
     console.log("[worker] discovery due — fetching season fixtures");
@@ -116,5 +116,5 @@ export async function runWorkerCycle(provider: FootballDataProvider = new StubFo
   result = mergeResults(result, await runLiveMatchPollingTick(provider));
 
   await processMatchDataChanges(result);
-  console.log(`[worker] cycle complete — ${result.newlyCompletedMatchIds.length} completed, ${result.newlyPostponedMatchIds.length} postponed`);
+  console.log(`[worker] cycle complete — ${result.newlyCompletedMatchIds.length} completed, ${result.newlyDisruptedMatchIds.length} disrupted`);
 }

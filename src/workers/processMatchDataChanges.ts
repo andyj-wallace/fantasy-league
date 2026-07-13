@@ -8,16 +8,16 @@ import { updateStandings } from "./updateStandings";
 
 /**
  * The downstream half of a worker cycle: awards postponed-match transfers for any match that
- * just became POSTPONED; scores any match that just completed; and — once every match in a
- * gameweek has reached a final state — marks that gameweek COMPLETED, awards every team its 2
- * free transfers for the next one, and recalculates that gameweek's team scores and every
- * league's standings. Shared by both the discovery and live-polling import paths so this logic
- * isn't duplicated per call site.
+ * just became disrupted (POSTPONED or VOIDED); scores any match that just completed; and — once
+ * every match in a gameweek has reached a final state (COMPLETED or VOIDED) — marks that gameweek
+ * COMPLETED, awards every team its 2 free transfers for the next one, and recalculates that
+ * gameweek's team scores and every league's standings. Shared by both the discovery and
+ * live-polling import paths so this logic isn't duplicated per call site.
  */
 export async function processMatchDataChanges(result: ImportMatchDataResult): Promise<void> {
-  const { newlyCompletedMatchIds, newlyPostponedMatchIds } = result;
+  const { newlyCompletedMatchIds, newlyDisruptedMatchIds } = result;
 
-  for (const matchId of newlyPostponedMatchIds) {
+  for (const matchId of newlyDisruptedMatchIds) {
     await awardPostponedMatchTransfers(matchId);
   }
 
