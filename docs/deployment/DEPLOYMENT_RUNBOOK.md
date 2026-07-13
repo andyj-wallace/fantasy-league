@@ -316,37 +316,64 @@ linger forever:
 | Cognito user pool | imported + live — teardown must never touch it | free tier |
 
 **The proper order** (what the script automates — the numbered plan it prints matches
-this exactly):
+this exactly). The database is deleted **before** the stack, not after — see the
+2026-07-13 incident below for why:
 
 1. **Empty the web bucket** — a retained bucket keeps billing; a non-empty bucket can't
    be deleted later anyway. `aws s3 rm s3://fantasy-league-<env>-web-<account> --recursive`
 2. **Prod only: drop the two guards** — stack termination protection
    (`aws cloudformation update-termination-protection --no-enable-termination-protection`)
    and RDS deletion protection (`aws rds modify-db-instance --no-deletion-protection
-   --apply-immediately`). Both exist precisely to make step 4 fail when unintended.
-3. *(implicit)* CloudFormation handles internal ordering — CloudFront disable+delete is
+   --apply-immediately`). Both exist precisely to make step 5 fail when unintended.
+3. **Prod only: delete the retained database with a final snapshot** —
+   `aws rds delete-db-instance --db-instance-identifier fantasy-league-<env>-db
+   --final-db-snapshot-identifier fantasy-league-<env>-final-<date>`, then wait
+   (`aws rds wait db-instance-deleted`). Non-prod skips this — its removal policy is
+   DESTROY, so the stack delete in step 5 removes it directly. **Must happen before the
+   stack delete**: while the instance is alive, its ENI keeps the DB security group,
+   parameter group, and one VPC subnet in use, and CloudFormation can't delete any of
+   those until it's gone.
+4. *(implicit)* CloudFormation handles internal ordering — CloudFront disable+delete is
    the slow part (10–20 min); the NAT ASG terminates its instance, which frees the
    static ENI for deletion; the root EBS volume dies with the instance.
-4. **Delete the stack**, either way:
+5. **Delete the stack**, either way:
    - CDK: `cd infra && npx cdk destroy FantasyLeague-<Env> -c env=<env> --force`
    - CLI: `aws cloudformation delete-stack --stack-name fantasy-league-<env>` then
      `aws cloudformation wait stack-delete-complete --stack-name fantasy-league-<env>`
-5. **Delete the retained database with a final snapshot**:
-   `aws rds delete-db-instance --db-instance-identifier fantasy-league-<env>-db
-   --final-db-snapshot-identifier fantasy-league-<env>-final-<date>` (non-prod is
-   usually already gone — its removal policy is DESTROY). The deterministic
-   `fantasy-league-<env>-*` physical names are what make this sweep possible after the
-   stack outputs are gone — that's the naming convention paying off.
-6. **Delete the now-empty retained bucket**: `aws s3 rb s3://fantasy-league-<env>-web-<account>`
-7. **Delete the six SSM parameters**: `aws ssm delete-parameters --names
+6. **Delete the orphaned DB subnet group** (prod) — it inherits the same
+   `RemovalPolicy.RETAIN` as the database instance, so it's always `DELETE_SKIPPED` by
+   step 5 regardless of ordering: `aws rds delete-db-subnet-group --db-subnet-group-name
+   <captured from the stack before deletion — no deterministic name, unlike the DB
+   instance>`. Free to leave, but clutters the account forever if skipped.
+7. **Delete the now-empty retained bucket**: `aws s3 rb s3://fantasy-league-<env>-web-<account>`
+8. **Delete the six SSM parameters**: `aws ssm delete-parameters --names
    /fantasy-league/<env>/{auth-token-secret,db-password,db-app-password,football-data-api-key,cognito-user-pool-id,cognito-app-client-id}`
-8. **Verify nothing is left** via the tagging API (the Resource Group itself died with
-   the stack): `aws resourcegroupstaggingapi get-resources --tag-filters
-   Key=Project,Values=fantasy-league Key=Environment,Values=<env>` — expect only the
-   final snapshot (and a few minutes of tag-index lag for CloudFront).
+9. **Verify nothing is left**: explicitly confirm the VPC (physical ID captured from the
+   stack before deletion) no longer exists via `aws ec2 describe-vpcs`, then sweep the
+   tagging API (the Resource Group itself died with the stack): `aws
+   resourcegroupstaggingapi get-resources --tag-filters Key=Project,Values=fantasy-league
+   Key=Environment,Values=<env>` — expect only the final snapshot (and a few minutes of
+   tag-index lag for CloudFront).
 
 **Later, when certain:** delete the final snapshot
 (`aws rds delete-db-snapshot --db-snapshot-identifier fantasy-league-<env>-final-<date>`).
+
+**As-run: first prod teardown (2026-07-13).** The script at the time deleted the
+database *after* the stack (old step 4 then 5). The live instance's ENI was still
+attached to `DatabaseSecurityGroup`, `DatabaseParameterGroup`, and one private subnet,
+so `cdk destroy` deleted everything else first and then failed on those three —
+`DELETE_FAILED`, stack stuck, RDS instance left running with deletion protection
+already off. Recovery: manually ran `aws rds delete-db-instance` (with final snapshot)
+on the stuck instance, waited for it to finish, then re-ran `cdk destroy` — it
+succeeded cleanly on retry since nothing was still using the blocked resources.
+Verification afterward also turned up an orphaned `AWS::RDS::DBSubnetGroup` (retained,
+cascaded from the DB instance's removal policy, `DELETE_SKIPPED` by the stack, not
+previously accounted for in this runbook or the script) — deleted manually. Fixed in
+`scripts/destroy-environment.sh`: the DB delete now runs before the stack delete
+(so this can't recur), a step deletes the orphaned subnet group unconditionally, and
+verification explicitly asserts the VPC is gone rather than only sweeping tags. Prod
+was fully torn down (stack, VPC, database, snapshot, bucket, SSM params) as of
+2026-07-13 — see `docs/deployment/README.md` for current status before redeploying.
 
 **Appendix — abandoning CDK in this account entirely** (only if nothing else will ever
 use CDK here): empty the versioned bootstrap bucket *including all object versions*

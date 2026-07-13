@@ -19,7 +19,10 @@ the runbook's "Scripted deployment" table). Infra deploys work two interchangeab
 ways: `deploy:infra` (CDK) and `deploy:infra:cli` (synth → publish assets → plain
 `aws cloudformation deploy`). CI/CD via GitHub Actions is still a planned follow-up.
 
-**Status:** **DEPLOYED** (2026-07-11). The `infra/` CDK app exists and `fantasy-league-prod`
-is live at https://d2dhnsmye25s6d.cloudfront.net — see DEPLOYMENT_RUNBOOK.md for the
-as-run commands and open follow-ups (CI/CD, reserved concurrency quota, match-poll
-schedule pending the API-Football plan decision).
+**Status:** **NOT DEPLOYED.** Prod was live 2026-07-11 through 2026-07-13, then fully
+torn down (stack, VPC, database, snapshot, bucket, SSM params — see
+DEPLOYMENT_RUNBOOK.md's Teardown section, including the 2026-07-13 as-run incident and
+fix). The `infra/` CDK app is production-ready and redeploying is just `npm run
+deploy:all` — see DEPLOYMENT_RUNBOOK.md for the as-run commands and open follow-ups
+(CI/CD, reserved concurrency quota, match-poll schedule pending the API-Football plan
+decision).

@@ -227,6 +227,17 @@ Milestone 3 — Production ready.
         [note] Static export emits flat .html files (leagues.html, teams/transfers.html), not
             route/index.html dirs — CloudFront needs an extensionless-URL rewrite (e.g. /login →
             /login.html) or hard reloads and the 401 redirect (/login?expired=1) will 404.
+        [done 2026-07-11] First prod deploy — full stack live end-to-end at
+            https://d2dhnsmye25s6d.cloudfront.net (see docs/deployment/DEPLOYMENT_RUNBOOK.md).
+        [note 2026-07-13] Prod torn down (see docs/deployment/README.md for current status).
+            The teardown surfaced an ordering bug — the RDS instance was deleted after the
+            CDK stack instead of before, so its still-live ENI blocked the DB security group,
+            parameter group, and one VPC subnet from deleting and the stack landed in
+            DELETE_FAILED. Fixed in scripts/destroy-environment.sh (DB now deletes first;
+            also added cleanup for the orphaned DB subnet group and explicit VPC-removal
+            verification, both gaps this run exposed) — see the runbook's Teardown section.
+            Infra is proven end-to-end (deploy, live traffic, and now a full clean teardown);
+            redeploy via `npm run deploy:all` when needed.
     Frontend UX (season awareness + polish)
         [done 2026-07-04] Addressed the Strategy-2 smoke-test UX gaps (commits 0e02bad, 1df8167,
             09a6d76): current-gameweek endpoint + banner, league-page fixtures section, contextual
