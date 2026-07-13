@@ -79,6 +79,9 @@ export async function upsert(match: Match): Promise<void> {
     .onConflictDoUpdate({
       target: matches.externalId,
       set: {
+        // kickoffAt is mutable too: a postponed fixture is re-reported by the provider with its
+        // rescheduled date, and lock checks (isClubLocked) compare kickoffAt against now.
+        kickoffAt: match.kickoffAt,
         status: match.status,
         finalHomeScore: match.finalHomeScore,
         finalAwayScore: match.finalAwayScore,

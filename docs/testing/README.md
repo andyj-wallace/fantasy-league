@@ -2,6 +2,52 @@
 
 This directory contains comprehensive testing reports and findings from MVP smoke testing.
 
+## Recorded smoke suite (added 2026-07-13)
+
+The manual click-through checklists below now have an automated, recorded counterpart:
+
+```bash
+npm run smoke:recorded        # requires the docker-compose Postgres to be running
+```
+
+It provisions a throwaway `<dev database>_smoke` database, seeds a two-team league
+(`src/testing/recordedSmoke/gameweekLifecycleScenario.ts`), then plays one gameweek forward
+through six checkpoints — matches spread Friday→Monday, per-club kickoff locks, transfers of
+unlocked players (and a server-rejected locked one), a postponement with its banked-transfer
+award, a **Gameweek 2 fixture that kicks off before Gameweek 1 ends** (must lock nobody for GW1),
+and the completion cascade with hand-computed final standings (including the vice-captain 2x
+fallback for a captain who never featured). Every state change flows through the real worker
+pipeline (`importMatchData` → `processMatchDataChanges`) via a scripted `FootballDataProvider`;
+there is no clock fake — event timestamps are shifted relative to real "now" per checkpoint.
+
+It boots its own isolated servers (web :3100, API :3101, stub auth) and never touches the live
+dev servers or database. Proof artifacts land in `artifacts/recorded-smoke/` (gitignored):
+`report/index.html` (Playwright report with full-run video + trace) and `checkpoints/*.png`
+(named per-checkpoint screenshots).
+
+Findings the suite documents rather than fixes (all observed 2026-07-13):
+- A POSTPONED match keeps the gameweek open indefinitely (`areAllMatchesCompleted` requires
+  every match COMPLETED) — checkpoint E shows GW1 held open until the replay.
+- Once a postponed match's *original* kickoff time passes (before the fixture is rescheduled),
+  `isClubLocked` reads its clubs as locked again, with a "kicked off" label for a match that
+  never kicked off — checkpoint E asserts this as-is.
+- The roster table's layout is bistable: the transfer picker's `width: 100%` search input inside
+  an auto-layout table cell means any style invalidation (e.g. the focus change caused by a
+  mousedown) can re-solve column widths a few px differently, re-wrapping the lock-context text
+  and shifting every row ~19px. A real click can land mousedown on Confirm and mouseup beside
+  it, and the browser then targets the click at their common ancestor — silently swallowing the
+  press. The suite works around it (`transferPlayerOut` dispatches the click event directly);
+  a product fix would be `table-layout: fixed` or a fixed picker-column width.
+- `calculateTeamScores` treats "captain played" as "a PlayerScore row exists": a captain
+  reported by the provider with 0 minutes (an unused sub) still claims the 2x bonus — worth
+  +0 — and suppresses the vice-captain fallback. The suite's captain has no stat line at all,
+  which is what the design doc's fallback rule needs to fire.
+
+One production bug it caught outright (fixed 2026-07-13): `matchesRepository.upsert` never
+updated `kickoffAt` on re-import, so a postponed fixture's rescheduled date could never land —
+and `isClubLocked` compares exactly that column. `kickoffAt` is now part of the upsert's
+conflict-update set.
+
 ## Reports
 
 ### `SMOKE_TEST_FINDINGS.md` (PRIMARY)

@@ -6,6 +6,10 @@ const nextConfig: NextConfig = {
   // doc): `next build` emits a fully static site to ./out — there is no Next server in production.
   // This is why dynamic pages are addressed by query params (?teamId=) instead of path segments.
   output: "export",
+  // The recorded smoke suite (src/testing/recordedSmoke) runs its own `next dev` on port 3100,
+  // which must not share .next with a live dev server on port 3000 — two dev servers writing one
+  // build directory corrupt each other. Unset everywhere else, so the default stays .next.
+  distDir: process.env.NEXT_DIST_DIR ?? ".next",
   turbopack: {
     root: path.resolve(import.meta.dirname),
   },

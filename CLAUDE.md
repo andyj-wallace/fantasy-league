@@ -16,7 +16,7 @@ Common commands (from `package.json`):
 
 Test coverage is currently focused on the scoring engine (`calculatePlayerScores`, `calculateTeamScores`, `updateStandings`), the auth layer, and the read handlers that feed the season-awareness UI (`getCurrentGameweek`, `getLeagueStandings`, `getAvailableTransfers`) — the highest-risk areas. There is still no lint tooling.
 
-The frontend is no longer a plain-HTML skeleton: it has a bespoke design system (`src/app/globals.css` — no Tailwind), a global `AppHeader`, and a season-awareness layer (gameweek banner, fixtures on the league page, lock context, standings gameweek labels) fed by `GET /gameweeks/current`. The Strategy-2 smoke-test UX gaps are resolved — see `docs/testing/SMOKE_TEST_FINDINGS.md` (Resolution) and `docs/remaining-gaps-todo.md` item 11. Static export emits flat `.html` files, so CloudFront will need an extensionless-URL rewrite before launch.
+The frontend is no longer a plain-HTML skeleton: it has a bespoke design system (`src/app/globals.css` — no Tailwind), a global `AppHeader`, and a season-awareness layer (gameweek banner, fixtures on the league page, lock context, standings gameweek labels) fed by `GET /gameweeks/current`. The Strategy-2 smoke-test UX gaps are resolved — see `docs/testing/SMOKE_TEST_FINDINGS.md` (Resolution) and `docs/remaining-gaps-todo.md` item 11. The static export's flat-`.html` URLs are handled in production by the deployed CloudFront url-rewrite Function (`infra/lib/urlRewriteFunction.js`). Remaining work is tracked in `docs/remaining-gaps-todo.md` — deployment/ops hardening is item 13.
 
 ## What the docs are and where to look
 

@@ -34,14 +34,19 @@
     "allowJs": true,
     "noEmit": true,
     "resolveJsonModule": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "ignoreDeprecations": "6.0"
   },
   "include": [
     "src",
     "drizzle.config.ts",
     "next-env.d.ts",
     ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    ".next-recorded-smoke/types/**/*.ts",
+    ".next-recorded-smoke/dev/types/**/*.ts",
+    ".next-recorded-smoke-debug/types/**/*.ts",
+    ".next-recorded-smoke-debug/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

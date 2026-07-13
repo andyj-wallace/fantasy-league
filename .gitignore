@@ -2,7 +2,11 @@ node_modules/
 dist/
 .env
 .next/
+# The recorded smoke suite's isolated Next dev build (see src/testing/recordedSmoke)
+.next-recorded-smoke/
 next-env.d.ts
+# Recorded smoke run output: videos, screenshots, HTML report
+artifacts/
 docs/*
 !docs/testing/
 !docs/deployment/

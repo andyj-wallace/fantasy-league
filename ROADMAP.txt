@@ -235,7 +235,12 @@ Milestone 3 — Production ready.
             mobile table scroll, 401 handling. New handler tests for the touched endpoints.
             Also fixed a login-flow bug: the sign-in password bled into the sign-up Display-name
             text field (uncontrolled inputs reused across steps) — fixed with per-step form keys.
-    Admin tools
+    Admin tools — commissioner League Settings screen + powers (ruleset now specified in
+        docs/fantasy_league_v1_design.txt → League Administration; implementation plan in
+        docs/remaining-gaps-todo.md item 14). Surfaces the three dark commissioner endpoints,
+        enforces the settings lock / 50-manager cap / GW25 cutoff, adds
+        transfer-commissionership. (Join lock and league deletion: rejected 2026-07-12,
+        recorded in the Out of Scope doc.)
     Monitoring and alerting
     Performance review
     Beta testing and bug fixing
