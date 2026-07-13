@@ -1,28 +1,18 @@
 "use client";
 
-import { useState } from "react";
-import { AvailabilityBadge } from "./AvailabilityBadge";
-import { LockedBadge } from "./LockedBadge";
 import { PlayerNameTapTarget } from "./PlayerNameTapTarget";
 import { formationRequiredCounts, type PlayerPosition, type PlayerWithStats, type StartingFormation } from "@/domain";
 
-type StarterEntry = { player: PlayerWithStats; isStarting: boolean };
-
+/**
+ * A read-only visual reference showing where the starting XI lines up for the chosen formation —
+ * not an input surface. Adding/benching players and setting captaincy happen in the roster list
+ * and captaincy controls that sit alongside this component in SquadBuilderPanel.
+ */
 interface FormationPitchProps {
   formation: StartingFormation | null;
-  starters: StarterEntry[];
-  bench: StarterEntry[];
+  starters: PlayerWithStats[];
   captainPlayerId: string | null;
   viceCaptainPlayerId: string | null;
-  pendingBenchSwapPlayerId: string | null;
-  isPlayerLocked: (player: PlayerWithStats) => boolean;
-  lockedSinceLabel: (player: PlayerWithStats) => string | undefined;
-  onStarterCaptain: (playerId: string) => void;
-  onStarterViceCaptain: (playerId: string) => void;
-  onStarterBench: (playerId: string) => void;
-  onBenchStart: (benchPlayerId: string) => void;
-  onSwapTarget: (starterPlayerId: string) => void;
-  onCancelSwap: () => void;
 }
 
 const POSITION_ORDER: PlayerPosition[] = ["GK", "DEF", "MID", "FWD"];
@@ -68,13 +58,6 @@ const HAND_PLACED_OUTFIELD_SHAPES: Partial<Record<string, Record<OutfieldPositio
   },
 };
 
-/** The pitch dot label has little horizontal room before it collides with its neighbors, so it
- * shows only the surname — the last whitespace-separated token of the full name. */
-function surnameOf(fullName: string): string {
-  const tokens = fullName.trim().split(/\s+/);
-  return tokens[tokens.length - 1] ?? fullName;
-}
-
 function evenlySpacedXPercentages(count: number): number[] {
   return Array.from({ length: count }, (_, index) => ((index + 1) / (count + 1)) * 100);
 }
@@ -92,44 +75,17 @@ function coordinatesForPosition(position: PlayerPosition, slotCount: number, sha
   }));
 }
 
-export function FormationPitch({
-  formation,
-  starters,
-  bench,
-  captainPlayerId,
-  viceCaptainPlayerId,
-  pendingBenchSwapPlayerId,
-  isPlayerLocked,
-  lockedSinceLabel,
-  onStarterCaptain,
-  onStarterViceCaptain,
-  onStarterBench,
-  onBenchStart,
-  onSwapTarget,
-  onCancelSwap,
-}: FormationPitchProps) {
-  const [selectedStarterPlayerId, setSelectedStarterPlayerId] = useState<string | null>(null);
+/** The pitch dot label has little horizontal room before it collides with its neighbors, so it
+ * shows only the surname — the last whitespace-separated token of the full name. */
+function surnameOf(fullName: string): string {
+  const tokens = fullName.trim().split(/\s+/);
+  return tokens[tokens.length - 1] ?? fullName;
+}
 
-  const pendingBenchPlayer = bench.find((entry) => entry.player.id === pendingBenchSwapPlayerId)?.player;
-  // The swap flow and the tap-to-select action bar are mutually exclusive contextual UIs.
-  const selectedStarter = !pendingBenchSwapPlayerId
-    ? starters.find((entry) => entry.player.id === selectedStarterPlayerId)?.player
-    : undefined;
-
-  // The swap banner and action bar are contextual UIs that mount/unmount on tap; screen readers get
-  // no signal from that alone. This persistent visually-hidden live region (rendered below, always
-  // in the DOM) announces the current context whenever this text changes — reliable in a way a
-  // freshly-inserted live node is not.
-  const contextAnnouncement =
-    pendingBenchPlayer !== undefined
-      ? `Swapping in ${pendingBenchPlayer.name}. Choose a ${pendingBenchPlayer.position} on the pitch to replace, or cancel.`
-      : selectedStarter !== undefined
-        ? `${selectedStarter.name} selected. Captain, vice-captain, and bench actions available below.`
-        : "";
-
-  const startersByPosition = POSITION_ORDER.reduce<Record<PlayerPosition, StarterEntry[]>>(
+export function FormationPitch({ formation, starters, captainPlayerId, viceCaptainPlayerId }: FormationPitchProps) {
+  const startersByPosition = POSITION_ORDER.reduce<Record<PlayerPosition, PlayerWithStats[]>>(
     (map, position) => {
-      map[position] = starters.filter((entry) => entry.player.position === position);
+      map[position] = starters.filter((player) => player.position === position);
       return map;
     },
     { GK: [], DEF: [], MID: [], FWD: [] },
@@ -165,42 +121,17 @@ export function FormationPitch({
     );
   }
 
-  function renderStarterDot(player: PlayerWithStats, coordinate: PitchCoordinate, isSwapTarget: boolean) {
+  function renderStarterDot(player: PlayerWithStats, coordinate: PitchCoordinate) {
     const isCaptain = player.id === captainPlayerId;
     const isViceCaptain = player.id === viceCaptainPlayerId;
-    const isSelected = player.id === selectedStarterPlayerId && !pendingBenchSwapPlayerId;
 
-    function handleDotClick() {
-      if (isSwapTarget) {
-        onSwapTarget(player.id);
-        return;
-      }
-      if (pendingBenchSwapPlayerId) return;
-      setSelectedStarterPlayerId((current) => (current === player.id ? null : player.id));
-    }
-
-    const captaincySuffix = isCaptain ? ", captain" : isViceCaptain ? ", vice-captain" : "";
-    const dotAriaLabel = isSwapTarget
-      ? `Swap in for ${player.name}`
-      : `${player.name}${captaincySuffix} — player actions`;
-
-    // The dot itself is the interactive control (not the wrapping slot) so it can be a real
-    // <button> — the slot also holds the player-name link, and a focusable link nested inside a
-    // button is invalid. State classes stay on the slot so the existing CSS selectors still match.
     return (
       <div
         key={player.id}
-        className={`pitch-dot-slot pitch-dot-slot-filled ${isSwapTarget ? "is-swap-target" : ""} ${isSelected ? "is-selected" : ""}`}
+        className="pitch-dot-slot"
         style={{ left: `${coordinate.xPercent}%`, top: `${coordinate.yPercent}%` }}
       >
-        {isSwapTarget && <span className="pitch-dot-swap-indicator">Swap</span>}
-        <button
-          type="button"
-          className="pitch-dot"
-          onClick={handleDotClick}
-          aria-label={dotAriaLabel}
-          aria-pressed={isSelected}
-        />
+        <span className="pitch-dot" />
         <span className="pitch-dot-label">
           <span className="pitch-dot-name">
             <PlayerNameTapTarget playerId={player.id} playerName={surnameOf(player.name)} accessibleName={player.name} />
@@ -214,19 +145,6 @@ export function FormationPitch({
 
   return (
     <div className="pitch-wrapper">
-      <div className="sr-only" role="status" aria-live="polite">
-        {contextAnnouncement}
-      </div>
-
-      {pendingBenchSwapPlayerId && pendingBenchPlayer && (
-        <div className="pitch-swap-banner">
-          <span>
-            Tap a {pendingBenchPlayer.position} to swap in <strong>{pendingBenchPlayer.name}</strong>
-          </span>
-          <button onClick={onCancelSwap}>Cancel</button>
-        </div>
-      )}
-
       <div className="pitch">
         <div className="pitch-halfway-arc" />
         <div className="pitch-penalty-box" />
@@ -237,86 +155,12 @@ export function FormationPitch({
           const positionStarters = startersByPosition[position];
 
           return coordinates.map((coordinate, index) => {
-            const starterEntry = positionStarters[index];
-            if (!starterEntry) return renderEmptySlot(`${position}-empty-${index}`, coordinate);
-
-            const { player } = starterEntry;
-            const isSwapTarget =
-              !!pendingBenchPlayer &&
-              pendingBenchPlayer.position === player.position &&
-              player.id !== captainPlayerId &&
-              player.id !== viceCaptainPlayerId;
-            return renderStarterDot(player, coordinate, isSwapTarget);
+            const player = positionStarters[index];
+            if (!player) return renderEmptySlot(`${position}-empty-${index}`, coordinate);
+            return renderStarterDot(player, coordinate);
           });
         })}
       </div>
-
-      {selectedStarter && (
-        <div className="pitch-action-bar" role="group" aria-label={`Actions for ${selectedStarter.name}`}>
-          <span className="pitch-action-bar-name">
-            {selectedStarter.name}
-            {isPlayerLocked(selectedStarter) && <LockedBadge contextLabel={lockedSinceLabel(selectedStarter)} />}
-          </span>
-          <div className="pitch-action-bar-buttons">
-            <button
-              disabled={isPlayerLocked(selectedStarter)}
-              onClick={() => {
-                onStarterCaptain(selectedStarter.id);
-                setSelectedStarterPlayerId(null);
-              }}
-            >
-              {selectedStarter.id === captainPlayerId ? "Remove captain" : "Make captain"}
-            </button>
-            <button
-              disabled={isPlayerLocked(selectedStarter) || selectedStarter.id === captainPlayerId}
-              onClick={() => {
-                onStarterViceCaptain(selectedStarter.id);
-                setSelectedStarterPlayerId(null);
-              }}
-            >
-              {selectedStarter.id === viceCaptainPlayerId ? "Remove vice-captain" : "Make vice-captain"}
-            </button>
-            <button
-              disabled={isPlayerLocked(selectedStarter)}
-              onClick={() => {
-                onStarterBench(selectedStarter.id);
-                setSelectedStarterPlayerId(null);
-              }}
-            >
-              Bench
-            </button>
-            <button className="pitch-action-bar-close" onClick={() => setSelectedStarterPlayerId(null)} title="Close">
-              ×
-            </button>
-          </div>
-        </div>
-      )}
-
-      {bench.length > 0 && (
-        <div className="pitch-bench">
-          {bench.map(({ player }) => {
-            const locked = isPlayerLocked(player);
-            return (
-              <div key={player.id} className="pitch-bench-card">
-                <div className="pitch-bench-card-content">
-                  <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
-                  <span className="badge">{player.position}</span>
-                  {locked && <LockedBadge contextLabel={lockedSinceLabel(player)} />}
-                  <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
-                </div>
-                <button
-                  className="pitch-bench-btn"
-                  onClick={() => onBenchStart(player.id)}
-                  disabled={locked}
-                  title="Move to starting XI"
-                >
-                  Start
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }

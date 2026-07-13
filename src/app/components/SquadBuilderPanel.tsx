@@ -66,16 +66,18 @@ function SortableHeader({
   activeColumn,
   direction,
   onSort,
+  className,
 }: {
   label: string;
   column: SortableColumn;
   activeColumn: SortableColumn;
   direction: "asc" | "desc";
   onSort: (column: SortableColumn) => void;
+  className?: string;
 }) {
   const isActive = column === activeColumn;
   return (
-    <th>
+    <th className={className}>
       <button
         type="button"
         className={`sortable-header ${isActive ? "is-active" : ""}`}
@@ -160,8 +162,6 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
   const [saveResult, setSaveResult] = useState<SaveResult | null>(null);
   const [isConfirmingSave, setIsConfirmingSave] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [formationViewMode, setFormationViewMode] = useState<"pitch" | "list">("pitch");
-  const [pendingBenchSwapPlayerId, setPendingBenchSwapPlayerId] = useState<string | null>(null);
   const currentGameweek = useCurrentGameweek();
 
   useEffect(() => {
@@ -340,7 +340,6 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
   function clearSaveFeedback() {
     setSaveResult(null);
     setIsConfirmingSave(false);
-    setPendingBenchSwapPlayerId(null);
   }
 
   function handleSetCaptain(playerId: string) {
@@ -351,32 +350,6 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
   function handleSetViceCaptain(playerId: string) {
     clearSaveFeedback();
     setViceCaptainPlayerId(playerId);
-  }
-
-  function handleBenchCardTap(benchPlayerId: string) {
-    const benchPlayer = bench.find((entry) => entry.player.id === benchPlayerId)?.player;
-    if (!benchPlayer) return;
-    const error = toggleStartingError(benchPlayer);
-    if (!error) {
-      handleToggleStarting(benchPlayerId, true);
-    } else {
-      setPendingBenchSwapPlayerId(benchPlayerId);
-    }
-  }
-
-  function handleStarterSwapTarget(starterPlayerId: string) {
-    const starterPlayer = starters.find((entry) => entry.player.id === starterPlayerId)?.player;
-    const benchPlayer = bench.find((entry) => entry.player.id === pendingBenchSwapPlayerId)?.player;
-    if (!starterPlayer || !benchPlayer || starterPlayer.position !== benchPlayer.position) return;
-    clearSaveFeedback();
-    setDraftRosterSlots((slots) =>
-      slots.map((slot) => {
-        if (slot.playerId === pendingBenchSwapPlayerId) return { ...slot, isStarting: true };
-        if (slot.playerId === starterPlayerId) return { ...slot, isStarting: false };
-        return slot;
-      }),
-    );
-    setPendingBenchSwapPlayerId(null);
   }
 
   function handleAddPlayer(player: PlayerWithStats) {
@@ -563,113 +536,85 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
         </p>
       )}
 
-      <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
-        <h2 style={{ margin: 0 }}>Lineup</h2>
-        <div className="view-toggle">
-          <button
-            className={formationViewMode === "pitch" ? "active" : ""}
-            onClick={() => setFormationViewMode("pitch")}
-          >
-            Pitch View
-          </button>
-          <button
-            className={formationViewMode === "list" ? "active" : ""}
-            onClick={() => setFormationViewMode("list")}
-          >
-            List View
-          </button>
+      <h2>Lineup</h2>
+
+      <div className="builder-layout">
+        <div className="builder-layout-captaincy">
+          <h3>Captaincy</h3>
+          <p>Your captain scores double points. If they don't play, your vice-captain scores double instead.</p>
+          <div className="captaincy-row">
+            <label>
+              Captain
+              <select value={captainPlayerId} onChange={(event) => handleSetCaptain(event.target.value)}>
+                <option value="">Choose captain</option>
+                {starters.map(({ player }) => (
+                  <option key={player.id} value={player.id}>{player.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Vice-Captain
+              <select value={viceCaptainPlayerId} onChange={(event) => handleSetViceCaptain(event.target.value)}>
+                <option value="">Choose vice-captain</option>
+                {starters.map(({ player }) => (
+                  <option key={player.id} value={player.id}>{player.name}</option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
-      </div>
 
-      {formationViewMode === "pitch" && (
-        <FormationPitch
-          formation={selectedFormation || null}
-          starters={starters}
-          bench={bench}
-          captainPlayerId={captainPlayerId}
-          viceCaptainPlayerId={viceCaptainPlayerId}
-          pendingBenchSwapPlayerId={pendingBenchSwapPlayerId}
-          isPlayerLocked={isPlayerLocked}
-          lockedSinceLabel={lockedSinceLabel}
-          onStarterCaptain={handleSetCaptain}
-          onStarterViceCaptain={handleSetViceCaptain}
-          onStarterBench={(playerId) => handleToggleStarting(playerId, false)}
-          onBenchStart={handleBenchCardTap}
-          onSwapTarget={handleStarterSwapTarget}
-          onCancelSwap={() => setPendingBenchSwapPlayerId(null)}
-        />
-      )}
+        <div className="builder-layout-pitch">
+          <FormationPitch
+            formation={selectedFormation || null}
+            starters={starters.map(({ player }) => player)}
+            captainPlayerId={captainPlayerId}
+            viceCaptainPlayerId={viceCaptainPlayerId}
+          />
+        </div>
 
-      {formationViewMode === "list" && (
-        <div className="builder-row">
-          <div className="builder-row-lineup">
-            <h3>Starting XI</h3>
-            <ul className="squad-list">
-              {starters.map(({ player }) => (
+        <div className="builder-layout-list">
+          <h3>Starting XI</h3>
+          <ul className="squad-list">
+            {starters.map(({ player }) => (
+              <li key={player.id}>
+                <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
+                <span className="badge">{player.position}</span>
+                {isPlayerLocked(player) && <LockedBadge contextLabel={lockedSinceLabel(player)} />}
+                <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
+                <button style={{ marginLeft: "auto" }} onClick={() => handleToggleStarting(player.id, false)}>
+                  → Bench
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          <h3>Bench</h3>
+          <ul className="squad-list">
+            {bench.map(({ player }) => {
+              const blockedReason = toggleStartingError(player);
+              return (
                 <li key={player.id}>
                   <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
                   <span className="badge">{player.position}</span>
                   {isPlayerLocked(player) && <LockedBadge contextLabel={lockedSinceLabel(player)} />}
                   <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
-                  <button style={{ marginLeft: "auto" }} onClick={() => handleToggleStarting(player.id, false)}>
-                    → Bench
-                  </button>
+                  <div className="cell-action" style={{ marginLeft: "auto" }}>
+                    <button
+                      onClick={() => handleToggleStarting(player.id, true)}
+                      disabled={!!blockedReason}
+                      title={blockedReason ?? ""}
+                    >
+                      → Starting
+                    </button>
+                    {blockedReason && <span className="action-hint">{blockedReason}</span>}
+                  </div>
                 </li>
-              ))}
-            </ul>
-
-            <h3>Bench</h3>
-            <ul className="squad-list">
-              {bench.map(({ player }) => {
-                const blockedReason = toggleStartingError(player);
-                return (
-                  <li key={player.id}>
-                    <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
-                    <span className="badge">{player.position}</span>
-                    {isPlayerLocked(player) && <LockedBadge contextLabel={lockedSinceLabel(player)} />}
-                    <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
-                    <div className="cell-action" style={{ marginLeft: "auto" }}>
-                      <button
-                        onClick={() => handleToggleStarting(player.id, true)}
-                        disabled={!!blockedReason}
-                        title={blockedReason ?? ""}
-                      >
-                        → Starting
-                      </button>
-                      {blockedReason && <span className="action-hint">{blockedReason}</span>}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-
-          <div className="builder-row-captaincy">
-            <h3>Captaincy</h3>
-            <p>Your captain scores double points. If they don't play, your vice-captain scores double instead.</p>
-            <div className="captaincy-row">
-              <label>
-                Captain
-                <select value={captainPlayerId} onChange={(event) => handleSetCaptain(event.target.value)}>
-                  <option value="">Choose captain</option>
-                  {starters.map(({ player }) => (
-                    <option key={player.id} value={player.id}>{player.name}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Vice-Captain
-                <select value={viceCaptainPlayerId} onChange={(event) => handleSetViceCaptain(event.target.value)}>
-                  <option value="">Choose vice-captain</option>
-                  {starters.map(({ player }) => (
-                    <option key={player.id} value={player.id}>{player.name}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </div>
+              );
+            })}
+          </ul>
         </div>
-      )}
+      </div>
 
       <div className="discovery-header">
         <h2>Player Discovery</h2>
@@ -703,16 +648,16 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
       </div>
 
       <div className="table-wrap">
-        <table>
+        <table className="discovery-table">
           <thead>
             <tr>
+              <th className="col-action"></th>
               <SortableHeader label="Name" column="name" activeColumn={sortColumn} direction={sortDirection} onSort={handleSortColumn} />
               <SortableHeader label="Club" column="club" activeColumn={sortColumn} direction={sortDirection} onSort={handleSortColumn} />
-              <SortableHeader label="Pos" column="position" activeColumn={sortColumn} direction={sortDirection} onSort={handleSortColumn} />
-              <SortableHeader label="Price" column="price" activeColumn={sortColumn} direction={sortDirection} onSort={handleSortColumn} />
-              <SortableHeader label="Pts" column="points" activeColumn={sortColumn} direction={sortDirection} onSort={handleSortColumn} />
-              <SortableHeader label="Form" column="form" activeColumn={sortColumn} direction={sortDirection} onSort={handleSortColumn} />
-              <th></th>
+              <SortableHeader label="Pos" column="position" activeColumn={sortColumn} direction={sortDirection} onSort={handleSortColumn} className="col-narrow" />
+              <SortableHeader label="Price" column="price" activeColumn={sortColumn} direction={sortDirection} onSort={handleSortColumn} className="col-narrow" />
+              <SortableHeader label="Pts" column="points" activeColumn={sortColumn} direction={sortDirection} onSort={handleSortColumn} className="col-narrow" />
+              <SortableHeader label="Form" column="form" activeColumn={sortColumn} direction={sortDirection} onSort={handleSortColumn} className="col-narrow" />
             </tr>
           </thead>
           <tbody>
@@ -721,17 +666,7 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
               const blockedReason = inSquad ? null : addPlayerError(player);
               return (
                 <tr key={player.id}>
-                  <td>
-                    <PlayerNameTapTarget playerId={player.id} playerName={player.name} />{" "}
-                    {isPlayerLocked(player) && <LockedBadge contextLabel={lockedSinceLabel(player)} />}{" "}
-                    <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
-                  </td>
-                  <td>{player.club}</td>
-                  <td>{player.position}</td>
-                  <td>£{player.priceInMillions}M</td>
-                  <td>{player.totalFantasyPoints}</td>
-                  <td><RecentFormBars points={player.recentFormPoints} /></td>
-                  <td>
+                  <td className="col-action">
                     {inSquad ? (
                       <button onClick={() => handleRemovePlayer(player.id)}>Remove</button>
                     ) : (
@@ -748,6 +683,16 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
                       </div>
                     )}
                   </td>
+                  <td>
+                    <PlayerNameTapTarget playerId={player.id} playerName={player.name} />{" "}
+                    {isPlayerLocked(player) && <LockedBadge contextLabel={lockedSinceLabel(player)} />}{" "}
+                    <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
+                  </td>
+                  <td>{player.club}</td>
+                  <td className="col-narrow">{player.position}</td>
+                  <td className="col-narrow">£{player.priceInMillions}M</td>
+                  <td className="col-narrow">{player.totalFantasyPoints}</td>
+                  <td className="col-narrow"><RecentFormBars points={player.recentFormPoints} /></td>
                 </tr>
               );
             })}
