@@ -21,6 +21,11 @@ npm run dev:web        # Next.js frontend on http://localhost:3000, separate ter
 ### Stop
 
 ```
+npm run dev:stop # stops API server and frontend server ports 3000 & 30001
+```
+
+
+```
 docker compose down    # stops and removes the Postgres container (data persists in its volume)
 ```
 
