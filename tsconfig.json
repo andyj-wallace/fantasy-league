@@ -34,8 +34,7 @@
     "allowJs": true,
     "noEmit": true,
     "resolveJsonModule": true,
-    "isolatedModules": true,
-    "ignoreDeprecations": "6.0"
+    "isolatedModules": true
   },
   "include": [
     "src",
@@ -46,7 +45,9 @@
     ".next-recorded-smoke/types/**/*.ts",
     ".next-recorded-smoke/dev/types/**/*.ts",
     ".next-recorded-smoke-debug/types/**/*.ts",
-    ".next-recorded-smoke-debug/dev/types/**/*.ts"
+    ".next-recorded-smoke-debug/dev/types/**/*.ts",
+    ".next-verify-manual/types/**/*.ts",
+    ".next-verify-manual/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

@@ -1,20 +1,26 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { authedFetch } from "@/app/lib/apiFetch";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { getStoredToken } from "@/app/lib/auth";
+import { buildLoginUrlWithRedirect } from "@/app/lib/loginRedirect";
 
 export default function JoinLeaguePage() {
   const [error, setError] = useState<string | null>(null);
   const [inviteCode, setInviteCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [loginUrl, setLoginUrl] = useState("/login");
   const router = useRouter();
 
   useEffect(() => {
     const codeFromLink = new URLSearchParams(window.location.search).get("code");
     if (codeFromLink) setInviteCode(codeFromLink);
+    setLoginUrl(buildLoginUrlWithRedirect(window.location.pathname + window.location.search));
+    setIsLoggedIn(getStoredToken() !== null);
   }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -46,6 +52,23 @@ export default function JoinLeaguePage() {
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  if (!isLoggedIn) {
+    return (
+      <main>
+        <h1>Join League</h1>
+        <div className="card" style={{ maxWidth: 400 }}>
+          <p style={{ marginTop: 0 }}>
+            You&apos;ll need an account to join this league. Log in or sign up, and we&apos;ll bring you
+            right back here.
+          </p>
+          <Link href={loginUrl} className="btn-primary">
+            Log in or sign up
+          </Link>
+        </div>
+      </main>
+    );
   }
 
   return (

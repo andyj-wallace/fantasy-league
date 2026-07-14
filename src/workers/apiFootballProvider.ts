@@ -146,14 +146,6 @@ interface RawInjuryEntry {
   player: { id: number; type: string; reason: string | null };
 }
 
-/** /players' paginated response shape: one entry per player, statistics[0] is their primary
- * club/position for the requested season (a player transferred mid-season has multiple entries —
- * we only need the first). */
-interface RawPlayerSeasonEntry {
-  player: { id: number; name: string };
-  statistics: { team: { name: string }; games: { position: string | null } }[];
-}
-
 interface RawStatusResponse {
   requests: { current: number; limit_day: number };
 }
@@ -187,11 +179,14 @@ interface RawPlayerProfileEntry {
   };
 }
 
-/** /players' single-player-and-season response — the same shape RawPlayerSeasonEntry uses for
- * the paginated league pull, but with the full statistics block this single-player lookup needs
- * (rating, goals, assists, saves, cards) rather than just team/position. */
-interface RawPlayerWithStatisticsEntry {
-  player: { id: number };
+/** /players' response shape — shared by the single-player-and-season lookup
+ * (fetchPlayerSeasonStatistics), the paginated current-roster pull (fetchAllPlayersForSeason),
+ * and the paginated previous-season stats pull (fetchAllPlayerSeasonStatistics): same underlying
+ * API shape, read for different fields depending on the caller. A player transferred mid-season
+ * has multiple statistics[] entries; every caller here uses only the first (primary club for the
+ * requested season). */
+interface RawPlayerStatisticsEntry {
+  player: { id: number; name: string };
   statistics: {
     team: { name: string };
     league: { name: string };
@@ -199,6 +194,28 @@ interface RawPlayerWithStatisticsEntry {
     goals: { total: number | null; assists: number | null; saves: number | null };
     cards: { yellow: number | null; red: number | null };
   }[];
+}
+
+/** Maps a RawPlayerStatisticsEntry's first statistics block into PlayerSeasonStatistics — null
+ * when the player has no statistics entry for the requested season at all. */
+function toPlayerSeasonStatistics(entry: RawPlayerStatisticsEntry, season: number): PlayerSeasonStatistics | null {
+  const statistics = entry.statistics[0];
+  if (!statistics) return null;
+  return {
+    externalId: String(entry.player.id),
+    season,
+    club: statistics.team.name,
+    leagueName: statistics.league.name,
+    position: mapProviderPositionLabel(statistics.games.position),
+    appearances: statistics.games.appearences ?? 0,
+    minutesPlayed: statistics.games.minutes ?? 0,
+    rating: statistics.games.rating ? Number(statistics.games.rating) : null,
+    goals: statistics.goals.total ?? 0,
+    assists: statistics.goals.assists ?? 0,
+    saves: statistics.goals.saves ?? 0,
+    yellowCards: statistics.cards.yellow ?? 0,
+    redCards: statistics.cards.red ?? 0,
+  };
 }
 
 /** Parses API-Football's "175 cm" / "68 kg" string fields down to a bare number. */
@@ -443,36 +460,39 @@ export class ApiFootballProvider implements FootballDataProvider {
     return entries;
   }
 
-  /** Paginated /players?league&season&page pull — the complete league roster for a season,
-   * including players fetchPlayerRoster's squad snapshot misses (new signings, promoted-club
-   * players not yet linked to a squad block). Delays between pages (INTER_REQUEST_DELAY_MS) to
-   * stay under the provider's per-minute rate limit; a full season is ~28 pages, so this is for
-   * one-time hydration and monthly syncs, not a frequent check.
+  /** Shared /players?league&season&page pagination loop — season is an explicit argument, never
+   * `this.seasonYear`, so the same loop serves both the current-season roster pull and an
+   * arbitrary-season stats pull off one provider instance. Delays between pages
+   * (INTER_REQUEST_DELAY_MS) to stay under the provider's per-minute rate limit; a full season is
+   * ~28 pages, so this is for one-time hydration and monthly syncs, not a frequent check.
    *
    * Lower API-Football plan tiers (including Free) cap the `page` param itself — e.g. "Free
    * plans are limited to a maximum value of 3 for the Page parameter" — well below the ~28 pages
    * a full season needs. Hitting that ceiling stops pagination and returns whatever was fetched
    * so far instead of failing the whole call, since on those tiers this can only ever be a
-   * partial supplement to fetchPlayerRoster's squad-based pull, not the complete roster. */
-  async fetchAllPlayersForSeason(): Promise<ProviderRosterEntry[]> {
-    const entries: ProviderRosterEntry[] = [];
+   * partial result, not the complete season. */
+  private async paginateLeaguePlayersForSeason<T>(
+    season: number,
+    toResult: (entry: RawPlayerStatisticsEntry) => T | null,
+  ): Promise<T[]> {
+    const results: T[] = [];
     let currentPage = 1;
     let totalPages = 1;
 
     do {
-      let response: RawPlayerSeasonEntry[];
+      let response: RawPlayerStatisticsEntry[];
       let paging: { current: number; total: number } | undefined;
       try {
-        ({ response, paging } = await this.request<RawPlayerSeasonEntry[]>("players", {
+        ({ response, paging } = await this.request<RawPlayerStatisticsEntry[]>("players", {
           league: PREMIER_LEAGUE_ID,
-          season: this.seasonYear,
+          season,
           page: currentPage,
         }));
       } catch (error) {
         if (error instanceof Error && /page parameter/i.test(error.message)) {
           console.warn(
-            `fetchAllPlayersForSeason: stopped at page ${currentPage} — plan's page limit reached (${error.message}). ` +
-              `Returning ${entries.length} players fetched so far; this is a partial result on this plan tier.`,
+            `paginateLeaguePlayersForSeason: stopped at page ${currentPage} — plan's page limit reached (${error.message}). ` +
+              `Returning ${results.length} entries fetched so far; this is a partial result on this plan tier.`,
           );
           break;
         }
@@ -482,16 +502,8 @@ export class ApiFootballProvider implements FootballDataProvider {
       totalPages = paging?.total ?? 1;
 
       for (const entry of response) {
-        const statistics = entry.statistics[0];
-        if (!statistics) continue;
-        const position = mapProviderPositionLabel(statistics.games.position);
-        if (!position) continue; // skip entries with no usable position (e.g. provider data gaps)
-        entries.push({
-          externalId: String(entry.player.id),
-          name: entry.player.name,
-          club: statistics.team.name,
-          position,
-        });
+        const mapped = toResult(entry);
+        if (mapped !== null) results.push(mapped);
       }
 
       if (currentPage < totalPages) {
@@ -500,7 +512,29 @@ export class ApiFootballProvider implements FootballDataProvider {
       currentPage++;
     } while (currentPage <= totalPages);
 
-    return entries;
+    return results;
+  }
+
+  /** The complete league roster for the current season, including players fetchPlayerRoster's
+   * squad snapshot misses (new signings, promoted-club players not yet linked to a squad
+   * block). */
+  async fetchAllPlayersForSeason(): Promise<ProviderRosterEntry[]> {
+    return this.paginateLeaguePlayersForSeason(this.seasonYear, (entry) => {
+      const statistics = entry.statistics[0];
+      if (!statistics) return null;
+      const position = mapProviderPositionLabel(statistics.games.position);
+      if (!position) return null; // skip entries with no usable position (e.g. provider data gaps)
+      return { externalId: String(entry.player.id), name: entry.player.name, club: statistics.team.name, position };
+    });
+  }
+
+  /** Full-season aggregate stat lines (appearances, minutes, goals, assists, saves, cards) for
+   * every player in the league for an arbitrary season — unlike fetchAllPlayersForSeason, `season`
+   * is explicit rather than pinned to `this.seasonYear`, so one instance can pull a *previous*
+   * season's stats (pre-season pricing hydration) without re-pinning state the current-season
+   * import path relies on. */
+  async fetchAllPlayerSeasonStatistics(season: number): Promise<PlayerSeasonStatistics[]> {
+    return this.paginateLeaguePlayersForSeason(season, (entry) => toPlayerSeasonStatistics(entry, season));
   }
 
   async fetchInjuries(): Promise<ProviderInjuryEntry[]> {
@@ -559,25 +593,8 @@ export class ApiFootballProvider implements FootballDataProvider {
   }
 
   async fetchPlayerSeasonStatistics(externalPlayerId: string, season: number): Promise<PlayerSeasonStatistics | null> {
-    const { response } = await this.request<RawPlayerWithStatisticsEntry[]>("players", { id: externalPlayerId, season });
+    const { response } = await this.request<RawPlayerStatisticsEntry[]>("players", { id: externalPlayerId, season });
     const entry = response[0];
-    const statistics = entry?.statistics[0];
-    if (!entry || !statistics) return null;
-
-    return {
-      externalId: String(entry.player.id),
-      season,
-      club: statistics.team.name,
-      leagueName: statistics.league.name,
-      position: mapProviderPositionLabel(statistics.games.position),
-      appearances: statistics.games.appearences ?? 0,
-      minutesPlayed: statistics.games.minutes ?? 0,
-      rating: statistics.games.rating ? Number(statistics.games.rating) : null,
-      goals: statistics.goals.total ?? 0,
-      assists: statistics.goals.assists ?? 0,
-      saves: statistics.goals.saves ?? 0,
-      yellowCards: statistics.cards.yellow ?? 0,
-      redCards: statistics.cards.red ?? 0,
-    };
+    return entry ? toPlayerSeasonStatistics(entry, season) : null;
   }
 }

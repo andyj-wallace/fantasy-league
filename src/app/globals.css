@@ -765,6 +765,7 @@ tbody tr:hover {
 
 .squad-list li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.65rem;
   padding: 0.5rem 0.85rem;
@@ -772,6 +773,12 @@ tbody tr:hover {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   font-size: 0.9rem;
+}
+
+/* A locked player's row is faded to look inactive, matching button:disabled's opacity — their
+ * Bench/Starting toggle and captain/vice-captain options are actually disabled to match. */
+.squad-list-item-locked {
+  opacity: 0.55;
 }
 
 /* ── Nav / link list ──────────────────────────────────────── */
@@ -1013,8 +1020,7 @@ tbody tr:hover {
   justify-content: space-between;
   gap: 0.75rem;
   background: var(--color-bg);
-  padding: 0.4rem 0;
-  margin-top: 1.6rem;
+  padding: 0.5rem 0 0.4rem;
 }
 
 .discovery-header h2 {

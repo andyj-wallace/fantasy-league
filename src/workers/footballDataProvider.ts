@@ -77,6 +77,11 @@ export interface FootballDataProvider {
    * and rate-limited (inter-page delay), so this is for one-time hydration and monthly syncs,
    * not the frequent roster check. */
   fetchAllPlayersForSeason(): Promise<ProviderRosterEntry[]>;
+  /** Same paginated /players?league&season&page pull as fetchAllPlayersForSeason, but for an
+   * arbitrary season (not pinned to the season set via setCurrentSeason) and reading each
+   * player's full aggregate stat line instead of just identity — used by the one-time initial
+   * player pricing hydration to pull a *previous* season's stats. */
+  fetchAllPlayerSeasonStatistics(season: number): Promise<PlayerSeasonStatistics[]>;
   /** Today's injury/suspension report for the whole league. */
   fetchInjuries(): Promise<ProviderInjuryEntry[]>;
   /** Today's remaining request budget. Served from the rate-limit headers of the most recent
@@ -115,6 +120,10 @@ export class StubFootballDataProvider implements FootballDataProvider {
   }
 
   async fetchAllPlayersForSeason(): Promise<ProviderRosterEntry[]> {
+    return [];
+  }
+
+  async fetchAllPlayerSeasonStatistics(_season: number): Promise<PlayerSeasonStatistics[]> {
     return [];
   }
 

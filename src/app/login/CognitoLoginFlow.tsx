@@ -11,6 +11,7 @@ import {
   signUpWithCognito,
   validateHandleFormat,
 } from "@/app/lib/cognitoAuth";
+import { getValidatedLoginRedirectTarget } from "@/app/lib/loginRedirect";
 
 type CognitoLoginStep = "signIn" | "signUp" | "confirmSignUp" | "resetPassword";
 
@@ -84,7 +85,7 @@ export function CognitoLoginFlow() {
         }
         throw loginError;
       }
-      router.push("/");
+      router.push(getValidatedLoginRedirectTarget() ?? "/");
     });
   }
 

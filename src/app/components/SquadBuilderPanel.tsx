@@ -352,10 +352,19 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
     setViceCaptainPlayerId(playerId);
   }
 
+  /** Whether the selected formation still has room for another starter at this position, given
+   * who's already starting. Drives both auto-placement on add and the manual bench/starting toggle. */
+  function hasOpenStartingSlot(position: PlayerPosition): boolean {
+    return formationRequirement !== null && startingCountsByPosition[position] < formationRequirement[position];
+  }
+
   function handleAddPlayer(player: PlayerWithStats) {
     clearSaveFeedback();
     if (addPlayerError(player)) return;
-    setDraftRosterSlots((slots) => [...slots, { playerId: player.id, isStarting: false }]);
+    setDraftRosterSlots((slots) => [
+      ...slots,
+      { playerId: player.id, isStarting: hasOpenStartingSlot(player.position) },
+    ]);
   }
 
   function handleRemovePlayer(playerId: string) {
@@ -367,9 +376,8 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
 
   function toggleStartingError(player: PlayerWithStats): string | null {
     if (!formationRequirement) return "Pick a formation first";
-    const required = formationRequirement[player.position];
-    if (startingCountsByPosition[player.position] >= required) {
-      return `${selectedFormation} only starts ${required} ${player.position}`;
+    if (!hasOpenStartingSlot(player.position)) {
+      return `${selectedFormation} only starts ${formationRequirement[player.position]} ${player.position}`;
     }
     return null;
   }
@@ -548,7 +556,9 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
               <select value={captainPlayerId} onChange={(event) => handleSetCaptain(event.target.value)}>
                 <option value="">Choose captain</option>
                 {starters.map(({ player }) => (
-                  <option key={player.id} value={player.id}>{player.name}</option>
+                  <option key={player.id} value={player.id} disabled={isPlayerLocked(player)}>
+                    {player.name}{isPlayerLocked(player) ? " (Locked)" : ""}
+                  </option>
                 ))}
               </select>
             </label>
@@ -557,7 +567,9 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
               <select value={viceCaptainPlayerId} onChange={(event) => handleSetViceCaptain(event.target.value)}>
                 <option value="">Choose vice-captain</option>
                 {starters.map(({ player }) => (
-                  <option key={player.id} value={player.id}>{player.name}</option>
+                  <option key={player.id} value={player.id} disabled={isPlayerLocked(player)}>
+                    {player.name}{isPlayerLocked(player) ? " (Locked)" : ""}
+                  </option>
                 ))}
               </select>
             </label>
@@ -576,28 +588,39 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
         <div className="builder-layout-list">
           <h3>Starting XI</h3>
           <ul className="squad-list">
-            {starters.map(({ player }) => (
-              <li key={player.id}>
-                <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
-                <span className="badge">{player.position}</span>
-                {isPlayerLocked(player) && <LockedBadge contextLabel={lockedSinceLabel(player)} />}
-                <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
-                <button style={{ marginLeft: "auto" }} onClick={() => handleToggleStarting(player.id, false)}>
-                  → Bench
-                </button>
-              </li>
-            ))}
+            {starters.map(({ player }) => {
+              const locked = isPlayerLocked(player);
+              return (
+                <li key={player.id} className={locked ? "squad-list-item-locked" : undefined}>
+                  <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
+                  <span className="badge">{player.position}</span>
+                  {locked && <span className="sr-only">{lockedSinceLabel(player) ?? "Locked"}</span>}
+                  <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
+                  <div className="cell-action" style={{ marginLeft: "auto" }}>
+                    <button
+                      onClick={() => handleToggleStarting(player.id, false)}
+                      disabled={locked}
+                      title={locked ? lockedSinceLabel(player) : ""}
+                    >
+                      → Bench
+                    </button>
+                    {locked && <span className="action-hint">{lockedSinceLabel(player) ?? "Locked"}</span>}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
 
           <h3>Bench</h3>
           <ul className="squad-list">
             {bench.map(({ player }) => {
-              const blockedReason = toggleStartingError(player);
+              const locked = isPlayerLocked(player);
+              const blockedReason = locked ? (lockedSinceLabel(player) ?? "Locked") : toggleStartingError(player);
               return (
-                <li key={player.id}>
+                <li key={player.id} className={locked ? "squad-list-item-locked" : undefined}>
                   <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
                   <span className="badge">{player.position}</span>
-                  {isPlayerLocked(player) && <LockedBadge contextLabel={lockedSinceLabel(player)} />}
+                  {locked && <span className="sr-only">{lockedSinceLabel(player) ?? "Locked"}</span>}
                   <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
                   <div className="cell-action" style={{ marginLeft: "auto" }}>
                     <button
@@ -668,16 +691,23 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
                 <tr key={player.id}>
                   <td className="col-action">
                     {inSquad ? (
-                      <button onClick={() => handleRemovePlayer(player.id)}>Remove</button>
+                      <button
+                        onClick={() => handleRemovePlayer(player.id)}
+                        aria-label={`Remove ${player.name} from squad`}
+                        title="Remove"
+                      >
+                        &minus;
+                      </button>
                     ) : (
                       <div className="cell-action">
                         <button
                           className={!blockedReason ? "btn-primary" : ""}
                           onClick={() => handleAddPlayer(player)}
                           disabled={!!blockedReason}
-                          title={blockedReason ?? ""}
+                          aria-label={`Add ${player.name} to squad`}
+                          title={blockedReason ?? "Add"}
                         >
-                          Add
+                          +
                         </button>
                         {blockedReason && <span className="action-hint">{blockedReason}</span>}
                       </div>

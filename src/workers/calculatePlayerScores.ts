@@ -1,9 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { matchesRepository, playerMatchStatsRepository, playerScoresRepository, playersRepository } from "../db/repositories";
-import type { PlayerPosition, PlayerScore, PlayerScoreBreakdown } from "../domain";
-
-/** Points per goal, by scorer position — fantasy_league_v1_design.txt. */
-const GOAL_POINTS_BY_POSITION: Record<PlayerPosition, number> = { GK: 10, DEF: 8, MID: 6, FWD: 4 };
+import { GOAL_POINTS_BY_POSITION } from "../domain";
+import type { PlayerScore, PlayerScoreBreakdown } from "../domain";
 
 /** Turns a Match's raw PlayerMatchStat rows into precomputed PlayerScore rows, per the point
  * table in fantasy_league_v1_design.txt. */

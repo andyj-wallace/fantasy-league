@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { setStoredSession } from "@/app/lib/auth";
 import { isCognitoAuthEnabled } from "@/app/lib/cognitoAuth";
+import { getValidatedLoginRedirectTarget } from "@/app/lib/loginRedirect";
 import { CognitoLoginFlow } from "./CognitoLoginFlow";
 
 type LoginStep = "email" | "displayName";
@@ -58,7 +59,7 @@ function PasswordlessDevLoginFlow() {
       return;
     }
     setStoredSession({ userId: body.userId, token: body.token });
-    router.push("/");
+    router.push(getValidatedLoginRedirectTarget() ?? "/");
   }
 
   async function handleEmailSubmit(event: FormEvent<HTMLFormElement>) {

@@ -333,6 +333,10 @@ Two workflows (or one gated pipeline):
 4. Invoke the migration Lambda → schema created on RDS.
 5. Run the roster hydration path as needed (`hydrate:roster`) — or the existing seed —
    to populate players (subject to the free/paid API-Football plan, tracked separately).
+   Before the season's first gameweek lock, follow with `hydrate:initial-pricing` to
+   replace the flat placeholder prices with previous-season-derived ones (see
+   `docs/initial-player-pricing.md`; not yet verified against the real API — see
+   `docs/remaining-gaps-todo.md` item 15).
 6. Build + sync the frontend to S3, invalidate CloudFront.
 7. Smoke test (below). Then run the one-time **Strategy 3** live API-Football check.
 
