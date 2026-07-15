@@ -5,6 +5,7 @@ import {
   CognitoUserPool,
   type CognitoUserSession,
 } from "amazon-cognito-identity-js";
+import { clearApiCache } from "./apiCache";
 import { clearStoredSession, setStoredSession } from "./auth";
 
 /**
@@ -144,12 +145,15 @@ export function getFreshCognitoIdToken(): Promise<string | null> {
   });
 }
 
-/** Logs out of whichever auth mode is active: revokes the local Cognito session (when enabled)
- * and clears the app's stored session. The two logout buttons call this instead of
- * clearStoredSession directly. */
+/** Logs out of whichever auth mode is active: revokes the local Cognito session (when enabled),
+ * clears the app's stored session, and drops every cached GET response — otherwise a relogin as
+ * a different user on the same browser could see the previous user's cached reads. The two
+ * logout buttons (and the 401 handler in apiFetch.ts) call this instead of clearStoredSession
+ * directly. */
 export function logOut(): void {
   if (isCognitoAuthEnabled()) {
     requireUserPool().getCurrentUser()?.signOut();
   }
   clearStoredSession();
+  clearApiCache();
 }

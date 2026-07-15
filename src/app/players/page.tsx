@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { LoadingState } from "@/app/components/LoadingState";
 import { PlayerDetailPanel } from "@/app/components/PlayerDetailPanel";
 import { StandaloneViewToggle } from "@/app/components/StandaloneViewToggle";
-import { fetchJson } from "@/app/lib/apiFetch";
+import { API_CACHE_TTL_MS, getCachedJson } from "@/app/lib/apiCache";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { useRequireAuth } from "@/app/lib/useRequireAuth";
 import { useStandalonePageGate } from "@/app/lib/standalonePageGate";
@@ -30,7 +30,7 @@ export default function PlayerDetailPage() {
 async function resolvePlayerHubUrl(playerId: string): Promise<string | null> {
   if (!playerId) return null;
   try {
-    const teams = await fetchJson<TeamWithLeague[]>(`${getApiBaseUrl()}/me/teams`);
+    const teams = await getCachedJson<TeamWithLeague[]>(`${getApiBaseUrl()}/me/teams`, API_CACHE_TTL_MS.SHORT);
     const firstLeagueId = teams[0]?.league?.id;
     if (!firstLeagueId) return null;
     return `/leagues?leagueId=${firstLeagueId}&playerId=${playerId}`;

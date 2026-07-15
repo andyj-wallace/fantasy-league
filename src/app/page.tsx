@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { authedFetch } from "@/app/lib/apiFetch";
+import { API_CACHE_TTL_MS, getCachedJson } from "@/app/lib/apiCache";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { getStoredToken } from "@/app/lib/auth";
 import { TeamLeagueLinks } from "@/app/components/TeamLeagueLinks";
@@ -24,12 +24,10 @@ export default function HomePage() {
     setIsLoggedIn(token !== null);
     if (!token) return;
 
-    authedFetch(`${getApiBaseUrl()}/me/teams`)
-      .then(async (response) => {
-        // Only a genuine failure (network error, non-2xx) is an error. A 200 with an empty
-        // array means "you're in no leagues yet" — that's a friendly empty state, never an error.
-        if (!response.ok) throw new Error(`GET /me/teams failed: ${response.status}`);
-        const result = (await response.json()) as TeamWithLeague[];
+    getCachedJson<TeamWithLeague[]>(`${getApiBaseUrl()}/me/teams`, API_CACHE_TTL_MS.SHORT)
+      .then((result) => {
+        // Only a genuine failure (network error, malformed body) is an error. A 200 with an
+        // empty array means "you're in no leagues yet" — that's a friendly empty state, never an error.
         if (!Array.isArray(result)) throw new Error("GET /me/teams did not return a list");
         if (result.length === 1) {
           router.push(`/leagues?leagueId=${result[0]!.league.id}`);

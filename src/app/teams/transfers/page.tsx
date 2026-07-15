@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { LoadingState } from "@/app/components/LoadingState";
 import { TransfersPanel } from "@/app/components/TransfersPanel";
 import { StandaloneViewToggle } from "@/app/components/StandaloneViewToggle";
-import { fetchJson } from "@/app/lib/apiFetch";
+import { API_CACHE_TTL_MS, getCachedJson } from "@/app/lib/apiCache";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { useRequireAuth } from "@/app/lib/useRequireAuth";
 import { useStandalonePageGate } from "@/app/lib/standalonePageGate";
@@ -31,7 +31,7 @@ export default function TransfersPage() {
 async function resolveTransfersHubUrl(teamId: string): Promise<string | null> {
   if (!teamId) return null;
   try {
-    const team = await fetchJson<Team>(`${getApiBaseUrl()}/teams/${teamId}`);
+    const team = await getCachedJson<Team>(`${getApiBaseUrl()}/teams/${teamId}`, API_CACHE_TTL_MS.SHORT);
     if (!team?.leagueId) return null;
     return `/leagues?leagueId=${team.leagueId}&panel=transfers&teamId=${teamId}`;
   } catch {

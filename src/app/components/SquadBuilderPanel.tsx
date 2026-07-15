@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { authedFetch, fetchJson } from "@/app/lib/apiFetch";
+import { authedFetch } from "@/app/lib/apiFetch";
+import { API_CACHE_TTL_MS, getCachedJson, invalidateCached } from "@/app/lib/apiCache";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { PlayerNameTapTarget } from "@/app/components/PlayerNameTapTarget";
 import { AvailabilityBadge } from "@/app/components/AvailabilityBadge";
@@ -170,8 +171,8 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
       return;
     }
     Promise.all([
-      fetchJson<Team>(`${getApiBaseUrl()}/teams/${teamId}`),
-      fetchJson<PlayerWithStats[]>(`${getApiBaseUrl()}/players`),
+      getCachedJson<Team>(`${getApiBaseUrl()}/teams/${teamId}`, API_CACHE_TTL_MS.SHORT),
+      getCachedJson<PlayerWithStats[]>(`${getApiBaseUrl()}/players`, API_CACHE_TTL_MS.PLAYER_DATA),
     ])
       .then(([loadedTeam, players]) => {
         if (!loadedTeam?.rosterSlots) {
@@ -467,6 +468,11 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
         setSaveResult({ kind: "error", messages: [rosterBody.message ?? "Could not save squad."] });
         return;
       }
+      // The roster PUT has landed server-side even if the lineup PUT below fails, so invalidate
+      // now rather than only on full success — otherwise a stale roster/budget could still be
+      // served from cache after a partial save.
+      invalidateCached(`${getApiBaseUrl()}/teams/${teamId}`);
+      invalidateCached(`${getApiBaseUrl()}/me/teams`);
 
       const lineupResponse = await authedFetch(`${getApiBaseUrl()}/teams/${teamId}/lineup`, {
         method: "PUT",

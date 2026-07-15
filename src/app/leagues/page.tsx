@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { fetchJson } from "@/app/lib/apiFetch";
+import { API_CACHE_TTL_MS, getCachedJson } from "@/app/lib/apiCache";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { getStoredToken } from "@/app/lib/auth";
 import type { TeamWithLeague } from "@/app/lib/teamTypes";
@@ -52,7 +52,7 @@ function LeaguePageContent() {
    * the standings. Reused by the initial mount and by the on-close refresh after a transfer, so a
    * budget change or a re-rank shows without a full navigation. */
   function loadLeague() {
-    fetchJson<TeamWithLeague[]>(`${getApiBaseUrl()}/me/teams`)
+    getCachedJson<TeamWithLeague[]>(`${getApiBaseUrl()}/me/teams`, API_CACHE_TTL_MS.SHORT)
       .then((result) => {
         const match = result.find(({ league }) => league.id === leagueId);
         if (!match) {
@@ -63,7 +63,7 @@ function LeaguePageContent() {
       })
       .catch(() => setError("Could not load this league — try refreshing."));
 
-    fetchJson<StandingsResponse>(`${getApiBaseUrl()}/leagues/${leagueId}/standings`)
+    getCachedJson<StandingsResponse>(`${getApiBaseUrl()}/leagues/${leagueId}/standings`, API_CACHE_TTL_MS.STANDINGS)
       .then(setStandingsResponse)
       .catch(() => setError("Could not load this league's standings — try refreshing."));
   }

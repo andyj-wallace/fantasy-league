@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { authedFetch, fetchJson } from "@/app/lib/apiFetch";
+import { authedFetch } from "@/app/lib/apiFetch";
+import { API_CACHE_TTL_MS, getCachedJson, invalidateCached } from "@/app/lib/apiCache";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
 import { AvailabilityBadge } from "@/app/components/AvailabilityBadge";
 import { LockedBadge } from "@/app/components/LockedBadge";
@@ -186,9 +187,9 @@ export function TransfersPanel({
 
   function loadData() {
     return Promise.all([
-      fetchJson<Team>(`${getApiBaseUrl()}/teams/${teamId}`),
-      fetchJson<AvailableTransfers>(`${getApiBaseUrl()}/teams/${teamId}/transfers/available`),
-      fetchJson<PlayerWithStats[]>(`${getApiBaseUrl()}/players`),
+      getCachedJson<Team>(`${getApiBaseUrl()}/teams/${teamId}`, API_CACHE_TTL_MS.SHORT),
+      getCachedJson<AvailableTransfers>(`${getApiBaseUrl()}/teams/${teamId}/transfers/available`, API_CACHE_TTL_MS.SHORT),
+      getCachedJson<PlayerWithStats[]>(`${getApiBaseUrl()}/players`, API_CACHE_TTL_MS.PLAYER_DATA),
     ]).then(([loadedTeam, loadedAvailable, players]) => {
       setTeam(loadedTeam);
       setAvailable(loadedAvailable);
@@ -228,6 +229,9 @@ export function TransfersPanel({
     const body = await response.json();
     if (!response.ok) return body.message ?? "Could not make this transfer.";
 
+    invalidateCached(`${getApiBaseUrl()}/teams/${teamId}`);
+    invalidateCached(`${getApiBaseUrl()}/teams/${teamId}/transfers/available`);
+    invalidateCached(`${getApiBaseUrl()}/me/teams`);
     await loadData();
     setPageMessage(`Transfer confirmed: ${outgoing.name} → ${replacement?.name ?? replacementPlayerId}.`);
     onChanged?.();
