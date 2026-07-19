@@ -9,6 +9,18 @@ export const MAX_BANKED_FREE_TRANSFER_COUNT = 8;
 /** Points deducted for a transfer beyond the team's banked free transfers. */
 export const POINTS_COST_PER_PAID_TRANSFER = 10;
 
+/** Hard cap on managers per league — joinLeague rejects once a league reaches this size. */
+export const MAX_MANAGERS_PER_LEAGUE = 50;
+
+/** System-wide Gameweek number after which no one may join any league (fantasy_league_v1_design.txt). */
+export const GAMEWEEK_JOIN_CUTOFF_NUMBER = 25;
+
+/** Feature toggle (decided 2026-07-18): commissionership transfer is fully implemented
+ * (API + UI) but disabled for now — the commissioner is immutable for a league's entire
+ * lifetime until this is turned back on. Gates both transferCommissionership's handler and
+ * the League Settings page's Ownership section. */
+export const IS_COMMISSIONERSHIP_TRANSFER_ENABLED = false;
+
 /**
  * Flat per-position placeholder price assigned to a Player the first time the roster importer
  * sees them, and left in place by the initial-pricing hydration script

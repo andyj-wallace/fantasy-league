@@ -12,7 +12,7 @@ import { LoadingState } from "@/app/components/LoadingState";
 import { FormationPitch } from "@/app/components/FormationPitch";
 import { RecentFormBars } from "@/app/components/RecentFormBars";
 import { StatTile } from "@/app/components/StatTile";
-import { useCurrentGameweek } from "@/app/lib/useCurrentGameweek";
+import { useCurrentGameweekContext } from "@/app/lib/gameweekContext";
 import { formatDayAndTime } from "@/app/lib/formatDate";
 import {
   formationRequiredCounts,
@@ -163,7 +163,7 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
   const [saveResult, setSaveResult] = useState<SaveResult | null>(null);
   const [isConfirmingSave, setIsConfirmingSave] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const currentGameweek = useCurrentGameweek();
+  const currentGameweek = useCurrentGameweekContext();
 
   useEffect(() => {
     if (!teamId) {

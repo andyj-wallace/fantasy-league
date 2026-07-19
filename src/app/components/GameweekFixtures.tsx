@@ -1,7 +1,7 @@
 "use client";
 
 import { formatDayAndTime } from "@/app/lib/formatDate";
-import type { CurrentGameweekResponse, GameweekMatchSummary } from "@/app/lib/useCurrentGameweek";
+import type { CurrentGameweekResponse, GameweekMatchSummary } from "@/app/lib/gameweekContext";
 import type { MatchStatus } from "../../domain";
 
 const fixtureStatusBadges: Record<MatchStatus, { label: string; className: string } | null> = {

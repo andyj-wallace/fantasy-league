@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { AppHeader } from "./components/AppHeader";
+import { CurrentGameweekProvider } from "./lib/gameweekContext";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -15,8 +16,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body>
-        <AppHeader />
-        {children}
+        <CurrentGameweekProvider>
+          <AppHeader />
+          {children}
+        </CurrentGameweekProvider>
       </body>
     </html>
   );

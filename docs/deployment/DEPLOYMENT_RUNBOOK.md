@@ -295,6 +295,109 @@ Smoke tests ran 2026-07-11: **✅ all four** — API 401-with-JSON through Cloud
   Prod is guarded by termination protection, RDS deletion protection, a typed
   confirmation, AND `ALLOW_PROD_DESTROY=yes` — all on purpose.
 
+## SES for Cognito email (manual, one-time per environment — recommended before real signups)
+
+Cognito's default email sender (`EmailSendingAccount=COGNITO_DEFAULT`, the implicit
+setting today) is capped low enough that a real signup wave will silently stop
+delivering confirmation codes. Switching to SES removes the cap — but SES starts in
+**sandbox mode**, which only sends to addresses/domains you've explicitly verified.
+Sandbox mode alone does **not** solve "real users signing up with arbitrary email
+addresses" — production access must be requested separately (below).
+
+No custom domain exists yet, so the simplest sender identity for now is
+`andy.illegalized@gmail.com` — the same address as `BUDGET_ALERT_EMAIL` in the CDK
+stack. Cognito isn't CDK-managed (the pool is imported by ID only, via SSM params —
+there's no `cognito.UserPool` construct to change), so all of this is out-of-band CLI
+work, same as how the pool itself was originally set up.
+
+### 1 — Verify a sender identity in SES
+
+```bash
+aws sesv2 create-email-identity --region us-east-1 \
+    --email-identity andy.illegalized@gmail.com
+```
+
+This sends a verification email to that address — click the link in it. Confirm:
+
+```bash
+aws sesv2 get-email-identity --region us-east-1 \
+    --email-identity andy.illegalized@gmail.com \
+    --query "VerifiedForSendingStatus"        # must be true before continuing
+```
+
+### 2 — Point Cognito at the verified identity
+
+```bash
+aws cognito-idp update-user-pool --region us-east-1 \
+    --user-pool-id us-east-1_DBETCnAJP \
+    --email-configuration SourceArn=arn:aws:ses:us-east-1:345482189946:identity/andy.illegalized@gmail.com,EmailSendingAccount=DEVELOPER
+```
+
+**⚠ Before running this**: `update-user-pool` does not merge — some sub-blocks of the
+user pool config can be reset to defaults if you don't re-specify them alongside
+`--email-configuration`. Always run `aws cognito-idp describe-user-pool --user-pool-id
+us-east-1_DBETCnAJP` first, diff the output against what you're about to set, and
+re-pass any unrelated settings (password policy, MFA config, etc.) explicitly in the
+same call if there's any doubt. Verify immediately after with another
+`describe-user-pool` that nothing unrelated changed.
+
+No separate IAM permission is expected on Cognito's side: `EmailSendingAccount=DEVELOPER`
+with a verified identity in the *same account and region* is documented as using
+Cognito's own service-linked access to call SES — this is a same-account,
+same-region setup (SES identity and Cognito pool both in `345482189946`/`us-east-1`),
+so no cross-account SES identity resource policy should be needed. If confirmation
+emails silently fail to send after this change, check SES sending statistics /
+CloudTrail for an AccessDenied from `cognito-idp.amazonaws.com` first — that would mean
+this assumption was wrong for this account and an explicit SES identity policy is
+needed after all.
+
+### 3 — Request SES production access (removes the sandbox restriction)
+
+Sandbox mode caps you to verified recipients only — this step is what actually lets
+real users' inboxes receive confirmation codes.
+
+```bash
+aws sesv2 put-account-details --region us-east-1 \
+    --mail-type TRANSACTIONAL \
+    --website-url https://<cloudfront-url-or-future-custom-domain> \
+    --use-case-description "Transactional account-confirmation and password-reset emails for a small fantasy football league app (Cognito-driven signup flow), low volume." \
+    --production-access-enabled
+```
+
+**⚠ Verify before using verbatim**: run `aws sesv2 put-account-details help` and
+cross-check the parameter names against the installed CLI version first — a
+rejected/malformed request here just means falling back to the SES console "Request
+production access" form, which needs the same information either way. Production
+access requests are reviewed by AWS (usually within 24h) — not instant.
+
+## Release process — `main` → `release` → deploy
+
+Two branches, two gates:
+
+- **`main`** — where PRs land. Gated by `.github/workflows/ci.yml`'s fast `test` /
+  `infra-synth` jobs (typecheck + vitest, `cdk synth`) on every PR, plus a slower
+  `integration-smoke` job (the existing `npm run smoke:recorded` Playwright suite
+  against a real Postgres service container) that runs once a PR has merged to `main`.
+- **`release`** — what actually deploys. Promote by opening a PR from `main` into
+  `release` once `main`'s latest commit shows a green `integration-smoke` check;
+  merging it triggers `.github/workflows/deploy.yml`, which itself waits on the
+  `production` GitHub Environment's manual-approval gate before touching AWS.
+
+**One-time manual repo setup** (none of this can be declared from a workflow file):
+1. Create the `release` branch: `git branch release main && git push -u origin release`.
+2. Repo Settings → Branches → add a protection rule on `release` requiring the
+   `integration-smoke` status check to pass before merging. (GitHub associates check
+   runs with the commit SHA, not the branch it ran on, so the check that ran on `main`
+   shows up automatically on the `main`→`release` PR for that same commit — no extra
+   workflow plumbing needed, just this rule.)
+3. Repo Settings → Environments → create `production`, turn on **Required reviewers**.
+   This is the second, independent approval gate `deploy.yml`'s `environment:
+   production` line references — the reference alone does nothing without this rule.
+4. `cd infra && npx cdk deploy FantasyLeagueGitHubDeploy` once, to create the GitHub
+   OIDC provider + `fantasy-league-prod-deploy-role` that `deploy.yml` assumes. This
+   stack is separate from the per-environment app stack and isn't part of
+   `deploy-everything.sh` — see `infra/lib/githubDeployStack.ts`'s doc comment for why.
+
 ## Teardown — destroying an environment completely
 
 **Scripted (preferred):** `npm run destroy` prints the full ordered plan (read-only);

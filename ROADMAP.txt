@@ -246,12 +246,18 @@ Milestone 3 — Production ready.
             mobile table scroll, 401 handling. New handler tests for the touched endpoints.
             Also fixed a login-flow bug: the sign-in password bled into the sign-up Display-name
             text field (uncontrolled inputs reused across steps) — fixed with per-step form keys.
-    Admin tools — commissioner League Settings screen + powers (ruleset now specified in
-        docs/fantasy_league_v1_design.txt → League Administration; implementation plan in
-        docs/remaining-gaps-todo.md item 14). Surfaces the three dark commissioner endpoints,
-        enforces the settings lock / 50-manager cap / GW25 cutoff, adds
-        transfer-commissionership. (Join lock and league deletion: rejected 2026-07-12,
-        recorded in the Out of Scope doc.)
+    [done 2026-07-18] Admin tools — commissioner League Settings screen + powers (ruleset in
+        docs/fantasy_league_v1_design.txt → League Administration). Surfaced the three
+        previously-dark commissioner endpoints (rename+lock, invite-code regenerate, remove
+        manager) on a new commissioner-only /leagues/settings page, enforced the settings
+        lock / 50-manager cap / GW25 cutoff, built transfer-commissionership, and fixed a
+        real bug found along the way: teamsRepository.deleteById threw an FK violation for
+        any manager with score/transfer history. (Join lock and league deletion: rejected
+        2026-07-12, recorded in the Out of Scope doc.)
+    [2026-07-18] Commissionership transfer disabled behind IS_COMMISSIONERSHIP_TRANSFER_ENABLED
+        (defaults false) — API rejects it, UI hides the Ownership section. Commissioner is
+        immutable for the league's duration until re-enabled. See
+        docs/remaining-gaps-todo.md item 16.
     Monitoring and alerting
     Performance review
     Beta testing and bug fixing
@@ -267,14 +273,15 @@ Milestone 5 — Bonus Points: Game State Goals.
     Build order: complete Milestone 3 in full before starting here.
 
     Concept: goals that dramatically change the match outcome carry extra fantasy weight.
-    The exact base bonus/penalty values are TBD (see fantasy_league_v1_design.txt); the
-    framework below is fixed.
+    Base bonus/penalty values and the open scope questions are now resolved (see
+    fantasy_league_v1_design.txt); the framework below is fixed.
 
     Scenarios:
-        Winning goal   — scorer + assister of the decisive winning goal get heavy bonus
-        Equalizing goal — scorer + assister of any goal that ties a deficit get heavy bonus
-        Losing goal    — GKs and DEFs of the conceding team, plus own-goal scorers, get
-                         heavy penalty for the goal that sealed their loss
+        Winning goal   — scorer + assister of the decisive winning goal get +5 bonus
+        Equalizing goal — scorer + assister of the final equalizer in a draw get +5 bonus
+        Losing goal    — starting GKs and DEFs of the conceding team, plus own-goal
+                         scorers, get -5 penalty for the goal that sealed their loss
+        (all values are pre-multiplier base amounts, same across positions)
 
     Timing multiplier (applied to the bonus/penalty, not the base event points):
         0–75 min:   1.0× (no boost)
@@ -283,14 +290,18 @@ Milestone 5 — Bonus Points: Game State Goals.
         86–90 min:  2.0×
         90+ min:    2.5× (all added time and extra time beyond 90)
 
-    Open design decisions (must be resolved before implementation):
-        [ ] Exact base bonus/penalty values for each scenario
+    Multiplied bonus/penalty amounts are rounded to the nearest integer before being
+    written to PlayerScore.
+
+    Design decisions (resolved):
+        [x] Exact base bonus/penalty values: ✅ ±5 flat, pre-multiplier, same for all
+            three scenarios and all positions
         [x] "Equalizing goal" definition: ✅ only the final equalizer in a draw — mid-match
             ties subsequently broken do not qualify
-        [ ] Losing-goal penalty scope: all GKs/DEFs on pitch at time of concession, or
-            starters only?
-        [ ] Own-goal as decisive goal: scorer takes the penalty; no assister; no positive
-            bonus (own goals cannot "win" for the scoring side)
+        [x] Losing-goal penalty scope: ✅ starters only (Team.startingLineup), not all
+            GK/DEF on pitch at time of concession
+        [x] Own-goal as decisive goal: ✅ scorer takes the -5 penalty × timing multiplier;
+            no assister; no positive bonus (own goals cannot "win" for the scoring side)
 
     Implementation tasks:
         [ ] Extend PlayerMatchStat / match event tracking to record goal_minute and

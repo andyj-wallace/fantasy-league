@@ -1,6 +1,6 @@
 "use client";
 
-import { useCurrentGameweek, type CurrentGameweekResponse } from "@/app/lib/useCurrentGameweek";
+import { useCurrentGameweekContext, type CurrentGameweekResponse } from "@/app/lib/gameweekContext";
 import { formatDayAndTime } from "@/app/lib/formatDate";
 import type { GameweekStatus } from "../../domain";
 
@@ -17,7 +17,7 @@ const gameweekStatusBadges: Record<GameweekStatus, { label: string; className: s
  * Pass `current` when the page already fetched /gameweeks/current itself; omit it to let the
  * banner fetch on its own. */
 export function GameweekBanner({ current }: { current?: CurrentGameweekResponse | null }) {
-  const fetchedCurrent = useCurrentGameweek(current !== undefined);
+  const fetchedCurrent = useCurrentGameweekContext();
   const resolvedCurrent = current !== undefined ? current : fetchedCurrent;
   if (!resolvedCurrent?.gameweek) return null;
 

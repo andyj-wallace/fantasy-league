@@ -1,0 +1,78 @@
+name: CI
+
+# The fast, per-PR gate. Runs typecheck/vitest/cdk synth on every PR and every push to
+# main. `integration-smoke` additionally runs the full recorded-smoke Playwright suite,
+# but only on push to main (once a PR has merged) — it's slower and needs a real
+# Postgres, so it isn't worth blocking every PR on it. See DEPLOYMENT_RUNBOOK.md's
+# "Release process" section for how this feeds the main -> release promotion.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  infra-synth:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: infra/package-lock.json
+      - run: npm ci
+        working-directory: infra
+      - run: npm run typecheck
+        working-directory: infra
+      - run: npx cdk synth --quiet
+        working-directory: infra
+
+  integration-smoke:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: fantasy_league
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run smoke:recorded
+        env:
+          DATABASE_URL: postgres://user:password@localhost:5432/fantasy_league
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: recorded-smoke-report
+          path: artifacts/recorded-smoke/

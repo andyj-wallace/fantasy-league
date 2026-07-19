@@ -95,7 +95,10 @@ command** and holds no state.
 **A. Bad migration / data corruption**
 1. Stop writes (disable the worker's EventBridge rule).
 2. Restore RDS to a new instance from the pre-migration snapshot or a PITR timestamp.
-3. Point the app at the restored instance (update the SSM `database-url`, redeploy).
+3. Point the app at the restored instance (update the `db-password`/`db-app-password`
+   SSM params and the `DB_HOST` env var to the restored instance's endpoint, redeploy —
+   there is no single `database-url` SSM parameter; `DATABASE_URL` is composed at Lambda
+   cold start from these plus `DB_PORT`/`DB_NAME`/`DB_USER`).
 4. Re-enable the worker. Verify standings recompute cleanly.
 
 **B. Whole environment lost**
@@ -121,7 +124,69 @@ command** and holds no state.
 
 ---
 
-## 4. Monitoring & alerting (the trigger for all of the above)
+## 4. Deploy ordering — the expand/contract convention
+
+`deploy-everything.sh` already runs `deploy-infrastructure.sh` (which updates the code
+of every Lambda, all four functions, in one `cdk deploy`) immediately before
+`run-database-migrations.sh` (which applies the schema migration), and before
+`publish-frontend.sh`/`deployment-smoke-test.sh`. That ordering is correct and isn't
+changing. What has to change is a rule about what a migration file is allowed to
+contain — because even with the right ordering, a real compatibility window exists
+around every deploy.
+
+### The window
+
+- **New Lambda code goes live the moment `cdk deploy` finishes** — but the schema
+  hasn't changed yet; `run-database-migrations.sh` hasn't invoked the migration Lambda
+  yet, or it's still running (cold start + migration can take ~30s).
+- **Any request already in flight when the deploy lands can keep running on the old
+  code for up to 29s** (the API Lambda's timeout) — so old code can still be querying
+  the database *after* the schema has started changing, if a migration finishes while
+  an old in-flight request is still executing.
+
+So, briefly, around every deploy, up to four schema/code pairings are all live at once:
+old-code/old-schema, new-code/old-schema, old-code/new-schema, and (steady state)
+new-code/new-schema. A migration is only safe if it works under all four.
+
+### The rule
+
+- **Expand deploy** — purely additive: a new nullable column, a new table, a new
+  index, a new enum value, a new default that doesn't tighten anything existing. Old
+  code ignores it; new code treats it as optional. Safe under all four pairings above.
+- **Contract deploy** — removes something old code might still touch: dropping a
+  column/table, renaming a column, adding `NOT NULL` without a backfill+default,
+  tightening a constraint. Only safe once **no** code path — old or new, in flight or
+  freshly deployed — still reads or writes the old shape. In practice: a **separate,
+  later** deploy, after an expand deploy's new code has been live for at least one full
+  deploy cycle (so no in-flight old-code request can still be running).
+- **A single migration file must never do both.** What would be "rename a column"
+  becomes two migrations, two deploys apart: (1) *expand* — add the new column,
+  backfill it, have the new code write both; (2) *contract*, later — drop the old
+  column once nothing reads it.
+
+### Why this stack makes the discipline necessary, not optional
+
+The Migration Lambda (`fantasy-league-<env>-migrate`) is the only one of the four
+Lambdas whose bundling step copies `src/db/migrations/*.sql` into its deployment
+package (`bundleMigrations: true` in `buildNodejsFunction`,
+`infra/lib/fantasyLeagueStack.ts`). All four Lambdas — API, worker, price-update, and
+migration — are synthesized and deployed together in the **same** `cdk deploy`. There
+is no mechanism in this pipeline to ship new migration SQL without also, in that same
+deploy, shipping whatever API/worker code was written alongside it in the same commit.
+The "new code" and "new migration" halves of any schema change are structurally
+coupled to one deploy event — exactly the situation expand/contract exists to make
+safe, regardless of which order infra-deploy and migrate happen to run in.
+
+### Cross-reference
+
+This section's recovery runbook scenario A ("Bad migration / data corruption")
+assumes a pre-migration snapshot exists — `scripts/run-database-migrations.sh` now
+takes one automatically before invoking the migration Lambda
+(`docs/remaining-gaps-todo.md` item 13).
+
+---
+
+## 5. Monitoring & alerting (the trigger for all of the above)
 
 DR plans are useless if no one knows something broke. This ties into the M3
 "monitoring" gap and should ship alongside real availability work.
@@ -140,15 +205,19 @@ uptime monitor is a good end-to-end canary (exercises CloudFront → API → RDS
 
 ---
 
-## 5. Readiness checklist (when we decide to "make it reliable")
+## 6. Readiness checklist (when we decide to "make it reliable")
 
 Ordered by value-for-effort. None required for the initial MVP launch; all defined
 so they can be turned on deliberately.
 
 - [ ] Enable **RDS Multi-AZ** (removes the biggest SPOF).
 - [ ] Raise backup retention to 14–30 days; verify a **test restore** actually works.
-- [ ] Add the **CloudWatch alarms + SNS** above and the **Budgets** alarm.
-- [ ] Add a **Dead Letter Queue** to the worker Lambdas + alarm on depth.
+- [x] Add the **CloudWatch alarms + SNS** above and the **Budgets** alarm — implemented
+      in `infra/lib/fantasyLeagueStack.ts` (`docs/remaining-gaps-todo.md` item 13).
+- [x] Add a **Dead Letter Queue** to the worker Lambdas + alarm on depth — the
+      match-poll rule target now has an SQS DLQ + a not-empty alarm (price-update
+      still lacks one; it's a monthly cron rather than a 1-minute tick, so a missed
+      run is lower-urgency — revisit if that changes).
 - [ ] Add an external **uptime canary** on `/api/gameweeks/current`.
 - [ ] Schedule **cross-region snapshot copy** if regional DR is required.
 - [ ] Run a **game-day**: deliberately kill the NAT instance and restore the DB from a

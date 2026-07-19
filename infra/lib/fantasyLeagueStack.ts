@@ -13,6 +13,8 @@ import {
   aws_budgets as budgets,
   aws_cloudfront as cloudfront,
   aws_cloudfront_origins as cloudfrontOrigins,
+  aws_cloudwatch as cloudwatch,
+  aws_cloudwatch_actions as cloudwatchActions,
   aws_ec2 as ec2,
   aws_events as events,
   aws_events_targets as eventsTargets,
@@ -23,6 +25,9 @@ import {
   aws_rds as rds,
   aws_resourcegroups as resourcegroups,
   aws_s3 as s3,
+  aws_sns as sns,
+  aws_sns_subscriptions as snsSubscriptions,
+  aws_sqs as sqs,
 } from "aws-cdk-lib";
 import { FckNatInstanceProvider } from "cdk-fck-nat";
 import { Construct } from "constructs";
@@ -299,12 +304,29 @@ export class FantasyLeagueStack extends Stack {
     // ── Worker schedules ────────────────────────────────────────────────────────────────
     // retryAttempts 0 on both schedules: a failed scheduled run's natural retry is the next
     // tick — async-Lambda's default double retry only triples provider calls and error logs.
+    //
+    // The match-poll target gets an SQS dead-letter queue: since retryAttempts is 0,
+    // EventBridge sends the triggering event here on the very first failure, not after N
+    // retries. That's deliberate — it becomes both the "a tick failed" alarm signal (see the
+    // Alerting section below) and the audit trail (the event body is preserved for inspection).
+    const matchPollWorkerDeadLetterQueue = new sqs.Queue(this, "MatchPollWorkerDeadLetterQueue", {
+      queueName: resourceName("worker-dlq"),
+      encryption: sqs.QueueEncryption.SQS_MANAGED,
+      retentionPeriod: Duration.days(14),
+    });
+    Tags.of(matchPollWorkerDeadLetterQueue).add("Component", "worker");
+
     const matchPollRule = new events.Rule(this, "MatchPollRule", {
       ruleName: resourceName("match-poll"),
       description: "Ticks the match-poll worker; the worker itself decides (via DB state) whether a provider poll is due",
       schedule: events.Schedule.rate(Duration.minutes(1)),
       enabled: props.enableMatchPollSchedule,
-      targets: [new eventsTargets.LambdaFunction(matchPollWorkerLambda, { retryAttempts: 0 })],
+      targets: [
+        new eventsTargets.LambdaFunction(matchPollWorkerLambda, {
+          retryAttempts: 0,
+          deadLetterQueue: matchPollWorkerDeadLetterQueue,
+        }),
+      ],
     });
     Tags.of(matchPollRule).add("Component", "worker");
 
@@ -382,23 +404,190 @@ export class FantasyLeagueStack extends Stack {
     });
     Tags.of(distribution).add("Component", "web");
 
+    // ── Alerting ────────────────────────────────────────────────────────────────────────
+    // One SNS topic, one email subscriber — reuses the Budget's alert address so there's a
+    // single "where do ops emails go" answer. Every alarm below fans into this topic; add more
+    // subscribers here (e.g. a Slack webhook via AWS Chatbot) without touching any alarm.
+    const alertTopic = new sns.Topic(this, "AlertTopic", {
+      topicName: resourceName("alerts"),
+      displayName: "fantasy-league alerts",
+    });
+    alertTopic.addSubscription(new snsSubscriptions.EmailSubscription(BUDGET_ALERT_EMAIL));
+    Tags.of(alertTopic).add("Component", "ops");
+
+    const alarmAction = new cloudwatchActions.SnsAction(alertTopic);
+    const addAlarm = (constructId: string, alarmProps: cloudwatch.AlarmProps): cloudwatch.Alarm => {
+      const alarm = new cloudwatch.Alarm(this, constructId, alarmProps);
+      alarm.addAlarmAction(alarmAction);
+      Tags.of(alarm).add("Component", "ops");
+      return alarm;
+    };
+
+    // RDS — CPU, storage, connections ----------------------------------------------------
+    addAlarm("DatabaseCpuHighAlarm", {
+      alarmName: resourceName("db-cpu-high"),
+      alarmDescription: "db.t4g.micro sustained high CPU — slow query, runaway worker cycle, or undersized instance",
+      metric: database.metricCPUUtilization({ period: Duration.minutes(5) }),
+      threshold: 80,
+      evaluationPeriods: 3,
+      datapointsToAlarm: 3,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    addAlarm("DatabaseFreeStorageLowAlarm", {
+      alarmName: resourceName("db-free-storage-low"),
+      alarmDescription: "Free storage below ~2 GiB — the 20 GB baseline allocation autoscales to 50 GB, but a sudden burst can outrun it",
+      metric: database.metricFreeStorageSpace({ period: Duration.minutes(5) }),
+      threshold: 2 * 1024 * 1024 * 1024, // 2 GiB
+      evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.BREACHING,
+    });
+
+    // "Free connections low" ⇒ DatabaseConnections climbing toward max_connections. There is no
+    // direct "free connections" CloudWatch metric; this alarms on the same DatabaseConnections
+    // metric, interpreted the other way round.
+    // ⚠ Verify this threshold against the parameter group's actual max_connections
+    // (`aws rds describe-db-parameters --db-parameter-group-name ... --query
+    // "Parameters[?ParameterName=='max_connections'].ParameterValue"`) before relying on it —
+    // 40 is a placeholder sized to today's connection budget (Lambda pools cap at 1-2
+    // connections/instance, account concurrency limit is 10 while reserved concurrency is off).
+    addAlarm("DatabaseConnectionsHighAlarm", {
+      alarmName: resourceName("db-connections-high"),
+      alarmDescription: "DatabaseConnections approaching max_connections — verify the threshold against the instance's actual max_connections (see comment)",
+      metric: database.metricDatabaseConnections({ period: Duration.minutes(5) }),
+      threshold: 40,
+      evaluationPeriods: 3,
+      datapointsToAlarm: 3,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    // RDS "instance unhealthy" — not a CloudWatch alarm. There's no CloudWatch metric that
+    // directly represents "RDS instance unhealthy/unavailable"; the AWS-native signal for that
+    // is an RDS Event Subscription, a different mechanism (RDS pushes structured events to SNS
+    // directly). Only the L1 CfnEventSubscription exists — no CDK L2 wrapper.
+    // ⚠ Verify the exact category strings before relying on this (`aws rds
+    // describe-event-categories --source-type db-instance`).
+    new rds.CfnEventSubscription(this, "DatabaseEventSubscription", {
+      subscriptionName: resourceName("db-events"),
+      snsTopicArn: alertTopic.topicArn,
+      sourceType: "db-instance",
+      sourceIds: [database.instanceIdentifier],
+      eventCategories: ["availability", "failure", "recovery"],
+    });
+    alertTopic.addToResourcePolicy(
+      new iam.PolicyStatement({
+        sid: "AllowRdsEventPublish",
+        effect: iam.Effect.ALLOW,
+        principals: [new iam.ServicePrincipal("events.rds.amazonaws.com")],
+        actions: ["sns:Publish"],
+        resources: [alertTopic.topicArn],
+      }),
+    );
+
+    // API Lambda — errors and throttles ----------------------------------------------------
+    addAlarm("ApiLambdaErrorsAlarm", {
+      alarmName: resourceName("api-errors-high"),
+      alarmDescription: "API Lambda error rate — check CloudWatch Logs for fantasy-league-<env>-api",
+      metric: apiLambda.metricErrors({ period: Duration.minutes(5), statistic: "Sum" }),
+      threshold: 5,
+      evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    addAlarm("ApiLambdaThrottlesAlarm", {
+      alarmName: resourceName("api-throttles"),
+      alarmDescription: "API Lambda invocations throttled — likely the account/reserved concurrency limit",
+      metric: apiLambda.metricThrottles({ period: Duration.minutes(5), statistic: "Sum" }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    // Match-poll worker — "repeated failures" via the DLQ created above --------------------
+    // Any message present means at least one tick failed (retryAttempts:0 sends it straight to
+    // the DLQ on first failure, not after N retries) — worth a human looking at once, since the
+    // worker is otherwise meant to be self-healing via the next tick.
+    addAlarm("MatchPollWorkerDlqAlarm", {
+      alarmName: resourceName("worker-dlq-not-empty"),
+      alarmDescription: "The match-poll worker's dead-letter queue has messages — a scheduled tick failed; inspect the queue body for the event/error",
+      metric: matchPollWorkerDeadLetterQueue.metricApproximateNumberOfMessagesVisible({ period: Duration.minutes(5) }),
+      threshold: 0,
+      evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    // NAT instance — ASG "unhealthy" proxy --------------------------------------------------
+    // cdk-fck-nat's ASG has group-metrics collection on by default, so GroupInServiceInstances
+    // is actually published. Guard for undefined defensively, matching the existing `?? "unknown"`
+    // fallback on the NatAutoScalingGroupName output below.
+    const natAutoScalingGroup = natInstanceProvider.autoScalingGroups[0];
+    if (natAutoScalingGroup !== undefined) {
+      addAlarm("NatAsgUnhealthyAlarm", {
+        alarmName: resourceName("nat-asg-unhealthy"),
+        alarmDescription: "NAT instance ASG has 0 in-service instances — worker/API egress is down until the ASG relaunches (~2-4 min self-heal)",
+        metric: new cloudwatch.Metric({
+          namespace: "AWS/AutoScaling",
+          metricName: "GroupInServiceInstances",
+          dimensionsMap: { AutoScalingGroupName: natAutoScalingGroup.autoScalingGroupName },
+          period: Duration.minutes(5),
+          statistic: "Average",
+        }),
+        threshold: 1,
+        evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.BREACHING,
+      });
+    }
+
+    // CloudFront — elevated 5xx -------------------------------------------------------------
+    // A standard (free) CloudFront metric — no publishAdditionalMetrics flag needed on the
+    // distribution. CloudFront metrics only ever publish to us-east-1, matching this stack.
+    addAlarm("CloudFrontElevated5xxAlarm", {
+      alarmName: resourceName("cdn-5xx-elevated"),
+      alarmDescription: "CloudFront 5xx error rate elevated — could be API Gateway/Lambda/RDS or an S3-origin issue",
+      metric: distribution.metric5xxErrorRate({ period: Duration.minutes(5), statistic: "Average" }),
+      threshold: 5, // percent
+      evaluationPeriods: 3,
+      datapointsToAlarm: 3,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
     // ── Cost guardrail ──────────────────────────────────────────────────────────────────
     // Account-wide monthly cost budget (tag-scoped budgets need cost-allocation tags activated
-    // in the billing console first — revisit once that one-time activation is done).
+    // in the billing console first — revisit once that one-time activation is done). Alarms on
+    // absolute dollar amounts rather than a percentage of the budget limit, so the thresholds
+    // read the same regardless of what budgetLimit is set to.
     new budgets.CfnBudget(this, "MonthlyCostBudget", {
       budget: {
         budgetName: resourceName("monthly-cost"),
         budgetType: "COST",
         timeUnit: "MONTHLY",
-        budgetLimit: { amount: 15, unit: "USD" },
+        budgetLimit: { amount: 150, unit: "USD" },
       },
       notificationsWithSubscribers: [
         {
-          notification: { notificationType: "ACTUAL", comparisonOperator: "GREATER_THAN", threshold: 80 },
+          notification: {
+            notificationType: "ACTUAL",
+            comparisonOperator: "GREATER_THAN",
+            threshold: 100,
+            thresholdType: "ABSOLUTE_VALUE",
+          },
           subscribers: [{ subscriptionType: "EMAIL", address: BUDGET_ALERT_EMAIL }],
         },
         {
-          notification: { notificationType: "FORECASTED", comparisonOperator: "GREATER_THAN", threshold: 100 },
+          notification: {
+            notificationType: "FORECASTED",
+            comparisonOperator: "GREATER_THAN",
+            threshold: 150,
+            thresholdType: "ABSOLUTE_VALUE",
+          },
           subscribers: [{ subscriptionType: "EMAIL", address: BUDGET_ALERT_EMAIL }],
         },
       ],

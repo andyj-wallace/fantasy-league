@@ -1,6 +1,6 @@
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "../client";
-import { leagues, players, teamRosterSlots, teams } from "../schema";
+import { leagues, leagueStandings, players, teamRosterSlots, teams, teamScores, transfers } from "../schema";
 import { MAX_BANKED_FREE_TRANSFER_COUNT, type League, type StartingFormation, type Team, type TeamRosterSlot } from "../../domain";
 
 /**
@@ -220,11 +220,15 @@ export async function updateAfterTransfer(
     .where(eq(teams.id, teamId));
 }
 
-/** Deletes a Team and its roster slots. Does not cascade to transfers/scores/standings rows
- * that reference this team — deleting a Team with score history will fail on the FK constraint. */
+/** Deletes a Team and every row that references it (roster slots, transfers, team scores,
+ * league standings) — a manager removed mid-season still has FK'd score/transfer history, so
+ * those must go first or the final `teams` delete fails on the FK constraint. */
 export async function deleteById(teamId: string): Promise<void> {
   await db.transaction(async (tx) => {
     await tx.delete(teamRosterSlots).where(eq(teamRosterSlots.teamId, teamId));
+    await tx.delete(transfers).where(eq(transfers.teamId, teamId));
+    await tx.delete(teamScores).where(eq(teamScores.teamId, teamId));
+    await tx.delete(leagueStandings).where(eq(leagueStandings.teamId, teamId));
     await tx.delete(teams).where(eq(teams.id, teamId));
   });
 }
@@ -243,6 +247,13 @@ export async function findTeamIdsWithPlayerFromClub(club: string): Promise<strin
  * activity scores in the monthly price update formula. */
 export async function countAll(): Promise<number> {
   const [row] = await db.select({ value: count() }).from(teams);
+  return row?.value ?? 0;
+}
+
+/** Number of managers currently in a league — joinLeague checks this against
+ * MAX_MANAGERS_PER_LEAGUE before letting anyone else in. */
+export async function countByLeagueId(leagueId: string): Promise<number> {
+  const [row] = await db.select({ value: count() }).from(teams).where(eq(teams.leagueId, leagueId));
   return row?.value ?? 0;
 }
 

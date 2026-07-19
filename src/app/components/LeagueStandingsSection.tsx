@@ -1,6 +1,6 @@
 "use client";
 
-import type { CurrentGameweekResponse } from "@/app/lib/useCurrentGameweek";
+import type { CurrentGameweekResponse } from "@/app/lib/gameweekContext";
 import type { GameweekStatus, LeagueStanding } from "../../domain";
 
 export interface StandingEntry extends LeagueStanding {

@@ -51,17 +51,20 @@ fi
 cd "${INFRA_DIR}"
 
 if [ "${deploy_via}" = "cdk" ]; then
+  # Explicit stack name required: the CDK app also defines FantasyLeagueGitHubDeploy
+  # (infra/lib/githubDeployStack.ts, deployed separately/manually), so `cdk diff`/`cdk
+  # deploy` with no stack name is ambiguous once more than one stack exists in the app.
   info "Reviewing changes (cdk diff) — read this before confirming:"
-  npx cdk diff "${context_args[@]}" || true # diff exits non-zero when differences exist
+  npx cdk diff "${CDK_STACK_CONSTRUCT_ID}" "${context_args[@]}" || true # diff exits non-zero when differences exist
   if [ "${skip_confirmation}" != "true" ]; then
     printf 'Proceed with cdk deploy? [y/N] '
     read -r answer
     [ "${answer}" = "y" ] || [ "${answer}" = "Y" ] || fail "Aborted before deploy."
   fi
-  npx cdk deploy "${context_args[@]}" --require-approval never --outputs-file cdk-outputs.json
+  npx cdk deploy "${CDK_STACK_CONSTRUCT_ID}" "${context_args[@]}" --require-approval never --outputs-file cdk-outputs.json
 else
   info "Synthesizing template + asset manifest (creates nothing in AWS)"
-  npx cdk synth "${context_args[@]}" --quiet
+  npx cdk synth "${CDK_STACK_CONSTRUCT_ID}" "${context_args[@]}" --quiet
 
   info "Publishing Lambda bundles to ${BOOTSTRAP_ASSETS_BUCKET}"
   npx cdk-assets publish -p "cdk.out/${CDK_STACK_CONSTRUCT_ID}.assets.json"

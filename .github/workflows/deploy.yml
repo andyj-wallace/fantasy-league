@@ -1,0 +1,65 @@
+name: Deploy (prod)
+
+# Triggers only from `release`, never `main` — main only runs CI (see ci.yml). Promoting
+# main -> release (a PR, gated by branch protection requiring ci.yml's integration-smoke
+# check) is what actually schedules a deploy; the `production` GitHub Environment's
+# required-reviewer rule is a second, independent approval gate on top of that. Neither
+# gate can be declared from this file — see DEPLOYMENT_RUNBOOK.md's "Release process"
+# section for the one-time manual repo setup both depend on.
+
+on:
+  push:
+    branches: [release]
+
+permissions:
+  id-token: write # required for GitHub OIDC -> AWS
+  contents: read
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      ENVIRONMENT_NAME: prod
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            infra/package-lock.json
+
+      - run: npm ci
+      - run: npm ci
+        working-directory: infra
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::345482189946:role/fantasy-league-prod-deploy-role
+          aws-region: us-east-1
+          role-session-name: gh-actions-deploy-prod
+
+      # Reuses the actual scripts, unmodified, rather than duplicating their logic — they
+      # already encode the exact commands/conventions (account guard, region pinning,
+      # output resolution) this workflow would otherwise have to re-implement.
+      # Deliberately NOT run here: deployment-preflight.sh (human-facing tooling checks
+      # irrelevant to a CI runner) and deployment-put-secrets.sh (one-time, sources real
+      # secret values from local .env/openssl) — both stay manual/local.
+      - name: Deploy infrastructure (cdk diff -> cdk deploy)
+        run: scripts/deploy-infrastructure.sh --via cdk --yes
+
+      - name: Apply database migrations (with pre-migration snapshot)
+        run: scripts/run-database-migrations.sh
+
+      - name: Publish frontend (build -> S3 sync -> CloudFront invalidation)
+        run: scripts/publish-frontend.sh
+
+      - name: Smoke test
+        run: scripts/deployment-smoke-test.sh

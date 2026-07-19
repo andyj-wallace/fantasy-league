@@ -50,3 +50,14 @@ export async function update(
   const [row] = await db.update(leagues).set(fields).where(eq(leagues.id, id)).returning();
   return row ? toLeague(row) : null;
 }
+
+/** Moves commissionership to another league member — kept separate from `update` since it's a
+ * moderation-only field no ordinary settings save should be able to touch. */
+export async function transferCommissionership(id: string, newCommissionerUserId: string): Promise<League | null> {
+  const [row] = await db
+    .update(leagues)
+    .set({ commissionerUserId: newCommissionerUserId })
+    .where(eq(leagues.id, id))
+    .returning();
+  return row ? toLeague(row) : null;
+}

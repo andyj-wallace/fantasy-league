@@ -193,8 +193,11 @@ a hard convention for this project — follow it exactly.
 | GitHub OIDC deploy role | `fantasy-league-<env>-deploy-role` |
 
 - **SSM parameter paths:** `/fantasy-league/<env>/<key>` — e.g.
-  `/fantasy-league/prod/database-url`, `/fantasy-league/prod/auth-token-secret`,
+  `/fantasy-league/prod/db-password`, `/fantasy-league/prod/auth-token-secret`,
   `/fantasy-league/prod/football-data-api-key`, `/fantasy-league/prod/cognito-user-pool-id`.
+  There is no single `database-url` parameter — `DATABASE_URL` is composed at Lambda
+  cold start from `db-password`/`db-app-password` plus plain `DB_HOST`/`DB_PORT`/
+  `DB_NAME`/`DB_USER` env vars (see `DEPLOYMENT_RUNBOOK.md`'s SSM parameter table).
 - **Tags on every resource** (applied stack-wide via `Tags.of(app)`):
   `Project=fantasy-league`, `Environment=<env>`, `ManagedBy=cdk`,
   `Component=<network|data|api|worker|web>`. These drive cost-allocation reporting.

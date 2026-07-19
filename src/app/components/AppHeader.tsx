@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { getStoredToken } from "@/app/lib/auth";
 import { logOut } from "@/app/lib/cognitoAuth";
-import { useCurrentGameweek } from "@/app/lib/useCurrentGameweek";
+import { useCurrentGameweekContext } from "@/app/lib/gameweekContext";
 import { formatDayAndTime } from "@/app/lib/formatDate";
 
 /** The one global chrome bar: brand link home, a compact current-gameweek chip, and the single
@@ -15,7 +15,7 @@ export function AppHeader() {
   const router = useRouter();
   const pathname = usePathname();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const currentGameweek = useCurrentGameweek(!isLoggedIn);
+  const currentGameweek = useCurrentGameweekContext();
 
   useEffect(() => {
     setIsLoggedIn(getStoredToken() !== null);

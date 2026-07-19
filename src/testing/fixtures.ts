@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type {
   Gameweek,
+  League,
   Match,
   Player,
   PlayerMatchStat,
@@ -90,6 +91,18 @@ export function buildTeam(overrides: Partial<Team> = {}): Team {
     bankedFreeTransferCount: 0,
     createdAt: new Date("2026-07-01T00:00:00Z"),
     updatedAt: new Date("2026-07-01T00:00:00Z"),
+    ...overrides,
+  };
+}
+
+export function buildLeague(overrides: Partial<League> = {}): League {
+  return {
+    id: overrides.id ?? randomUUID(),
+    name: "Test League",
+    inviteCode: "TEST123",
+    commissionerUserId: overrides.commissionerUserId ?? randomUUID(),
+    areSettingsLocked: false,
+    createdAt: new Date("2026-07-01T00:00:00Z"),
     ...overrides,
   };
 }

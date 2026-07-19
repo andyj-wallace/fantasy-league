@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { API_CACHE_TTL_MS, getCachedJson } from "@/app/lib/apiCache";
 import { getApiBaseUrl } from "@/app/lib/apiBaseUrl";
-import { getStoredToken } from "@/app/lib/auth";
+import { getStoredToken, getStoredUserId } from "@/app/lib/auth";
 import type { TeamWithLeague } from "@/app/lib/teamTypes";
 import { TeamLeagueLinks } from "@/app/components/TeamLeagueLinks";
 import { GameweekBanner } from "@/app/components/GameweekBanner";
@@ -18,7 +18,7 @@ import { TransfersPanel } from "@/app/components/TransfersPanel";
 import { SquadBuilderPanel } from "@/app/components/SquadBuilderPanel";
 import { PlayerDetailPanel } from "@/app/components/PlayerDetailPanel";
 import { PlayerDetailContext } from "@/app/lib/playerDetailContext";
-import { useCurrentGameweek } from "@/app/lib/useCurrentGameweek";
+import { useCurrentGameweekContext } from "@/app/lib/gameweekContext";
 
 /** Landing page for a user who's in exactly one league — home redirects here instead of
  * showing a one-item list. Refetches /me/teams rather than adding a single-league API,
@@ -46,7 +46,7 @@ function LeaguePageContent() {
   const [teamWithLeague, setTeamWithLeague] = useState<TeamWithLeague | null>(null);
   const [standingsResponse, setStandingsResponse] = useState<StandingsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const currentGameweek = useCurrentGameweek();
+  const currentGameweek = useCurrentGameweekContext();
 
   /** Loads (or reloads) the two league-scoped reads the page renders — the user's team summary and
    * the standings. Reused by the initial mount and by the on-close refresh after a transfer, so a
@@ -128,6 +128,12 @@ function LeaguePageContent() {
       )}
 
       {teamWithLeague && <LeagueInviteRow league={teamWithLeague.league} />}
+
+      {teamWithLeague && getStoredUserId() === teamWithLeague.league.commissionerUserId && (
+        <div className="link-list">
+          <Link href={`/leagues/settings?leagueId=${leagueId}`}>League Settings</Link>
+        </div>
+      )}
 
       <LeagueStandingsSection standingsResponse={standingsResponse} currentGameweek={currentGameweek} />
 
