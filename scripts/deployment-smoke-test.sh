@@ -9,6 +9,8 @@ require_correct_aws_account
 
 site_url="$(get_stack_output CloudFrontUrl)"
 [ -n "${site_url}" ] || fail "Could not resolve CloudFrontUrl from stack ${STACK_NAME}."
+api_url="$(get_stack_output HttpApiEndpoint)"
+[ -n "${api_url}" ] || fail "Could not resolve HttpApiEndpoint from stack ${STACK_NAME}."
 
 failures=0
 expect_http_status() {
@@ -29,6 +31,10 @@ info "Smoke-testing ${site_url}"
 
 # 401 (not 404/CORS/5xx) proves CloudFront → API Gateway → Lambda → SSM → auth provider.
 expect_http_status "API via CloudFront (/api/gameweeks/current)" "${site_url}/api/gameweeks/current" 401 200
+# The same request straight at execute-api must be refused by the origin lock. Together the two
+# assertions prove both layers: 401 = reached auth via the CDN, 403 = the bypass is closed. The
+# lock is unenforced when its secret is unset, so this is what stops that failing silently.
+expect_http_status "API Gateway direct (origin lock)" "${api_url}/gameweeks/current" 403
 # Extensionless page URL proves the CloudFront url-rewrite Function.
 expect_http_status "URL rewrite (/login)" "${site_url}/login" 200
 expect_http_status "Site root (/)" "${site_url}/" 200

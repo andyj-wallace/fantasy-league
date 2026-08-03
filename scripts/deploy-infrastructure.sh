@@ -48,6 +48,22 @@ else
   info "Match-poll schedule stays disabled (pass --enable-match-poll once the data plan is sorted)"
 fi
 
+# CloudFront's pricing-plan subscription attaches a WebACL when the distribution is first created
+# and then rejects any update that removes it. CDK can't discover that ARN, so read it off the
+# live distribution and hand it back. Empty on a first deploy (no distribution yet) — CloudFront
+# creates the WebACL itself, and the next deploy picks it up from here.
+distribution_id="$(get_stack_output CloudFrontDistributionId 2>/dev/null || true)"
+if [ -n "${distribution_id}" ]; then
+  web_acl_arn="$(aws cloudfront get-distribution-config --id "${distribution_id}" \
+    --query "DistributionConfig.WebACLId" --output text 2>/dev/null || true)"
+  if [ -n "${web_acl_arn}" ] && [ "${web_acl_arn}" != "None" ]; then
+    info "Preserving CloudFront-managed WebACL ${web_acl_arn##*/webacl/}"
+    context_args+=(-c "webAclArn=${web_acl_arn}")
+  else
+    info "Distribution has no WebACL attached — CloudFront will attach one if its pricing plan requires it"
+  fi
+fi
+
 cd "${INFRA_DIR}"
 
 if [ "${deploy_via}" = "cdk" ]; then

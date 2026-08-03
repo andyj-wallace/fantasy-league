@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ensures the six SSM SecureString parameters exist under /fantasy-league/<env>/.
+# Ensures the SSM parameters the stack reads exist under /fantasy-league/<env>/.
 # Idempotent: existing parameters are NEVER overwritten (the deliberate guard from the
 # deployment plan) — rotation is an explicit, separate action:
 #   aws ssm put-parameter --overwrite --region us-east-1 --name <full-name> --type SecureString --value ...
@@ -18,19 +18,19 @@ read_env_file_value() {
 }
 
 ensure_parameter() {
-  local parameter_name="$1" value_command="$2"
+  local parameter_name="$1" value_command="$2" parameter_type="${3:-SecureString}"
   local full_name="${SSM_CONFIG_PATH}/${parameter_name}"
   if aws ssm get-parameter --name "${full_name}" >/dev/null 2>&1; then
     ok "${full_name} already exists (left untouched)"
     return
   fi
   # Values are produced by a subshell and piped straight to AWS — never echoed.
-  aws ssm put-parameter --name "${full_name}" --type SecureString \
+  aws ssm put-parameter --name "${full_name}" --type "${parameter_type}" \
     --value "$(eval "${value_command}")" >/dev/null
-  ok "${full_name} created"
+  ok "${full_name} created (${parameter_type})"
 }
 
-info "Ensuring SecureString parameters under ${SSM_CONFIG_PATH}/"
+info "Ensuring parameters under ${SSM_CONFIG_PATH}/"
 
 # Fresh randoms (hex/base64: safe for RDS password rules and URL composition)
 ensure_parameter auth-token-secret "openssl rand -base64 48"
@@ -41,6 +41,12 @@ ensure_parameter db-app-password   "openssl rand -hex 24"
 ensure_parameter football-data-api-key  "read_env_file_value FOOTBALL_DATA_API_KEY football-data-api-key"
 ensure_parameter cognito-user-pool-id   "read_env_file_value COGNITO_USER_POOL_ID cognito-user-pool-id"
 ensure_parameter cognito-app-client-id  "read_env_file_value COGNITO_APP_CLIENT_ID cognito-app-client-id"
+
+# String, not SecureString: the stack feeds this to a CloudFront origin custom header, and
+# CloudFormation cannot resolve ssm-secure references into that property. No loss — the value is
+# readable from the distribution config anyway. It proves a request came via the CDN; it guards
+# no data on its own. See the CloudFront origin lock section in infra/lib/fantasyLeagueStack.ts.
+ensure_parameter cloudfront-origin-secret "openssl rand -hex 32" String
 
 echo
 aws ssm get-parameters-by-path --path "${SSM_CONFIG_PATH}" --query "Parameters[].Name" --output text \

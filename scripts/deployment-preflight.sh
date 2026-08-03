@@ -46,16 +46,17 @@ else
   check_failed "CDK not bootstrapped — run: cd infra && npx cdk bootstrap aws://${DEPLOYMENT_ACCOUNT_ID}/${DEPLOYMENT_REGION}"
 fi
 
-# 6. All six SSM secrets exist (created out-of-band; the stack only reads them)
+# 6. Every SSM parameter the stack reads exists (created out-of-band; the stack only reads them)
 required_parameters=(auth-token-secret db-password db-app-password
-  football-data-api-key cognito-user-pool-id cognito-app-client-id)
+  football-data-api-key cognito-user-pool-id cognito-app-client-id
+  cloudfront-origin-secret)
 missing_parameters=()
 for parameter_name in "${required_parameters[@]}"; do
   aws ssm get-parameter --name "${SSM_CONFIG_PATH}/${parameter_name}" >/dev/null 2>&1 \
     || missing_parameters+=("${parameter_name}")
 done
 if [ ${#missing_parameters[@]} -eq 0 ]; then
-  ok "All 6 SSM parameters exist under ${SSM_CONFIG_PATH}/"
+  ok "All ${#required_parameters[@]} SSM parameters exist under ${SSM_CONFIG_PATH}/"
 else
   check_failed "Missing SSM parameters: ${missing_parameters[*]} — run: scripts/deployment-put-secrets.sh"
 fi

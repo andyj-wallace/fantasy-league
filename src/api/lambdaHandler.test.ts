@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from "aws-lambda";
 
 // Importing the route table constructs the auth provider at module scope; the stub provider
@@ -10,13 +10,17 @@ vi.hoisted(() => {
 import { handler, stripApiPathPrefix } from "./lambdaHandler";
 import { dispatchApiRequest, matchRoute } from "./dispatchApiRequest";
 
-function buildApiGatewayEvent(httpMethod: string, path: string): APIGatewayProxyEvent {
+function buildApiGatewayEvent(
+  httpMethod: string,
+  path: string,
+  headers: Record<string, string> = {},
+): APIGatewayProxyEvent {
   return {
     httpMethod,
     path,
     pathParameters: null,
     queryStringParameters: null,
-    headers: {},
+    headers,
     body: null,
   } as unknown as APIGatewayProxyEvent;
 }
@@ -79,5 +83,45 @@ describe("lambda handler", () => {
 
     expect(result.statusCode).toBe(404);
     expect(JSON.parse(result.body)).toEqual({ message: "Not found" });
+  });
+});
+
+describe("lambda handler CloudFront origin lock", () => {
+  const ORIGIN_SECRET = "c".repeat(64);
+
+  afterEach(() => {
+    delete process.env.CLOUDFRONT_ORIGIN_VERIFY_SECRET;
+  });
+
+  it("rejects a request that reached execute-api without CloudFront's header", async () => {
+    process.env.CLOUDFRONT_ORIGIN_VERIFY_SECRET = ORIGIN_SECRET;
+
+    const result = await invokeHandler(buildApiGatewayEvent("GET", "/gameweeks/current"));
+
+    expect(result.statusCode).toBe(403);
+  });
+
+  it("rejects before routing, so even an unknown path is refused rather than 404'd", async () => {
+    process.env.CLOUDFRONT_ORIGIN_VERIFY_SECRET = ORIGIN_SECRET;
+
+    const result = await invokeHandler(buildApiGatewayEvent("GET", "/api/nonexistent"));
+
+    expect(result.statusCode).toBe(403);
+  });
+
+  it("dispatches normally when CloudFront's header is present", async () => {
+    process.env.CLOUDFRONT_ORIGIN_VERIFY_SECRET = ORIGIN_SECRET;
+
+    const result = await invokeHandler(
+      buildApiGatewayEvent("GET", "/api/nonexistent", { "x-origin-verify": ORIGIN_SECRET }),
+    );
+
+    expect(result.statusCode).toBe(404);
+  });
+
+  it("is unenforced when the secret is unset, keeping local dev and tests unaffected", async () => {
+    const result = await invokeHandler(buildApiGatewayEvent("GET", "/api/nonexistent"));
+
+    expect(result.statusCode).toBe(404);
   });
 });
