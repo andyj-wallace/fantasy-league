@@ -1,6 +1,6 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { db, type DbOrTx } from "../client";
-import { gameweeks, leagueStandings } from "../schema";
+import { gameweeks, leagueStandings, teams } from "../schema";
 import type { LeagueStanding, LeagueStandingTiebreakerStats } from "../../domain";
 
 function toLeagueStanding(row: typeof leagueStandings.$inferSelect): LeagueStanding {
@@ -43,13 +43,24 @@ export async function replaceForGameweek(
   );
 }
 
+/** Excludes rows for a Team that's since been removed from the league — a removed manager's
+ * standings disappear from every gameweek's leaderboard, including already-completed ones, with
+ * no attempt to renumber the remaining ranks (a gap like 1, 3, 4 is left as-is; recomputing display
+ * rank from stored tiebreaker stats would reintroduce compute-on-read). */
 export async function findForLeagueAndGameweek(leagueId: string, gameweekId: string): Promise<LeagueStanding[]> {
   const rows = await db
-    .select()
+    .select({ standing: leagueStandings })
     .from(leagueStandings)
-    .where(and(eq(leagueStandings.leagueId, leagueId), eq(leagueStandings.gameweekId, gameweekId)))
+    .innerJoin(teams, eq(leagueStandings.teamId, teams.id))
+    .where(
+      and(
+        eq(leagueStandings.leagueId, leagueId),
+        eq(leagueStandings.gameweekId, gameweekId),
+        isNull(teams.removedAt),
+      ),
+    )
     .orderBy(asc(leagueStandings.rank));
-  return rows.map(toLeagueStanding);
+  return rows.map((row) => toLeagueStanding(row.standing));
 }
 
 /** The leaderboard as of the most recent gameweek this league has standings for. Empty before any gameweek completes. */
@@ -58,7 +69,8 @@ export async function findLatestForLeague(leagueId: string): Promise<LeagueStand
     .select({ gameweekId: leagueStandings.gameweekId })
     .from(leagueStandings)
     .innerJoin(gameweeks, eq(leagueStandings.gameweekId, gameweeks.id))
-    .where(eq(leagueStandings.leagueId, leagueId))
+    .innerJoin(teams, eq(leagueStandings.teamId, teams.id))
+    .where(and(eq(leagueStandings.leagueId, leagueId), isNull(teams.removedAt)))
     .orderBy(desc(gameweeks.number))
     .limit(1);
   if (!latest) return [];

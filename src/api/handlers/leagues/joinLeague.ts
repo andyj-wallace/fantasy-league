@@ -25,7 +25,7 @@ export const joinLeague: ApiHandler = requireAuth(async (event, session) => {
     return conflictResponse(`Joining is closed after Gameweek ${GAMEWEEK_JOIN_CUTOFF_NUMBER}.`);
   }
 
-  const team = await teamsRepository.insertIfAbsent({
+  const team = await teamsRepository.insertOrRevive({
     id: randomUUID(),
     leagueId: league.id,
     userId: session.userId,

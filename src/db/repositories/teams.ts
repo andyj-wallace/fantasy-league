@@ -1,6 +1,6 @@
-import { and, count, eq, inArray, sql } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "../client";
-import { leagues, leagueStandings, players, teamRosterSlots, teams, teamScores, transfers } from "../schema";
+import { leagues, players, teamRosterSlots, teams } from "../schema";
 import { MAX_BANKED_FREE_TRANSFER_COUNT, type League, type StartingFormation, type Team, type TeamRosterSlot } from "../../domain";
 
 /**
@@ -47,7 +47,7 @@ function toTeamRow(row: typeof teams.$inferSelect): TeamRow {
 }
 
 export async function findAll(): Promise<TeamRow[]> {
-  const rows = await db.select().from(teams);
+  const rows = await db.select().from(teams).where(isNull(teams.removedAt));
   return rows.map(toTeamRow);
 }
 
@@ -64,7 +64,10 @@ export async function findByIdForUpdate(id: string, tx: DbOrTx): Promise<TeamRow
 }
 
 export async function findByLeagueId(leagueId: string, tx?: DbOrTx): Promise<TeamRow[]> {
-  const rows = await (tx ?? db).select().from(teams).where(eq(teams.leagueId, leagueId));
+  const rows = await (tx ?? db)
+    .select()
+    .from(teams)
+    .where(and(eq(teams.leagueId, leagueId), isNull(teams.removedAt)));
   return rows.map(toTeamRow);
 }
 
@@ -72,7 +75,7 @@ export async function findByLeagueAndUser(leagueId: string, userId: string): Pro
   const [row] = await db
     .select()
     .from(teams)
-    .where(and(eq(teams.leagueId, leagueId), eq(teams.userId, userId)));
+    .where(and(eq(teams.leagueId, leagueId), eq(teams.userId, userId), isNull(teams.removedAt)));
   return row ? toTeamRow(row) : null;
 }
 
@@ -93,7 +96,7 @@ export async function findWithLeagueByUserId(userId: string): Promise<{ team: Te
     .select({ team: teams, league: leagues })
     .from(teams)
     .innerJoin(leagues, eq(teams.leagueId, leagues.id))
-    .where(eq(teams.userId, userId));
+    .where(and(eq(teams.userId, userId), isNull(teams.removedAt)));
   return rows.map((row) => ({ team: toTeamRow(row.team), league: toLeague(row.league) }));
 }
 
@@ -145,12 +148,17 @@ export async function insert(input: NewTeamInput): Promise<Team> {
 }
 
 /**
- * Like insert, but returns null instead of creating a duplicate when this user already has a Team
- * in this league (the teams_league_id_user_id_idx unique index). A single atomic INSERT … ON
- * CONFLICT DO NOTHING — no read-then-insert window — so a double-submitted joinLeague can't create
- * two teams for one manager. Used by joinLeague; createLeague keeps insert (first team, no race).
+ * Like insert, but returns null instead of creating a duplicate when this user already has an
+ * ACTIVE Team in this league (the teams_league_id_user_id_idx unique index) — matches the old
+ * "already joined" 409 semantics. If this user's only Team in this league was soft-removed
+ * (removedAt set), that same row is revived instead: roster/formation/captaincy/budget reset to
+ * fresh-join defaults, removedAt cleared, original id kept (so its historical teamScores/
+ * leagueStandings/transfers stay attached to that manager's prior-stint record). One atomic
+ * INSERT … ON CONFLICT … DO UPDATE … WHERE removedAt IS NOT NULL — no read-then-insert window, so
+ * a double-submitted joinLeague can't create two teams or double-revive one. Used by joinLeague;
+ * createLeague keeps insert (first team, no race).
  */
-export async function insertIfAbsent(input: NewTeamInput): Promise<Team | null> {
+export async function insertOrRevive(input: NewTeamInput): Promise<Team | null> {
   const [row] = await db
     .insert(teams)
     .values({
@@ -161,7 +169,20 @@ export async function insertIfAbsent(input: NewTeamInput): Promise<Team | null> 
       remainingBudgetInMillions: input.remainingBudgetInMillions,
       bankedFreeTransferCount: input.bankedFreeTransferCount,
     })
-    .onConflictDoNothing()
+    .onConflictDoUpdate({
+      target: [teams.leagueId, teams.userId],
+      set: {
+        name: input.name,
+        formation: null,
+        captainPlayerId: null,
+        viceCaptainPlayerId: null,
+        remainingBudgetInMillions: input.remainingBudgetInMillions,
+        bankedFreeTransferCount: input.bankedFreeTransferCount,
+        removedAt: null,
+        updatedAt: new Date(),
+      },
+      setWhere: sql`${teams.removedAt} is not null`,
+    })
     .returning();
   return row ? toTeam(toTeamRow(row), []) : null;
 }
@@ -220,16 +241,18 @@ export async function updateAfterTransfer(
     .where(eq(teams.id, teamId));
 }
 
-/** Deletes a Team and every row that references it (roster slots, transfers, team scores,
- * league standings) — a manager removed mid-season still has FK'd score/transfer history, so
- * those must go first or the final `teams` delete fails on the FK constraint. */
-export async function deleteById(teamId: string): Promise<void> {
+/** Soft-removes a manager's Team: clears its current roster (roster is live state, not a
+ * historical record, unlike scores/standings/transfers which must never be touched — a stale
+ * roster would otherwise keep counting toward ownership/price-update signals) and stamps
+ * removedAt. Nothing referencing this team is ever deleted — historical teamScores/
+ * leagueStandings/transfers rows stay exactly as computed, forever, and active-only reads
+ * (findByLeagueId, findAll, the leagueStandings join, etc.) simply exclude this team going
+ * forward. A later insertOrRevive by the same user in the same league un-removes this same row
+ * rather than creating a new one. */
+export async function markRemoved(teamId: string): Promise<void> {
   await db.transaction(async (tx) => {
     await tx.delete(teamRosterSlots).where(eq(teamRosterSlots.teamId, teamId));
-    await tx.delete(transfers).where(eq(transfers.teamId, teamId));
-    await tx.delete(teamScores).where(eq(teamScores.teamId, teamId));
-    await tx.delete(leagueStandings).where(eq(leagueStandings.teamId, teamId));
-    await tx.delete(teams).where(eq(teams.id, teamId));
+    await tx.update(teams).set({ removedAt: new Date(), updatedAt: new Date() }).where(eq(teams.id, teamId));
   });
 }
 
@@ -246,14 +269,17 @@ export async function findTeamIdsWithPlayerFromClub(club: string): Promise<strin
 /** Total number of Team rows across all leagues — the denominator for ownership and transfer
  * activity scores in the monthly price update formula. */
 export async function countAll(): Promise<number> {
-  const [row] = await db.select({ value: count() }).from(teams);
+  const [row] = await db.select({ value: count() }).from(teams).where(isNull(teams.removedAt));
   return row?.value ?? 0;
 }
 
 /** Number of managers currently in a league — joinLeague checks this against
  * MAX_MANAGERS_PER_LEAGUE before letting anyone else in. */
 export async function countByLeagueId(leagueId: string): Promise<number> {
-  const [row] = await db.select({ value: count() }).from(teams).where(eq(teams.leagueId, leagueId));
+  const [row] = await db
+    .select({ value: count() })
+    .from(teams)
+    .where(and(eq(teams.leagueId, leagueId), isNull(teams.removedAt)));
   return row?.value ?? 0;
 }
 

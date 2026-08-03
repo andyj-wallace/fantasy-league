@@ -1,8 +1,7 @@
-import { gameweeksRepository, leaguesRepository, teamsRepository } from "../../../db/repositories";
+import { leaguesRepository, teamsRepository } from "../../../db/repositories";
 import { requireAuth } from "../../auth";
 import { emptyResponse, forbiddenResponse, notFoundResponse } from "../../httpResponse";
 import type { ApiHandler } from "../../types";
-import { updateStandings } from "../../../workers/updateStandings";
 
 export const removeManager: ApiHandler = requireAuth(async (event, session) => {
   const leagueId = event.pathParameters?.leagueId ?? "";
@@ -20,10 +19,7 @@ export const removeManager: ApiHandler = requireAuth(async (event, session) => {
   const team = await teamsRepository.findByLeagueAndUser(leagueId, userId);
   if (!team) return notFoundResponse("No team found for that manager in this league");
 
-  await teamsRepository.deleteById(team.id);
-
-  const currentGameweek = await gameweeksRepository.findCurrent();
-  if (currentGameweek) await updateStandings(leagueId, currentGameweek.id);
+  await teamsRepository.markRemoved(team.id);
 
   return emptyResponse(204);
 });
