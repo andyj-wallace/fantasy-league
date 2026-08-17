@@ -362,11 +362,11 @@ Two workflows (or one gated pipeline):
 | Item | Year 1 | After Year 1 |
 |---|---|---|
 | RDS `db.t4g.micro` + 20 GB | $0 (free tier) | ~$14/mo |
-| fck-nat NAT instance (`t4g.nano`) | ~$0 (free-tier eligible) | ~$3/mo |
-| Lambda + HTTP API | ~$0 (free tier) | ~$0–1/mo |
+| fck-nat NAT instance (`t4g.nano`) | ~$3/mo (EC2 free tier only covers `t2.micro`/`t3.micro`, not `t4g.nano`) | ~$3/mo |
+| Lambda + HTTP API | ~$0–1/mo (Lambda's Always Free tier covers compute; HTTP API's free tier is year-1-only) | ~$0–1/mo |
 | CloudFront + S3 | ~$0–1/mo | ~$0–1/mo |
 | Cognito / SSM | $0 | $0 |
-| **Total** | **~$0–2/mo** | **~$17–18/mo** |
+| **Total** | **~$3–5/mo** | **~$17–18/mo** |
 
 Ongoing ops: ~15 min/quarter for NAT instance patching (or automate via SSM Patch
 Manager). Swapping fck-nat → managed NAT Gateway later is a one-line CDK change if

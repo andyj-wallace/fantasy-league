@@ -54,7 +54,8 @@ database_identifier="${STACK_NAME}-db"
 web_bucket_name="fantasy-league-${ENVIRONMENT_NAME}-web-${DEPLOYMENT_ACCOUNT_ID}"
 final_snapshot_identifier="${STACK_NAME}-final-$(date +%Y%m%d-%H%M%S)"
 ssm_parameter_names=(auth-token-secret db-password db-app-password
-  football-data-api-key cognito-user-pool-id cognito-app-client-id)
+  football-data-api-key cognito-user-pool-id cognito-app-client-id
+  cloudfront-origin-secret)
 
 stack_exists="false"
 aws cloudformation describe-stacks --stack-name "${STACK_NAME}" >/dev/null 2>&1 && stack_exists="true"
@@ -69,11 +70,15 @@ aws s3api head-bucket --bucket "${web_bucket_name}" >/dev/null 2>&1 && bucket_ex
 # reliable way to name them once the stack is gone.
 vpc_physical_id=""
 db_subnet_group_physical_id=""
+distribution_physical_id=""
 if [ "${stack_exists}" = "true" ]; then
   vpc_physical_id="$(aws cloudformation list-stack-resources --stack-name "${STACK_NAME}" \
     --query "StackResourceSummaries[?ResourceType=='AWS::EC2::VPC'].PhysicalResourceId" --output text)"
   db_subnet_group_physical_id="$(aws cloudformation list-stack-resources --stack-name "${STACK_NAME}" \
     --query "StackResourceSummaries[?ResourceType=='AWS::RDS::DBSubnetGroup'].PhysicalResourceId" --output text)"
+  # Needed only to name the distribution in the pricing-plan recovery instructions below.
+  distribution_physical_id="$(aws cloudformation list-stack-resources --stack-name "${STACK_NAME}" \
+    --query "StackResourceSummaries[?ResourceType=='AWS::CloudFront::Distribution'].PhysicalResourceId" --output text)"
 fi
 
 echo "Teardown plan for environment '${ENVIRONMENT_NAME}' (account ${DEPLOYMENT_ACCOUNT_ID}, ${DEPLOYMENT_REGION})"
@@ -107,6 +112,11 @@ echo "  5. Delete the stack — removes the remaining ~60 stack-owned resources 
 echo "     groups, subnets, Lambdas, API Gateway, ...); CloudFront disable+delete is the slow"
 echo "     part (10–20 min). The DB's auto-created subnet group is skipped, not deleted — it"
 echo "     inherits the same RETAIN policy as the instance (see step 6)."
+echo "     If the distribution is subscribed to a CloudFront flat-rate pricing plan, this step"
+echo "     cannot complete — cancelling that plan is console-only and there is no API to check"
+echo "     it in advance. That does NOT stop the run: steps 6-9 still execute, and the one"
+echo "     manual action (Distributions → ${distribution_physical_id:-<distribution>} → cancel"
+echo "     pricing plan, then re-run) is reported at the end."
 if [ "${destroy_via}" = "cdk" ]; then
   echo "       cd infra && npx cdk destroy ${CDK_STACK_CONSTRUCT_ID} -c env=${ENVIRONMENT_NAME} --force"
 else
@@ -117,10 +127,12 @@ echo "  6. Delete the orphaned DB subnet group left behind by step 5$([ -n "${db
 echo "       aws rds delete-db-subnet-group --db-subnet-group-name <captured above>"
 echo "  7. Delete the (now empty) retained web bucket"
 echo "       aws s3 rb s3://${web_bucket_name}"
-echo "  8. Delete the six out-of-band SSM parameters under ${SSM_CONFIG_PATH}/"
+echo "  8. Delete the ${#ssm_parameter_names[@]} out-of-band SSM parameters under ${SSM_CONFIG_PATH}/"
 echo "  9. Verify nothing tagged Project=fantasy-league/Environment=${ENVIRONMENT_NAME} remains,"
 echo "     and explicitly confirm the VPC$([ -n "${vpc_physical_id}" ] && echo " (${vpc_physical_id})") no longer exists"
-echo "     (expected leftovers: the final snapshot; tag index lags ~minutes for CloudFront)"
+echo "     then list any surviving manual RDS snapshots — the final one from step 4 and any"
+echo "     pre-migrate snapshot from an earlier deploy. They outlive the DB and keep billing,"
+echo "     so they are reported with their delete commands, never deleted automatically."
 echo
 echo "  NOT touched: Cognito pool (imported, live), CDKToolkit bootstrap stack (runbook appendix),"
 echo "  and the final snapshot$([ "${final_snapshot}" = true ] && echo " (~\$0.10/GB-mo — delete it once you are certain)")."
@@ -179,15 +191,49 @@ if [ "${ENVIRONMENT_NAME}" = "prod" ] && [ "${database_exists}" = "true" ]; then
 fi
 
 # ── 5. Delete the stack ───────────────────────────────────────────────────────────────
+# A CloudFront flat-rate pricing plan blocks its distribution from being deleted, and the
+# subscription is invisible to the CloudFront API/CLI — so it can only be diagnosed from the
+# failure. Cancelling it is console-only, so this one resource cannot be automated away.
+#
+# It must not hold the teardown hostage: a blocked distribution says nothing about the DB
+# subnet group, the bucket, or the SSM parameters, and those are what actually keep billing.
+# So this classifies the failure and DEFERS rather than aborting — every remaining step runs,
+# and the outstanding manual action is reported once at the end (see stack_delete_deferred).
+# Any other failure is unexpected and still aborts immediately.
+stack_delete_deferred="false"
+classify_stack_delete_failure() {
+  local failure_reason
+  failure_reason="$(aws cloudformation describe-stack-events --stack-name "${STACK_NAME}" \
+    --query "StackEvents[?ResourceStatus=='DELETE_FAILED'].ResourceStatusReason | [0]" \
+    --output text 2>/dev/null || true)"
+
+  case "${failure_reason}" in
+    *"pricing plan"*)
+      stack_delete_deferred="true"
+      warn "CloudFront refused to delete the distribution: it is subscribed to a flat-rate pricing plan."
+      info "Continuing with the rest of the teardown — the distribution is reported again at the end."
+      ;;
+    *)
+      fail "Stack delete failed: ${failure_reason:-see the CloudFormation console for ${STACK_NAME}}"
+      ;;
+  esac
+}
+
 if [ "${stack_exists}" = "true" ]; then
   info "Deleting stack ${STACK_NAME} (CloudFront teardown makes this slow — 10–20 min)"
+  stack_delete_succeeded="true"
   if [ "${destroy_via}" = "cdk" ]; then
-    (cd "${INFRA_DIR}" && npx cdk destroy "${CDK_STACK_CONSTRUCT_ID}" -c "env=${ENVIRONMENT_NAME}" --force)
+    (cd "${INFRA_DIR}" && npx cdk destroy "${CDK_STACK_CONSTRUCT_ID}" -c "env=${ENVIRONMENT_NAME}" --force) \
+      || stack_delete_succeeded="false"
   else
     aws cloudformation delete-stack --stack-name "${STACK_NAME}"
-    aws cloudformation wait stack-delete-complete --stack-name "${STACK_NAME}"
+    aws cloudformation wait stack-delete-complete --stack-name "${STACK_NAME}" || stack_delete_succeeded="false"
   fi
-  ok "Stack deleted"
+  if [ "${stack_delete_succeeded}" = "true" ]; then
+    ok "Stack deleted"
+  else
+    classify_stack_delete_failure
+  fi
 fi
 
 # ── 6. Delete the orphaned DB subnet group ────────────────────────────────────────────
@@ -221,15 +267,62 @@ rm -f "${INFRA_DIR}/cdk-outputs.json"
 # ── 9. Verify nothing is left ─────────────────────────────────────────────────────────
 if [ -n "${vpc_physical_id}" ]; then
   if aws ec2 describe-vpcs --vpc-ids "${vpc_physical_id}" >/dev/null 2>&1; then
-    fail "VPC ${vpc_physical_id} still exists — stack delete did not fully remove it, check the AWS console."
+    # A surviving VPC is only a real fault when the stack delete was supposed to have
+    # succeeded; when it was deferred, the stack still owns the VPC and this is expected.
+    if [ "${stack_delete_deferred}" = "true" ]; then
+      info "VPC ${vpc_physical_id} still exists — expected, the stack delete is still outstanding"
+    else
+      fail "VPC ${vpc_physical_id} still exists — stack delete did not fully remove it, check the AWS console."
+    fi
+  else
+    ok "VPC ${vpc_physical_id} confirmed removed"
   fi
-  ok "VPC ${vpc_physical_id} confirmed removed"
 fi
 
 info "Remaining resources tagged Project=fantasy-league, Environment=${ENVIRONMENT_NAME}:"
 aws resourcegroupstaggingapi get-resources \
   --tag-filters "Key=Project,Values=fantasy-league" "Key=Environment,Values=${ENVIRONMENT_NAME}" \
   --query "ResourceTagMappingList[].ResourceARN" --output text | tr '\t' '\n' | sed 's/^/  /' || true
-echo "  (expected: the final snapshot if taken; the tag index can lag a few minutes for CloudFront)"
+echo "  (terminated instances and just-deleted volumes linger here — the tag index lags a few"
+echo "   minutes; re-run to confirm. Snapshots below are real and keep billing.)"
+
+# Snapshots outlive the instance by design and are the only thing here that keeps costing
+# money, so they get called out separately rather than being lost in the tag dump above.
+# Both kinds survive: the final snapshot from step 4 and any pre-migrate snapshot taken by
+# run-database-migrations.sh on an earlier deploy. Deleting them is left to a human — it is
+# the last copy of the data, and by this point nothing else can recreate it.
+echo
+remaining_snapshots="$(aws rds describe-db-snapshots --snapshot-type manual \
+  --query "DBSnapshots[?starts_with(DBSnapshotIdentifier, '${STACK_NAME}')].[DBSnapshotIdentifier,AllocatedStorage]" \
+  --output text 2>/dev/null || true)"
+if [ -n "${remaining_snapshots}" ]; then
+  warn "Manual RDS snapshots still exist and still bill (~\$0.095/GB-mo):"
+  echo "${remaining_snapshots}" | while read -r snapshot_identifier allocated_gb; do
+    [ -n "${snapshot_identifier}" ] || continue
+    echo "    ${snapshot_identifier} (${allocated_gb} GB allocated)"
+    echo "      aws rds delete-db-snapshot --db-snapshot-identifier ${snapshot_identifier}"
+  done
+  echo "  Left in place deliberately — this is the last copy of the data. Delete when certain."
+else
+  ok "No manual RDS snapshots left for ${STACK_NAME}"
+fi
+
+if [ "${stack_delete_deferred}" = "true" ]; then
+  echo
+  warn "ACTION REQUIRED — everything automatable is done, one manual step remains."
+  echo
+  echo "  The CloudFront distribution (and therefore the stack, VPC, and subnets it still owns)"
+  echo "  could not be deleted: it is subscribed to a flat-rate pricing plan. Cancelling that is"
+  echo "  console-only — there is no CloudFront CLI or API for it, so this cannot be scripted."
+  echo
+  echo "    1. https://console.aws.amazon.com/cloudfront/v4/home → Distributions"
+  echo "    2. Select ${distribution_physical_id:-the ${STACK_NAME}-cdn distribution} → cancel its pricing plan"
+  echo "       (Free plans cancel immediately; paid plans only at the end of the billing cycle)"
+  echo "    3. Re-run:  ENVIRONMENT_NAME=${ENVIRONMENT_NAME} ${0##*/} --execute"
+  echo
+  echo "  Nothing above needs redoing — every step is guarded by an existence check, so the"
+  echo "  re-run only finishes the stack delete and re-verifies."
+  fail "Teardown of '${ENVIRONMENT_NAME}' is INCOMPLETE — see above."
+fi
 
 ok "Teardown of '${ENVIRONMENT_NAME}' complete."

@@ -35,7 +35,15 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: infra/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            infra/package-lock.json
+      # Root deps are required too, not just infra/'s: the CDK stack's NodejsFunction bundling
+      # points depsLockFilePath/projectRoot at the repo root (Lambda entry points live in src/,
+      # not infra/), so `cdk synth`'s esbuild bundling step resolves esbuild starting from the
+      # root's node_modules. Without this, it falls back to `npx esbuild`, which fails in
+      # non-interactive CI with "no YES option".
+      - run: npm ci
       - run: npm ci
         working-directory: infra
       - run: npm run typecheck

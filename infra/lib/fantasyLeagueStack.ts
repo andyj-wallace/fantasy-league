@@ -28,6 +28,7 @@ import {
   aws_sns as sns,
   aws_sns_subscriptions as snsSubscriptions,
   aws_sqs as sqs,
+  aws_ssm as ssm,
 } from "aws-cdk-lib";
 import { FckNatInstanceProvider } from "cdk-fck-nat";
 import { Construct } from "constructs";
@@ -44,6 +45,13 @@ export interface FantasyLeagueStackProps extends StackProps {
    * so every poll cycle fails at its first provider call — the schedule is disabled until the
    * data-plan decision lands. Re-enable with `-c matchPollEnabled=true` and a deploy. */
   enableMatchPollSchedule: boolean;
+  /** CloudFront's pricing-plan subscription auto-creates and attaches a WebACL when a
+   * distribution is first created, and then refuses to let CloudFormation remove it
+   * ("Distributions with a pricing plan subscription must have a web ACL resource"). CDK has no
+   * way to discover that ARN, so `deploy-infrastructure.sh` reads it off the live distribution
+   * and passes it back in. Undefined on a first deploy — there is no distribution yet, and
+   * CloudFront creates the WebACL itself. Do not hardcode: the ARN differs per environment. */
+  existingWebAclArn?: string;
 }
 
 const BUDGET_ALERT_EMAIL = "andy.illegalized@gmail.com";
@@ -162,6 +170,23 @@ export class FantasyLeagueStack extends Stack {
     });
     Tags.of(database).add("Component", "data");
 
+    // ── CloudFront origin lock ──────────────────────────────────────────────────────────
+    // The HTTP API's execute-api URL is public and can't be disabled without a custom domain,
+    // so CloudFront injects this shared secret as an origin header and the API Lambda rejects
+    // anything without it — making the CDN the only usable path to the API.
+    //
+    // Deliberately a plain String, not a SecureString like every other parameter here:
+    // CloudFormation only resolves {{resolve:ssm-secure}} in an allowlist of properties that
+    // excludes CloudFront origin headers. That costs nothing, because the value is readable via
+    // `aws cloudfront get-distribution-config` regardless of how it's stored — it's a bypass
+    // token that proves "this came through our CDN", not a credential guarding data.
+    //
+    // Read once and handed to both consumers below, so the two can never drift apart.
+    const cloudFrontOriginVerifySecret = ssm.StringParameter.valueForStringParameter(
+      this,
+      `${ssmConfigPath}/cloudfront-origin-secret`,
+    );
+
     // ── Lambdas ─────────────────────────────────────────────────────────────────────────
     const commonLambdaEnvironment = {
       SSM_CONFIG_PATH: ssmConfigPath,
@@ -247,6 +272,8 @@ export class FantasyLeagueStack extends Stack {
         DB_USER: APP_DATABASE_ROLE_NAME,
         DB_PASSWORD_PARAMETER: "db-app-password",
         AUTH_PROVIDER: "cognito",
+        // Only this Lambda serves HTTP, so only this one enforces the origin lock.
+        CLOUDFRONT_ORIGIN_VERIFY_SECRET: cloudFrontOriginVerifySecret,
       },
       timeout: Duration.seconds(29),
       component: "api",
@@ -353,6 +380,24 @@ export class FantasyLeagueStack extends Stack {
     });
     Tags.of(httpApi).add("Component", "api");
 
+    // Without this the API inherits the account default (~10,000 rps). Every request is a Lambda
+    // invocation plus an RDS connection and the /api/* behavior is CACHING_DISABLED, so nothing
+    // else bounds the cost of an abusive client. 50 rps sustained is far above what a league of
+    // this size generates, while still capping runaway traffic; over it, API Gateway returns 429.
+    //
+    // Set on the L1 stage because HttpStageProps inherits `throttle` from StageOptions but
+    // HttpApiProps does not expose it, and HttpApi builds the $default stage itself. Opting out
+    // with createDefaultStage:false and an explicit HttpStage would replace the deployed stage.
+    const httpApiDefaultStage = httpApi.defaultStage?.node.defaultChild as
+      | apigatewayv2.CfnStage
+      | undefined;
+    if (httpApiDefaultStage !== undefined) {
+      httpApiDefaultStage.defaultRouteSettings = {
+        throttlingRateLimit: 50,
+        throttlingBurstLimit: 100,
+      };
+    }
+
     // ── Frontend: private S3 + CloudFront ───────────────────────────────────────────────
     const webBucket = new s3.Bucket(this, "WebBucket", {
       bucketName: resourceName(`web-${this.account}`),
@@ -376,7 +421,18 @@ export class FantasyLeagueStack extends Stack {
     const distribution = new cloudfront.Distribution(this, "WebDistribution", {
       comment: resourceName("cdn"),
       defaultRootObject: "index.html",
-      priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
+      // No priceClass, deliberately. CloudFront put this distribution on its Free pricing plan at
+      // creation, which forbids the property outright ("Distributions with the Free pricing plan
+      // can't have the following features: Price class") and pins every distribution to
+      // PriceClass_All. The stack asked for PRICE_CLASS_100 from day one and CloudFront silently
+      // ignored it — the live distribution has always been PriceClass_All — so removing this
+      // changes nothing in reality; it only lets the stack update again. Revisit if the
+      // distribution is ever moved off the Free plan.
+      //
+      // Re-declares the WebACL CloudFront attached on creation, so CloudFormation doesn't try to
+      // strip it on update (see existingWebAclArn). Its managed rule groups — CommonRuleSet,
+      // KnownBadInputsRuleSet, AmazonIpReputationList — are CloudFront's defaults, not ours.
+      webAclId: props.existingWebAclArn,
       defaultBehavior: {
         // LIST access makes S3 answer missing keys with a plain 404 instead of 403; there are
         // deliberately no distribution-wide custom error pages because they would also rewrite
@@ -393,7 +449,13 @@ export class FantasyLeagueStack extends Stack {
       additionalBehaviors: {
         // Same-origin API: the browser calls /api/* on the site's own domain, so no CORS.
         "/api/*": {
-          origin: new cloudfrontOrigins.HttpOrigin(httpApiDomainName),
+          // The origin lock (see the CloudFront origin lock section above). CloudFront overwrites
+          // a same-named header sent by the viewer, so a client cannot forge or preserve its own
+          // value through this behavior. Header name is mirrored in
+          // src/api/verifyCloudFrontOriginSecret.ts — change both together.
+          origin: new cloudfrontOrigins.HttpOrigin(httpApiDomainName, {
+            customHeaders: { "x-origin-verify": cloudFrontOriginVerifySecret },
+          }),
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,

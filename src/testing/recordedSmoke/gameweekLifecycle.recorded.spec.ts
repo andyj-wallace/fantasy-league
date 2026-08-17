@@ -288,7 +288,7 @@ test("a gameweek spread across four days: per-kickoff locks, transfers, a postpo
     await expect(alphaCells.nth(3)).toHaveText(String(EXPECTED_GAMEWEEK_1_TEAM_TOTALS.alphaXI));
     await expect(alphaCells.nth(4)).toHaveText(String(EXPECTED_GAMEWEEK_1_GOALS_TIEBREAKER.alphaXI));
     await expect(alphaCells.nth(5)).toHaveText(String(EXPECTED_BANKED_TRANSFERS.alphaAtF));
-    await expect(alphaCells.nth(6)).toHaveText("£81.5M");
+    await expect(alphaCells.nth(6)).toHaveText("£72M");
     const bravoCells = standingsRows.nth(1).locator("td");
     await expect(bravoCells.nth(0)).toHaveText("2");
     await expect(bravoCells.nth(1)).toHaveText("Bravo XI");
@@ -296,7 +296,7 @@ test("a gameweek spread across four days: per-kickoff locks, transfers, a postpo
     await expect(bravoCells.nth(3)).toHaveText(String(EXPECTED_GAMEWEEK_1_TEAM_TOTALS.bravoXI));
     await expect(bravoCells.nth(4)).toHaveText(String(EXPECTED_GAMEWEEK_1_GOALS_TIEBREAKER.bravoXI));
     await expect(bravoCells.nth(5)).toHaveText(String(EXPECTED_BANKED_TRANSFERS.bravoAtF));
-    await expect(bravoCells.nth(6)).toHaveText("£81M");
+    await expect(bravoCells.nth(6)).toHaveText("£70.5M");
     await captureCheckpointScreenshot(page, "F-1-standings-final.png");
 
     const overlay = await openAlphaTransfersPanel(page, entities);

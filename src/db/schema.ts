@@ -173,9 +173,17 @@ export const teams = pgTable(
     bankedFreeTransferCount: integer("banked_free_transfer_count").notNull().default(0),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    // Null means the manager is active. Set when a commissioner removes a manager — the Team row
+    // (and its historical teamScores/leagueStandings/transfers) is never deleted, only hidden from
+    // active-team reads, so removal can't corrupt or gap already-computed standings. A later rejoin
+    // by the same user in the same league revives this same row instead of inserting a duplicate.
+    removedAt: timestamp("removed_at"),
   },
   // Exactly one Team per user per league — the DB backstop for a double-submitted joinLeague
-  // (the handler also uses insertIfAbsent, but this makes the guarantee race-proof).
+  // (the handler also uses insertOrRevive, but this makes the guarantee race-proof). Deliberately
+  // NOT partial/filtered on removedAt: insertOrRevive's ON CONFLICT target depends on this index
+  // still covering soft-removed rows so a rejoin conflicts with (and revives) the old row instead
+  // of inserting a second one.
   (table) => [uniqueIndex("teams_league_id_user_id_idx").on(table.leagueId, table.userId)],
 );
 

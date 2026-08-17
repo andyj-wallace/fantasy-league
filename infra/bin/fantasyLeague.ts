@@ -19,6 +19,7 @@ new FantasyLeagueStack(app, `FantasyLeague-${environmentName[0].toUpperCase()}${
   environmentName,
   enableReservedLambdaConcurrency: app.node.tryGetContext("reservedConcurrency") === "true",
   enableMatchPollSchedule: app.node.tryGetContext("matchPollEnabled") === "true",
+  existingWebAclArn: app.node.tryGetContext("webAclArn"),
   terminationProtection: environmentName === "prod",
   env: { account: DEPLOYMENT_ACCOUNT, region: DEPLOYMENT_REGION },
 });

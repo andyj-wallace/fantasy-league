@@ -425,8 +425,10 @@ export const EXPECTED_BANKED_TRANSFERS = {
 } as const;
 
 /**
- * Alpha XI budget: 16-man roster at default prices costs 81 -> 29 remaining. Transfer B swaps
- * Liverpool FWD 1 (5.5) for Brighton FWD 1 (6.5) -> 28. Transfer D swaps Spurs MID 1 (5.5) for
- * Newcastle MID 1 (5.0) -> 28.5. Standings "Spent" is 110 - remaining: Alpha 81.5, Bravo 81.
+ * Alpha XI budget: 16-man roster at default prices (2 GK x £3 + 5 DEF x £4 + 5 MID x £4.5 +
+ * 4 FWD x £5.5 = 70.5, per DEFAULT_INITIAL_PRICE_IN_MILLIONS_BY_POSITION) -> 39.5 remaining.
+ * Transfer B swaps Liverpool FWD 1 (5.5) for Brighton FWD 1 (6.5) -> 38.5. Transfer D swaps
+ * Spurs MID 1 (4.5) for Newcastle MID 1 (5.0) -> 38. Standings "Spent" is 110 - remaining:
+ * Alpha 72, Bravo 70.5 (Bravo's 16 have the same 2/5/5/4 position split, untouched by transfers).
  */
-export const EXPECTED_ALPHA_BUDGET = { atA: 29, afterTransferB: 28, afterTransferD: 28.5 } as const;
+export const EXPECTED_ALPHA_BUDGET = { atA: 39.5, afterTransferB: 38.5, afterTransferD: 38 } as const;

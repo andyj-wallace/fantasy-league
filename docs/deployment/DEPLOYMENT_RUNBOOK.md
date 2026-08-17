@@ -236,6 +236,7 @@ free).
 
 ```bash
 curl -i https://<dist>.cloudfront.net/api/gameweeks/current   # 401 (auth required) or 200 — NOT 404/CORS
+curl -i https://<id>.execute-api.us-east-1.amazonaws.com/gameweeks/current  # 403 — origin lock closed
 curl -i https://<dist>.cloudfront.net/login                    # 200 — proves the URL-rewrite Function
 aws rds describe-db-instances --region us-east-1 \
     --db-instance-identifier fantasy-league-prod-db \
@@ -503,6 +504,10 @@ see `RELIABILITY_PLAN.md`) or re-seed via `npm run db:tunnel` + `npm run seed:mo
 | 8 | `aws cloudformation deploy` rejects the template | Template is ~65 KB; direct template bodies cap at 51,200 bytes | Route the template through S3 | `deploy-infrastructure.sh --via cli` passes `--s3-bucket` |
 | 9 | CLI-path deploy fails with "No changes to deploy" | `aws cloudformation deploy` errors on an empty changeset by default | — | `--no-fail-on-empty-changeset` in `deploy-infrastructure.sh` |
 | 10 | Risk: scripts run against the wrong AWS account | Multiple profiles/credentials on one machine | Hard account check before anything runs | `require_correct_aws_account` in `deployment-env.sh`, called by every script |
+| 11 | **Every** API request returns 403 `"This API must be reached through the site, not directly"` | The origin lock's shared secret drifted between CloudFront and the API Lambda — usually a mid-rollout rotation (see follow-up 8), or the `cloudfront-origin-secret` SSM parameter was changed without a redeploy | Redeploy the stack so both sides re-read the parameter in one changeset, then wait for CloudFront to propagate (~5 min) | `deployment-preflight.sh` requires the parameter; `deployment-smoke-test.sh` asserts direct execute-api gives 403 while the CDN path gives 401 |
+| 12 | Any stack update fails: `You can't remove or replace the web ACL for your distribution. Distributions with a pricing plan subscription must have a web ACL resource` | CloudFront's Free pricing plan auto-creates and attaches a WebACL when the distribution is first created. CDK never knew about it, so its template omitted `WebACLId` and CloudFormation tried to strip it | Read the live distribution's `WebACLId` and pass it back to CDK as `-c webAclArn=…`; the stack re-declares it via `existingWebAclArn`. Never hardcode — the ARN differs per environment, and is absent on a first deploy | `deploy-infrastructure.sh` discovers and passes it automatically on every deploy |
+| 13 | Then: `Distributions with the Free pricing plan can't have the following features: Price class` | Same Free pricing plan pins every distribution to `PriceClass_All` and rejects the property outright. The stack had asked for `PRICE_CLASS_100` since day one and CloudFront silently ignored it — the live distribution was always `PriceClass_All` | Drop `priceClass` from the Distribution props. No behaviour change: it was never in effect | Removed, with the rationale inline in `infra/lib/fantasyLeagueStack.ts` |
+| 14 | Teardown reports `ACTION REQUIRED`: `You can't delete this distribution while it's subscribed to a pricing plan` (HTTP 412), leaving the stack `DELETE_FAILED` | Same Free pricing plan. A subscribed distribution cannot be deleted, and **neither the CloudFront API nor the CLI exposes the subscription**, so nothing can check for it up front | Cancel the plan in the console (Distributions → the `-cdn` distribution → cancel pricing plan), then re-run `destroy-environment.sh --execute`. **Free plans cancel immediately**; paid plans only at the end of the billing cycle. The error text says "end of monthly billing cycle" regardless of tier — for a Free plan that is wrong, see [the docs](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/flat-rate-pricing-plan.html) | `destroy-environment.sh` **defers rather than aborts**: it classifies this specific failure, finishes steps 6-9 (subnet group, bucket, SSM parameters, verification — the things that actually bill), and reports the one manual action once at the end, exiting non-zero so the run is never mistaken for complete. Every step is existence-guarded, so the re-run only finishes the stack delete |
 
 ## Known deviations / follow-ups
 
@@ -528,3 +533,34 @@ see `RELIABILITY_PLAN.md`) or re-seed via `npm run db:tunnel` + `npm run seed:mo
    `retryAttempts: 0`: for scheduled jobs the next tick is the retry; Lambda's default
    async double-retry only tripled the failing calls. Once a paid data plan lands:
    enable the flag, and the worker resumes with the polling-budget pacing.
+8. **Rotating `cloudfront-origin-secret` briefly 403s live traffic** (added 2026-08-03).
+   Rotation is `aws ssm put-parameter --overwrite --name /fantasy-league/<env>/cloudfront-origin-secret
+   --type String --value "$(openssl rand -hex 32)"` followed by a stack deploy. One
+   changeset updates both consumers, but a Lambda env var changes instantly while a
+   CloudFront distribution takes ~5 minutes to propagate — so there is a window where the
+   Lambda expects the new value and the CDN still sends the old one, and every request
+   403s. **Rotate during low traffic.** Accepting two valid secrets for a rollout window
+   would remove this; not worth the complexity at MVP scale.
+
+   The parameter is deliberately a plain `String`, unlike every other parameter under
+   `/fantasy-league/<env>/`: CloudFormation cannot resolve `{{resolve:ssm-secure}}` into a
+   CloudFront origin custom header, and the value is readable via `aws cloudfront
+   get-distribution-config` regardless of how it is stored. It proves a request came
+   through the CDN; it guards no data on its own.
+9. **The distribution is on CloudFront's Free pricing plan** (discovered 2026-08-03 — it was
+   applied automatically at creation, not chosen). Three consequences the stack now works with
+   rather than against, each of which blocked a deploy or a teardown until it was understood
+   (troubleshooting rows 12-14): a WebACL is **mandatory** and CloudFront manages it,
+   `PriceClass` is **forbidden** with everything pinned to `PriceClass_All`, and **the
+   distribution cannot be deleted at all** until the plan is cancelled in the console.
+
+   That last one makes teardown a two-phase operation whenever a distribution exists: cancel
+   the plan, then run the teardown. Budget for it — `npm run destroy` cannot do it for you and
+   cannot even detect it in advance.
+
+   The upside is that WAF is already on, free, with three AWS managed rule groups
+   (`CommonRuleSet`, `KnownBadInputsRuleSet`, `AmazonIpReputationList`) — so the "no WAF"
+   hardening gap does not exist. The cost is that the rules are CloudFront's to change, not
+   ours, and we cannot add a rate-based rule without taking ownership of the WebACL in CDK
+   (which would likely start WAF billing at ~$5/month/environment). Revisit only if a
+   CloudFront-side rate limit becomes necessary; API Gateway throttling covers the API today.
