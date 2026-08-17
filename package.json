@@ -22,6 +22,7 @@
     "dev:stop": "lsof -ti tcp:3000,3001 | xargs kill -9",
     "deploy:preflight": "scripts/deployment-preflight.sh",
     "deploy:secrets": "scripts/deployment-put-secrets.sh",
+    "deploy:rotate-football-key": "scripts/rotate-football-data-api-key.sh",
     "deploy:infra": "scripts/deploy-infrastructure.sh --via cdk",
     "deploy:infra:cli": "scripts/deploy-infrastructure.sh --via cli",
     "deploy:migrate": "scripts/run-database-migrations.sh",

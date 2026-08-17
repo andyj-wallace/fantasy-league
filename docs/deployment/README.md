@@ -14,15 +14,23 @@ CloudFront/S3 static site + API Gateway HTTP API + Cognito, defined in AWS CDK.
 Everything named `fantasy-league-<env>-*`, tagged, and grouped in the AWS console
 under Resource Groups → `fantasy-league-<env>-resources`.
 
-**How to deploy:** `npm run deploy:all` (or the individual `deploy:*` scripts — see
-the runbook's "Scripted deployment" table). Infra deploys work two interchangeable
-ways: `deploy:infra` (CDK) and `deploy:infra:cli` (synth → publish assets → plain
-`aws cloudformation deploy`). CI/CD via GitHub Actions is still a planned follow-up.
+**How to deploy:** either `npm run deploy:all` locally (or the individual `deploy:*`
+scripts — see the runbook's "Scripted deployment" table), or push to `release` on
+GitHub once the one-time setup in DEPLOYMENT_RUNBOOK.md's "Release process" section is
+complete. Infra deploys work two interchangeable ways: `deploy:infra` (CDK) and
+`deploy:infra:cli` (synth → publish assets → plain `aws cloudformation deploy`).
 
-**Status:** **NOT DEPLOYED.** Prod was live 2026-07-11 through 2026-07-13, then fully
-torn down (stack, VPC, database, snapshot, bucket, SSM params — see
-DEPLOYMENT_RUNBOOK.md's Teardown section, including the 2026-07-13 as-run incident and
-fix). The `infra/` CDK app is production-ready and redeploying is just `npm run
-deploy:all` — see DEPLOYMENT_RUNBOOK.md for the as-run commands and open follow-ups
-(CI/CD, reserved concurrency quota, match-poll schedule pending the API-Football plan
-decision).
+**Status:** **App stack NOT DEPLOYED; CI/CD infra is.** Prod was live 2026-07-11
+through 2026-07-13, then fully torn down (stack, VPC, database, snapshot, bucket, SSM
+params — see DEPLOYMENT_RUNBOOK.md's Teardown section, including the 2026-07-13 as-run
+incident and fix) and hasn't been redeployed since. Separately, as of 2026-08-16 the
+account-level `FantasyLeagueGitHubDeploy` stack (GitHub OIDC provider + deploy role) is
+live, and `release` has branch protection requiring `integration-smoke` — see
+DEPLOYMENT_RUNBOOK.md's Release process section for what's still open (the
+`production` environment's required-reviewer rule) before a `release` push can be
+trusted to deploy unattended. Before the *first* deploy attempt since the teardown,
+run `npm run deploy:secrets` — the teardown deleted every `/fantasy-league/prod/*` SSM
+parameter and nothing recreates them automatically (see runbook Troubleshooting row
+16). The `infra/` CDK app itself is production-ready — see DEPLOYMENT_RUNBOOK.md for
+the as-run commands and remaining open follow-ups (reserved concurrency quota,
+match-poll schedule pending the API-Football plan decision).

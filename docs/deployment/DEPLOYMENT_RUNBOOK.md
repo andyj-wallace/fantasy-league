@@ -29,6 +29,7 @@ The manual sections that follow remain the *explanation* of what the scripts do.
 |---|---|
 | `npm run deploy:preflight` | Read-only checks: account, region, bootstrap, all 6 secrets, Lambda quota, tunnel plugin. |
 | `npm run deploy:secrets` | Creates any missing SSM parameters. **Never overwrites** existing ones. |
+| `npm run deploy:rotate-football-key` | Rotates `football-data-api-key` from `.env` and force-recycles the match-poll Lambda so the new key takes effect immediately, instead of waiting on a warm instance to recycle on its own (see Known deviations/follow-ups item 10). |
 | `npm run deploy:infra` | `cdk diff` → confirm → `cdk deploy` (context flags auto-derived). |
 | `npm run deploy:infra:cli` | Same stack via plain AWS CLI: `cdk synth` → `cdk-assets publish` → `aws cloudformation deploy`. |
 | `npm run deploy:migrate` | Invokes the migration Lambda; fails loudly on a bad result. |
@@ -92,7 +93,10 @@ Six SecureString parameters under `/fantasy-league/prod/`. Values are piped in f
 `openssl rand` (fresh secrets) or `.env` (existing ids) so they never land on screen
 or in shell history. **No `--overwrite`** — an existing parameter makes the command
 fail instead of silently replacing it (deliberate idempotency guard). Rotating a
-secret later is an explicit `aws ssm put-parameter --overwrite`.
+secret later is an explicit `aws ssm put-parameter --overwrite`; for
+`football-data-api-key` specifically, use `npm run deploy:rotate-football-key`
+instead of a bare `put-parameter` — it also force-recycles the consuming Lambda (see
+Known deviations/follow-ups item 10 for why that extra step matters).
 
 ```bash
 # fresh, hex/base64 so they're URL- and RDS-password-safe
@@ -385,19 +389,30 @@ Two branches, two gates:
   `production` GitHub Environment's manual-approval gate before touching AWS.
 
 **One-time manual repo setup** (none of this can be declared from a workflow file):
-1. Create the `release` branch: `git branch release main && git push -u origin release`.
-2. Repo Settings → Branches → add a protection rule on `release` requiring the
-   `integration-smoke` status check to pass before merging. (GitHub associates check
-   runs with the commit SHA, not the branch it ran on, so the check that ran on `main`
-   shows up automatically on the `main`→`release` PR for that same commit — no extra
-   workflow plumbing needed, just this rule.)
-3. Repo Settings → Environments → create `production`, turn on **Required reviewers**.
-   This is the second, independent approval gate `deploy.yml`'s `environment:
-   production` line references — the reference alone does nothing without this rule.
-4. `cd infra && npx cdk deploy FantasyLeagueGitHubDeploy` once, to create the GitHub
-   OIDC provider + `fantasy-league-prod-deploy-role` that `deploy.yml` assumes. This
-   stack is separate from the per-environment app stack and isn't part of
+1. **[done]** Create the `release` branch: `git branch release main && git push -u origin release`.
+2. **[done 2026-08-16]** Repo Settings → Branches → add a protection rule on `release`
+   requiring the `integration-smoke` status check to pass before merging. (GitHub
+   associates check runs with the commit SHA, not the branch it ran on, so the check
+   that ran on `main` shows up automatically on the `main`→`release` PR for that same
+   commit — no extra workflow plumbing needed, just this rule.)
+3. **[still open]** Repo Settings → Environments → create `production`, turn on
+   **Required reviewers**. This is the second, independent approval gate `deploy.yml`'s
+   `environment: production` line references — the reference alone does nothing
+   without this rule. Confirm this is actually set before treating `release` pushes as
+   safe to leave unattended.
+4. **[done 2026-08-16]** `cd infra && npx cdk deploy FantasyLeagueGitHubDeploy` once, to
+   create the GitHub OIDC provider + `fantasy-league-prod-deploy-role` that `deploy.yml`
+   assumes. This stack is separate from the per-environment app stack and isn't part of
    `deploy-everything.sh` — see `infra/lib/githubDeployStack.ts`'s doc comment for why.
+   **Gotcha found on first run:** step 3's `environment: production` on the deploy job
+   changes the OIDC token's `sub` claim to the `repo:OWNER/REPO:environment:production`
+   form — the trust policy must match on that, not on the branch ref, or every
+   `AssumeRoleWithWebIdentity` call 403s. See Troubleshooting row 15.
+
+**After both gates are confirmed and secrets exist:** the first deploy since the
+2026-07-13 teardown also needs `npm run deploy:secrets` run once, locally — the
+teardown deleted every `/fantasy-league/prod/*` SSM parameter, and `deploy.yml`
+deliberately never recreates them in CI. See Troubleshooting row 16.
 
 ## Teardown — destroying an environment completely
 
@@ -508,6 +523,8 @@ see `RELIABILITY_PLAN.md`) or re-seed via `npm run db:tunnel` + `npm run seed:mo
 | 12 | Any stack update fails: `You can't remove or replace the web ACL for your distribution. Distributions with a pricing plan subscription must have a web ACL resource` | CloudFront's Free pricing plan auto-creates and attaches a WebACL when the distribution is first created. CDK never knew about it, so its template omitted `WebACLId` and CloudFormation tried to strip it | Read the live distribution's `WebACLId` and pass it back to CDK as `-c webAclArn=…`; the stack re-declares it via `existingWebAclArn`. Never hardcode — the ARN differs per environment, and is absent on a first deploy | `deploy-infrastructure.sh` discovers and passes it automatically on every deploy |
 | 13 | Then: `Distributions with the Free pricing plan can't have the following features: Price class` | Same Free pricing plan pins every distribution to `PriceClass_All` and rejects the property outright. The stack had asked for `PRICE_CLASS_100` since day one and CloudFront silently ignored it — the live distribution was always `PriceClass_All` | Drop `priceClass` from the Distribution props. No behaviour change: it was never in effect | Removed, with the rationale inline in `infra/lib/fantasyLeagueStack.ts` |
 | 14 | Teardown reports `ACTION REQUIRED`: `You can't delete this distribution while it's subscribed to a pricing plan` (HTTP 412), leaving the stack `DELETE_FAILED` | Same Free pricing plan. A subscribed distribution cannot be deleted, and **neither the CloudFront API nor the CLI exposes the subscription**, so nothing can check for it up front | Cancel the plan in the console (Distributions → the `-cdn` distribution → cancel pricing plan), then re-run `destroy-environment.sh --execute`. **Free plans cancel immediately**; paid plans only at the end of the billing cycle. The error text says "end of monthly billing cycle" regardless of tier — for a Free plan that is wrong, see [the docs](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/flat-rate-pricing-plan.html) | `destroy-environment.sh` **defers rather than aborts**: it classifies this specific failure, finishes steps 6-9 (subnet group, bucket, SSM parameters, verification — the things that actually bill), and reports the one manual action once at the end, exiting non-zero so the run is never mistaken for complete. Every step is existence-guarded, so the re-run only finishes the stack delete |
+| 15 | `deploy.yml`'s `configure-aws-credentials` step fails after many "Assuming role with OIDC" retries: `Error: Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity` — even though the role and OIDC provider both exist | The `deploy` job sets `environment: production` (Release process step 3's approval gate). Whenever a job specifies a GitHub **Environment**, the OIDC token's `sub` claim switches from the ref-based form (`repo:OWNER/REPO:ref:refs/heads/BRANCH`) to `repo:OWNER/REPO:environment:ENV_NAME` — the trust policy was still written for the ref form, so every token AWS received failed the condition | Change the trust policy's `sub` condition to `repo:OWNER/REPO:environment:production`, matching what the token actually carries once a job declares an `environment:` | `infra/lib/githubDeployStack.ts`'s `ProdDeployRole` trust policy (fixed 2026-08-16); `cdk deploy FantasyLeagueGitHubDeploy` to apply |
+| 16 | First deploy after a teardown fails later in the same job, at `cdk deploy`'s changeset-creation step: `Unable to fetch parameters [/fantasy-league/prod/cloudfront-origin-secret] from parameter store for this account` | Teardown step 8 deletes all `/fantasy-league/<env>/*` SSM parameters. `deploy.yml` deliberately never runs `deployment-put-secrets.sh` in CI (it's one-time/local, sourcing real values from `.env`/`openssl` — see the comment in `deploy.yml`), so nothing recreates them before the next deploy | Run `npm run deploy:secrets` locally once before re-triggering the pipeline — idempotent, safe to run any time | Not automated by design; `deployment-preflight.sh` checks for all seven parameters and would have caught this ahead of a manual deploy, but the CI path has no preflight step |
 
 ## Known deviations / follow-ups
 
@@ -520,7 +537,14 @@ see `RELIABILITY_PLAN.md`) or re-seed via `npm run db:tunnel` + `npm run seed:mo
 4. **Mistyped page URLs return S3's plain 404 XML**, not a styled 404 page —
    distribution-wide custom error pages would also rewrite `/api/*` error bodies, which
    would break API clients. Revisit if it matters.
-5. **CI/CD (GitHub Actions + OIDC) deferred** — see `DEPLOYMENT_PLAN.md` §CI/CD.
+5. **CI/CD (GitHub Actions + OIDC) — built 2026-07-18, wired up 2026-08-16.**
+   `.github/workflows/ci.yml` and `deploy.yml` plus `infra/lib/githubDeployStack.ts`
+   existed since 2026-07-18, but the manual setup in Release process steps 1-4 hadn't
+   been done. Done as of 2026-08-16: `release` branch created, branch protection on
+   `release` requiring `integration-smoke`, and `FantasyLeagueGitHubDeploy` deployed
+   (with the trust-policy fix from Troubleshooting row 15). **Still open:** the
+   `production` GitHub Environment's required-reviewer rule (Release process step 3) —
+   confirm it's set before relying on that gate.
 6. ~~Delete unused Cognito pool `us-east-2_MF6XS4BiK`~~ **Done 2026-07-12** — Drew deleted
    it ("User pool - oehbhj"); verified: us-east-2 has zero pools and the live pool
    `us-east-1_DBETCnAJP` ("User pool - nvl7mo") is intact with its users.
@@ -557,6 +581,18 @@ see `RELIABILITY_PLAN.md`) or re-seed via `npm run db:tunnel` + `npm run seed:mo
    That last one makes teardown a two-phase operation whenever a distribution exists: cancel
    the plan, then run the teardown. Budget for it — `npm run destroy` cannot do it for you and
    cannot even detect it in advance.
+10. **Rotating `football-data-api-key` doesn't take effect until the consuming Lambda
+    cold-starts** (added 2026-08-16). `loadRuntimeConfigFromSsm.ts` reads SSM once per
+    cold start and caches the result in `process.env` for the life of that execution
+    environment — a bare `aws ssm put-parameter --overwrite` updates SSM immediately but
+    a warm `MatchPollWorkerLambda` instance keeps using the old key until AWS recycles it
+    on its own schedule, which could be a while given how often match-poll runs.
+    `npm run deploy:rotate-football-key` does both steps: overwrites the parameter, then
+    forces a cold start by merging a fresh timestamp into the Lambda's *existing*
+    environment variables (fetched first, not blindly replaced — `update-function-configuration`'s
+    `Environment.Variables` is a full overwrite, and this Lambda's real config
+    `SSM_CONFIG_PATH`/`DB_HOST`/etc. would otherwise be lost). Script:
+    `scripts/rotate-football-data-api-key.sh`.
 
    The upside is that WAF is already on, free, with three AWS managed rule groups
    (`CommonRuleSet`, `KnownBadInputsRuleSet`, `AmazonIpReputationList`) — so the "no WAF"
