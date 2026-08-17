@@ -414,6 +414,24 @@ Two branches, two gates:
 teardown deleted every `/fantasy-league/prod/*` SSM parameter, and `deploy.yml`
 deliberately never recreates them in CI. See Troubleshooting row 16.
 
+**As-run: first successful pipeline deploy (2026-08-17).** Promotion happened as a
+local `git merge main` + `git push origin release` rather than a GitHub PR (no `gh`
+CLI/token available in the environment doing the merge that day) — the normal path is
+still the PR described above; this was a one-off. It took two pushes to actually land:
+the first (`fd824ba`, the OIDC fix itself) failed at the changeset-creation step
+(Troubleshooting row 16 — SSM secrets hadn't been re-seeded since the teardown yet);
+after running `npm run deploy:secrets`, the second push (`e13c1f8`, merging in the
+`deploy:rotate-football-key` doc/script work) got through `configure-aws-credentials`
+successfully, confirming the row-15 fix. Partway through the infra step, the workflow
+run was **accidentally cancelled from the GitHub UI**. That only killed the GitHub
+Actions job — the CloudFormation stack it had already kicked off kept building
+independently and reached `CREATE_COMPLETE` on its own a few minutes later (cancelling
+a workflow run does not cancel an in-flight stack operation). Since the job never
+reached steps 8-10, migrations/frontend/smoke were finished manually afterward:
+`npm run deploy:migrate` (10 migrations, pre-migration snapshot taken automatically),
+`npm run deploy:frontend`, `npm run deploy:smoke` — all passed. Live at
+https://d3ktr55dnycetc.cloudfront.net.
+
 ## Teardown — destroying an environment completely
 
 **Scripted (preferred):** `npm run destroy` prints the full ordered plan (read-only);
