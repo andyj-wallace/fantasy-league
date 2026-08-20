@@ -76,6 +76,7 @@ interface HydrationSummary {
   pricedViaFallback: number;
   leftAtPlaceholder: number;
   skippedNoExternalId: number;
+  skippedNonNumericExternalId: number;
   skippedAlreadyAttemptedFallback: number;
   stoppedEarlyOnQuota: boolean;
 }
@@ -118,6 +119,7 @@ async function main(): Promise<void> {
     pricedViaFallback: 0,
     leftAtPlaceholder: 0,
     skippedNoExternalId: 0,
+    skippedNonNumericExternalId: 0,
     skippedAlreadyAttemptedFallback: 0,
     stoppedEarlyOnQuota: false,
   };
@@ -139,6 +141,14 @@ async function main(): Promise<void> {
   for (const player of roster) {
     if (!player.externalId) {
       summary.skippedNoExternalId++;
+      continue;
+    }
+
+    // Local dev/test data can seed players with placeholder ids (e.g. "mock-player-01") that
+    // aren't real provider ids — the live fallback lookup below 400s on them ("The Id field
+    // must contain an integer").
+    if (!/^\d+$/.test(player.externalId)) {
+      summary.skippedNonNumericExternalId++;
       continue;
     }
 
