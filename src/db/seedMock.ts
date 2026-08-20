@@ -179,6 +179,7 @@ async function main(): Promise<void> {
           penaltiesConceded: stat.penaltiesConceded,
           receivedYellowCard: stat.receivedYellowCard,
           receivedRedCard: stat.receivedRedCard,
+          wasInStartingLineup: true,
         };
       })
       .filter((stat): stat is PlayerMatchStat => stat !== null);

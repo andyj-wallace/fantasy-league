@@ -17,6 +17,7 @@ function toPlayerMatchStat(row: typeof playerMatchStats.$inferSelect): PlayerMat
     penaltiesConceded: row.penaltiesConceded,
     receivedYellowCard: row.receivedYellowCard,
     receivedRedCard: row.receivedRedCard,
+    wasInStartingLineup: row.wasInStartingLineup,
   };
 }
 
@@ -41,6 +42,7 @@ export async function insertMany(stats: PlayerMatchStat[]): Promise<void> {
       penaltiesConceded: stat.penaltiesConceded,
       receivedYellowCard: stat.receivedYellowCard,
       receivedRedCard: stat.receivedRedCard,
+      wasInStartingLineup: stat.wasInStartingLineup,
     })),
   );
 }

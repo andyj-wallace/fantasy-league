@@ -1,4 +1,4 @@
-import type { PlayerPosition, PlayerProfile, PlayerSeasonStatistics } from "../domain";
+import type { GoalType, PlayerPosition, PlayerProfile, PlayerSeasonStatistics } from "../domain";
 
 /**
  * Boundary between our system and an external football data source (currently API-Football,
@@ -30,6 +30,27 @@ export interface ProviderPlayerMatchStat {
   penaltiesConceded: number;
   receivedYellowCard: boolean;
   receivedRedCard: boolean;
+  wasInStartingLineup: boolean;
+}
+
+/** One goal off the provider's fixture event feed. beneficiaryClub is already own-goal
+ * normalized by the provider implementation, so importers never redo that reasoning. */
+export interface ProviderGoalEvent {
+  externalScorerPlayerId: string | null;
+  externalAssistPlayerId: string | null;
+  beneficiaryClub: string;
+  goalType: GoalType;
+  elapsedMinute: number;
+  addedTimeMinute: number;
+  sequenceIndex: number;
+}
+
+/** Everything one fixture-detail poll yields. The two halves travel together because they come
+ * from a single parallel fixtures/players + fixtures/events pair — splitting them into separate
+ * provider methods would double the per-fixture request cost (see docs/polling-budget.md). */
+export interface ProviderFixtureDetail {
+  playerStats: ProviderPlayerMatchStat[];
+  goalEvents: ProviderGoalEvent[];
 }
 
 export interface ProviderRosterEntry {
@@ -68,7 +89,7 @@ export interface FootballDataProvider {
   /** 1 call: broad status-only list of every fixture currently in play. */
   fetchLiveFixtures(): Promise<ProviderFixture[]>;
   /** 2 calls (events + players) for one fixture. */
-  fetchFixturePlayerStats(externalFixtureId: string): Promise<ProviderPlayerMatchStat[]>;
+  fetchFixturePlayerStatsAndGoalEvents(externalFixtureId: string): Promise<ProviderFixtureDetail>;
   /** ~21 calls (1 /teams + 20 /players/squads): current squads only, no pagination — cheap, but
    * misses new signings/promoted-club players not yet linked to a squad block. */
   fetchPlayerRoster(): Promise<ProviderRosterEntry[]>;
@@ -111,8 +132,8 @@ export class StubFootballDataProvider implements FootballDataProvider {
     return [];
   }
 
-  async fetchFixturePlayerStats(_externalFixtureId: string): Promise<ProviderPlayerMatchStat[]> {
-    return [];
+  async fetchFixturePlayerStatsAndGoalEvents(_externalFixtureId: string): Promise<ProviderFixtureDetail> {
+    return { playerStats: [], goalEvents: [] };
   }
 
   async fetchPlayerRoster(): Promise<ProviderRosterEntry[]> {

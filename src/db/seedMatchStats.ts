@@ -6,6 +6,7 @@ import {
   leagueStandingsRepository,
   leaguesRepository,
   matchesRepository,
+  matchGoalEventsRepository,
   playerMatchStatsRepository,
   playerScoresRepository,
   playersRepository,
@@ -13,7 +14,7 @@ import {
   teamsRepository,
   usersRepository,
 } from "./repositories";
-import type { Match, PlayerMatchStat, PlayerPosition } from "../domain";
+import type { Match, MatchGoalEvent, PlayerMatchStat, PlayerPosition } from "../domain";
 import { STARTING_SQUAD_BUDGET_IN_MILLIONS } from "../domain";
 import { calculatePlayerScores } from "../workers/calculatePlayerScores";
 import { calculateTeamScores } from "../workers/calculateTeamScores";
@@ -84,29 +85,52 @@ const SEED_STATS: SeedStat[] = [
   { externalPlayerId: "stat-seed-fwd-2", receivedRedCard: true },
 ];
 
+interface SeedGoalEvent {
+  externalScorerPlayerId: string;
+  externalAssistPlayerId?: string;
+  beneficiaryClub: string;
+  elapsedMinute: number;
+  addedTimeMinute?: number;
+  sequenceIndex: number;
+}
+
+/**
+ * The goal timeline behind the 2-0, chosen to exercise the game-state bonus: the 88th-minute
+ * opener is the decisive goal (it put Arsenal ahead and the lead was never surrendered), so it
+ * lands in the 86-90 bracket at a 2.0x multiplier — a bracket that catches both a broken
+ * multiplier and a broken rounding path. The stoppage-time second goal is deliberately NOT
+ * decisive, which is what proves "last go-ahead goal" is not just "last goal".
+ */
+const SEED_GOAL_EVENTS: SeedGoalEvent[] = [
+  { externalScorerPlayerId: "stat-seed-def-1", externalAssistPlayerId: "stat-seed-mid-1", beneficiaryClub: HOME_CLUB, elapsedMinute: 88, sequenceIndex: 0 },
+  { externalScorerPlayerId: "stat-seed-mid-1", beneficiaryClub: HOME_CLUB, elapsedMinute: 90, addedTimeMinute: 3, sequenceIndex: 1 },
+];
+
 // Hand-computed expected player scores — see point table in fantasy_league_v1_design.txt.
+// The game-state bonus for the 88th-minute decisive goal is +/-10 (base 5 x the 2.0x bracket),
+// paid to its scorer and assister and charged to the conceding club's starting GKs/DEFs.
 //   GK-1:  1 appear + 4 cs + floor(3/3) saves = 6
-//   DEF-1: 1 appear + 8 goal + 4 cs = 13
-//   MID-1: 1 appear + 6 goal + 3 assist - 1 yellow = 9
+//   DEF-1: 1 appear + 8 goal + 4 cs + 10 game-state (scored the winner) = 23
+//   MID-1: 1 appear + 6 goal + 3 assist - 1 yellow + 10 game-state (assisted it) = 19
 //   FWD-1: 1 appear + 2 pen_won = 3
-//   GK-2:  1 appear (no cs — Arsenal scored 2) = 1
-//   FWD-2: 1 appear - 2 red = -1
+//   GK-2:  1 appear (no cs — Arsenal scored 2) - 10 game-state (started, conceded it) = -9
+//   FWD-2: 1 appear - 2 red = -1 (a FWD is out of the losing-goal penalty's scope)
 const EXPECTED_PLAYER_POINTS: Record<string, number> = {
   "stat-seed-gk-1":  6,
-  "stat-seed-def-1": 13,
-  "stat-seed-mid-1": 9,
+  "stat-seed-def-1": 23,
+  "stat-seed-mid-1": 19,
   "stat-seed-fwd-1": 3,
-  "stat-seed-gk-2":  1,
+  "stat-seed-gk-2":  -9,
   "stat-seed-fwd-2": -1,
 };
 
-// Team A: Arsenal GK + DEF (captain, 13 pts) + MID (vc) + FWD.
-//   Base: 6 + 13 + 9 + 3 = 31. Captain bonus: +13. Total: 44.
-const EXPECTED_TEAM_A_POINTS = 44;
+// Team A: Arsenal GK + DEF (captain, 23 pts) + MID (vc) + FWD.
+//   Base: 6 + 23 + 19 + 3 = 51. Captain bonus: +23. Total: 74.
+const EXPECTED_TEAM_A_POINTS = 74;
 
-// Team B: Chelsea GK (captain, 1 pt) + FWD (vc).
-//   Base: 1 + (-1) = 0. Captain bonus: +1. Total: 1.
-const EXPECTED_TEAM_B_POINTS = 1;
+// Team B: Chelsea GK (captain, -9 pts) + FWD (vc).
+//   Base: -9 + (-1) = -10. Captain bonus: -9. Total: -19.
+const EXPECTED_TEAM_B_POINTS = -19;
 
 // ─── Assertion helper ────────────────────────────────────────────────────────────
 
@@ -173,10 +197,32 @@ async function main(): Promise<void> {
       penaltiesConceded: seed.penaltiesConceded ?? 0,
       receivedYellowCard: seed.receivedYellowCard ?? false,
       receivedRedCard: seed.receivedRedCard ?? false,
+      // Seeded stat lines all represent players who featured from kickoff, which is what makes
+      // the losing-goal penalty (starting GKs/DEFs only) reachable from seeded data.
+      wasInStartingLineup: true,
     };
   });
   await playerMatchStatsRepository.replaceForMatch(match.id, stats);
   console.log(`  Replaced ${stats.length} PlayerMatchStat rows`);
+
+  // 4b. Goal timeline — what the game-state bonus reads
+  const goalEvents: MatchGoalEvent[] = SEED_GOAL_EVENTS.map((seed): MatchGoalEvent => {
+    const scorerPlayerId = playerIdByExternalId.get(seed.externalScorerPlayerId);
+    if (!scorerPlayerId) throw new Error(`No player ID for scorer "${seed.externalScorerPlayerId}"`);
+    return {
+      id: randomUUID(),
+      matchId: match.id,
+      scorerPlayerId,
+      assistPlayerId: seed.externalAssistPlayerId ? (playerIdByExternalId.get(seed.externalAssistPlayerId) ?? null) : null,
+      beneficiaryClub: seed.beneficiaryClub,
+      goalType: "NORMAL",
+      elapsedMinute: seed.elapsedMinute,
+      addedTimeMinute: seed.addedTimeMinute ?? 0,
+      sequenceIndex: seed.sequenceIndex,
+    };
+  });
+  await matchGoalEventsRepository.replaceForMatch(match.id, goalEvents);
+  console.log(`  Replaced ${goalEvents.length} MatchGoalEvent rows`);
 
   // 5. Users, league, teams
   let userA = await usersRepository.findByEmail(USER_A_EMAIL);

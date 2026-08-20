@@ -52,6 +52,9 @@ export const playerAvailabilityStatusEnum = pgEnum("player_availability_status",
   "QUESTIONABLE",
 ]);
 
+/** Mirrors GoalType in src/domain/shared.ts. */
+export const goalTypeEnum = pgEnum("goal_type", ["NORMAL", "PENALTY", "OWN_GOAL"]);
+
 export const users = pgTable(
   "users",
   {
@@ -132,7 +135,7 @@ export const providerPollState = pgTable("provider_poll_state", {
   nextLivePollDueAt: timestamp("next_live_poll_due_at"),
   /** Set monthly by fetchLeagueCurrentSeason — the API-Football year (e.g. 2026 = 2026-27 season). */
   currentSeasonYear: integer("current_season_year"),
-  /** Whether /fixtures/players stats are available for currentSeasonYear. Gates fetchFixturePlayerStats. */
+  /** Whether /fixtures/players stats are available for currentSeasonYear. Gates fetchFixturePlayerStatsAndGoalEvents. */
   coverageFixturePlayerStats: boolean("coverage_fixture_player_stats").notNull().default(false),
   /** Whether the /injuries endpoint is populated for currentSeasonYear. Gates fetchInjuries. */
   coverageInjuries: boolean("coverage_injuries").notNull().default(false),
@@ -234,6 +237,24 @@ export const playerMatchStats = pgTable("player_match_stats", {
   penaltiesConceded: integer("penalties_conceded").notNull().default(0),
   receivedYellowCard: boolean("received_yellow_card").notNull().default(false),
   receivedRedCard: boolean("received_red_card").notNull().default(false),
+  wasInStartingLineup: boolean("was_in_starting_lineup").notNull().default(false),
+});
+
+/** One row per goal in a Match — the ordered timeline PlayerMatchStat's aggregate counts cannot
+ * reconstruct. Written by importMatchData from the same fixtures/events call that already feeds
+ * own-goal attribution, and read only by calculatePlayerScores' game-state bonus. */
+export const matchGoalEvents = pgTable("match_goal_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  matchId: uuid("match_id")
+    .notNull()
+    .references(() => matches.id),
+  scorerPlayerId: uuid("scorer_player_id").references(() => players.id),
+  assistPlayerId: uuid("assist_player_id").references(() => players.id),
+  beneficiaryClub: text("beneficiary_club").notNull(),
+  goalType: goalTypeEnum("goal_type").notNull(),
+  elapsedMinute: integer("elapsed_minute").notNull(),
+  addedTimeMinute: integer("added_time_minute").notNull().default(0),
+  sequenceIndex: integer("sequence_index").notNull(),
 });
 
 /** breakdown/tiebreakerStats are stored as jsonb, matching the plain object shape of the domain type. */

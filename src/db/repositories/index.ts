@@ -3,6 +3,7 @@ export * as leaguesRepository from "./leagues";
 export * as gameweeksRepository from "./gameweeks";
 export * as matchesRepository from "./matches";
 export * as playerMatchStatsRepository from "./playerMatchStats";
+export * as matchGoalEventsRepository from "./matchGoalEvents";
 export * as playerScoresRepository from "./playerScores";
 export * as teamsRepository from "./teams";
 export * as teamScoresRepository from "./teamScores";

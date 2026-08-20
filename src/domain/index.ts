@@ -13,6 +13,8 @@ export * from "./gameweek";
 export * from "./transfer";
 export * from "./match";
 export * from "./playerMatchStat";
+export * from "./matchGoalEvent";
+export * from "./gameStateGoalBonus";
 export * from "./playerScore";
 export * from "./teamScore";
 export * from "./leagueStanding";

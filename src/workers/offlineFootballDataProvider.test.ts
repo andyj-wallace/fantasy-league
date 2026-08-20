@@ -60,7 +60,7 @@ describe("OfflineFootballDataProvider — recorded envelope replay", () => {
   });
 
   it("replays the recorded fixture's player stats, merged from the players and events endpoints", async () => {
-    const stats = await buildOfflineProvider().fetchFixturePlayerStats(manifest.recordedFixture.externalId);
+    const { playerStats: stats } = await buildOfflineProvider().fetchFixturePlayerStatsAndGoalEvents(manifest.recordedFixture.externalId);
 
     expect(stats).toHaveLength(manifest.counts.fixturePlayerStats);
     const goalsAcrossBothSquads = stats.reduce((sum, stat) => sum + stat.goalsScored + stat.ownGoalsScored, 0);

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Match, Player, PlayerMatchStat, PlayerScore } from "../domain";
-import { buildMatch, buildPlayer, buildPlayerMatchStat } from "../testing/fixtures";
+import type { Match, MatchGoalEvent, Player, PlayerMatchStat, PlayerScore } from "../domain";
+import { buildMatch, buildMatchGoalEvent, buildPlayer, buildPlayerMatchStat } from "../testing/fixtures";
 
 /**
  * Unit tests for the per-player scoring rules in fantasy_league_v1_design.txt. The repository
@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   findMatchById: vi.fn(),
   findStatsByMatchId: vi.fn(),
   findPlayersByIds: vi.fn(),
+  findGoalEventsByMatchId: vi.fn(),
   replaceForMatch: vi.fn(),
 }));
 
@@ -18,28 +19,45 @@ vi.mock("../db/repositories", () => ({
   matchesRepository: { findById: mocks.findMatchById },
   playerMatchStatsRepository: { findByMatchId: mocks.findStatsByMatchId },
   playersRepository: { findManyByIds: mocks.findPlayersByIds },
+  matchGoalEventsRepository: { findByMatchId: mocks.findGoalEventsByMatchId },
   playerScoresRepository: { replaceForMatch: mocks.replaceForMatch },
 }));
 
 import { calculatePlayerScores } from "./calculatePlayerScores";
 
-/** Runs the scorer for a single player/stat pairing and returns the one produced PlayerScore. */
-async function scoreOne(player: Player, stat: PlayerMatchStat, match: Match): Promise<PlayerScore> {
-  mocks.replaceForMatch.mockClear(); // idempotent within a test that scores several players
+/** Runs the scorer over a whole match and returns every produced PlayerScore, in stat order.
+ * The game-state rules need several players in one match (a conceding club's whole back line),
+ * which is why this exists alongside the single-player scoreOne. */
+async function scoreAll(
+  players: Player[],
+  stats: PlayerMatchStat[],
+  match: Match,
+  goalEvents: MatchGoalEvent[] = [],
+): Promise<PlayerScore[]> {
+  mocks.replaceForMatch.mockClear(); // idempotent within a test that scores several times
   mocks.findMatchById.mockResolvedValue(match);
-  mocks.findStatsByMatchId.mockResolvedValue([stat]);
-  mocks.findPlayersByIds.mockResolvedValue([player]);
+  mocks.findStatsByMatchId.mockResolvedValue(stats);
+  mocks.findPlayersByIds.mockResolvedValue(players);
+  mocks.findGoalEventsByMatchId.mockResolvedValue(goalEvents);
 
   await calculatePlayerScores(match.id);
 
   expect(mocks.replaceForMatch).toHaveBeenCalledTimes(1);
   const [, scores] = mocks.replaceForMatch.mock.calls[0]! as [string, PlayerScore[]];
+  return scores;
+}
+
+/** Runs the scorer for a single player/stat pairing and returns the one produced PlayerScore. */
+async function scoreOne(player: Player, stat: PlayerMatchStat, match: Match): Promise<PlayerScore> {
+  const scores = await scoreAll([player], [stat], match);
   expect(scores).toHaveLength(1);
   return scores[0]!;
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Every pre-existing test predates the game-state bonus and expects an empty timeline.
+  mocks.findGoalEventsByMatchId.mockResolvedValue([]);
 });
 
 describe("calculatePlayerScores — appearance", () => {
@@ -227,5 +245,220 @@ describe("calculatePlayerScores — total and edge cases", () => {
 
     const [, scores] = mocks.replaceForMatch.mock.calls[0]! as [string, PlayerScore[]];
     expect(scores).toHaveLength(0);
+  });
+});
+
+/**
+ * The game-state bonus layer (fantasy_league_v1_design.txt, "Bonus Points — Game State Goals").
+ * Match defaults are Home FC vs Away FC, so every player here sets `club` explicitly — the
+ * losing-goal penalty is scoped by club, and buildPlayer's default club is in neither.
+ */
+describe("calculatePlayerScores — game-state goal bonus", () => {
+  const HOME_CLUB = "Home FC";
+  const AWAY_CLUB = "Away FC";
+
+  /** Each timing bracket, keyed by a minute inside it, with the bonus that minute should earn. */
+  const bonusPointsByMinute = [
+    { elapsedMinute: 30, expectedBonusPoints: 5 },
+    { elapsedMinute: 78, expectedBonusPoints: 6 },
+    { elapsedMinute: 83, expectedBonusPoints: 8 },
+    { elapsedMinute: 88, expectedBonusPoints: 10 },
+    { elapsedMinute: 95, expectedBonusPoints: 13 },
+  ];
+
+  describe("winning goal", () => {
+    for (const { elapsedMinute, expectedBonusPoints } of bonusPointsByMinute) {
+      it(`gives the scorer and assister ${expectedBonusPoints} points for a winner in minute ${elapsedMinute}`, async () => {
+        const match = buildMatch({ id: "m1", finalHomeScore: 1, finalAwayScore: 0 });
+        const scorer = buildPlayer({ id: "scorer", club: HOME_CLUB, position: "FWD" });
+        const assister = buildPlayer({ id: "assister", club: HOME_CLUB, position: "MID" });
+
+        const scores = await scoreAll(
+          [scorer, assister],
+          [
+            buildPlayerMatchStat({ playerId: "scorer", matchId: "m1", goalsScored: 1 }),
+            buildPlayerMatchStat({ playerId: "assister", matchId: "m1", assists: 1 }),
+          ],
+          match,
+          [
+            buildMatchGoalEvent({
+              matchId: "m1",
+              beneficiaryClub: HOME_CLUB,
+              scorerPlayerId: "scorer",
+              assistPlayerId: "assister",
+              elapsedMinute,
+            }),
+          ],
+        );
+
+        expect(scores[0]!.breakdown.gameStateBonusPoints).toBe(expectedBonusPoints);
+        expect(scores[1]!.breakdown.gameStateBonusPoints).toBe(expectedBonusPoints);
+      });
+    }
+  });
+
+  describe("equalizing goal", () => {
+    for (const { elapsedMinute, expectedBonusPoints } of bonusPointsByMinute) {
+      it(`gives the scorer and assister ${expectedBonusPoints} points for the final equalizer in minute ${elapsedMinute}`, async () => {
+        const match = buildMatch({ id: "m1", finalHomeScore: 1, finalAwayScore: 1 });
+        const scorer = buildPlayer({ id: "scorer", club: AWAY_CLUB, position: "FWD" });
+        const assister = buildPlayer({ id: "assister", club: AWAY_CLUB, position: "MID" });
+
+        const scores = await scoreAll(
+          [scorer, assister],
+          [
+            buildPlayerMatchStat({ playerId: "scorer", matchId: "m1", goalsScored: 1 }),
+            buildPlayerMatchStat({ playerId: "assister", matchId: "m1", assists: 1 }),
+          ],
+          match,
+          [
+            buildMatchGoalEvent({ matchId: "m1", beneficiaryClub: HOME_CLUB, elapsedMinute: 10, sequenceIndex: 0 }),
+            buildMatchGoalEvent({
+              matchId: "m1",
+              beneficiaryClub: AWAY_CLUB,
+              scorerPlayerId: "scorer",
+              assistPlayerId: "assister",
+              elapsedMinute,
+              sequenceIndex: 1,
+            }),
+          ],
+        );
+
+        expect(scores[0]!.breakdown.gameStateBonusPoints).toBe(expectedBonusPoints);
+        expect(scores[1]!.breakdown.gameStateBonusPoints).toBe(expectedBonusPoints);
+      });
+    }
+  });
+
+  describe("losing goal", () => {
+    /** Home FC wins 1-0; every assertion below is about who on Away FC pays for it. */
+    async function scoreConcedingSquad(elapsedMinute: number): Promise<PlayerScore[]> {
+      const match = buildMatch({ id: "m1", finalHomeScore: 1, finalAwayScore: 0 });
+      const players = [
+        buildPlayer({ id: "conceding-gk", club: AWAY_CLUB, position: "GK" }),
+        buildPlayer({ id: "conceding-def", club: AWAY_CLUB, position: "DEF" }),
+        buildPlayer({ id: "benched-def", club: AWAY_CLUB, position: "DEF" }),
+        buildPlayer({ id: "conceding-mid", club: AWAY_CLUB, position: "MID" }),
+        buildPlayer({ id: "winning-gk", club: HOME_CLUB, position: "GK" }),
+      ];
+      const stats = [
+        buildPlayerMatchStat({ playerId: "conceding-gk", matchId: "m1" }),
+        buildPlayerMatchStat({ playerId: "conceding-def", matchId: "m1" }),
+        buildPlayerMatchStat({ playerId: "benched-def", matchId: "m1", wasInStartingLineup: false }),
+        buildPlayerMatchStat({ playerId: "conceding-mid", matchId: "m1" }),
+        buildPlayerMatchStat({ playerId: "winning-gk", matchId: "m1" }),
+      ];
+      return scoreAll(players, stats, match, [
+        buildMatchGoalEvent({ matchId: "m1", beneficiaryClub: HOME_CLUB, scorerPlayerId: "someone-else", elapsedMinute }),
+      ]);
+    }
+
+    for (const { elapsedMinute, expectedBonusPoints } of bonusPointsByMinute) {
+      it(`charges the conceding club's starting GK and DEF ${-expectedBonusPoints} for a loser in minute ${elapsedMinute}`, async () => {
+        const scores = await scoreConcedingSquad(elapsedMinute);
+
+        expect(scores[0]!.breakdown.gameStateBonusPoints).toBe(-expectedBonusPoints);
+        expect(scores[1]!.breakdown.gameStateBonusPoints).toBe(-expectedBonusPoints);
+      });
+    }
+
+    it("does not charge a benched GK/DEF, an outfield MID, or the winning club's own keeper", async () => {
+      const scores = await scoreConcedingSquad(30);
+
+      expect(scores[2]!.breakdown.gameStateBonusPoints).toBe(0); // benched DEF
+      expect(scores[3]!.breakdown.gameStateBonusPoints).toBe(0); // conceding MID
+      expect(scores[4]!.breakdown.gameStateBonusPoints).toBe(0); // winning club's GK
+    });
+  });
+
+  describe("own goals", () => {
+    it("charges a decisive own-goal scorer and rewards nobody, not even the credited assister", async () => {
+      const match = buildMatch({ id: "m1", finalHomeScore: 1, finalAwayScore: 0 });
+      const ownGoalScorer = buildPlayer({ id: "og-scorer", club: AWAY_CLUB, position: "MID" });
+      const wouldBeAssister = buildPlayer({ id: "assister", club: HOME_CLUB, position: "MID" });
+
+      const scores = await scoreAll(
+        [ownGoalScorer, wouldBeAssister],
+        [
+          buildPlayerMatchStat({ playerId: "og-scorer", matchId: "m1", ownGoalsScored: 1 }),
+          buildPlayerMatchStat({ playerId: "assister", matchId: "m1" }),
+        ],
+        match,
+        [
+          buildMatchGoalEvent({
+            matchId: "m1",
+            beneficiaryClub: HOME_CLUB,
+            goalType: "OWN_GOAL",
+            scorerPlayerId: "og-scorer",
+            assistPlayerId: "assister",
+            elapsedMinute: 30,
+          }),
+        ],
+      );
+
+      expect(scores[0]!.breakdown.gameStateBonusPoints).toBe(-5);
+      expect(scores[1]!.breakdown.gameStateBonusPoints).toBe(0);
+    });
+
+    it("neither rewards nor penalizes an equalizing own goal, since a draw has no losing side", async () => {
+      const match = buildMatch({ id: "m1", finalHomeScore: 1, finalAwayScore: 1 });
+      const ownGoalScorer = buildPlayer({ id: "og-scorer", club: AWAY_CLUB, position: "DEF" });
+
+      const scores = await scoreAll(
+        [ownGoalScorer],
+        [buildPlayerMatchStat({ playerId: "og-scorer", matchId: "m1", ownGoalsScored: 1 })],
+        match,
+        [
+          buildMatchGoalEvent({ matchId: "m1", beneficiaryClub: AWAY_CLUB, elapsedMinute: 10, sequenceIndex: 0 }),
+          buildMatchGoalEvent({
+            matchId: "m1",
+            beneficiaryClub: HOME_CLUB,
+            goalType: "OWN_GOAL",
+            scorerPlayerId: "og-scorer",
+            elapsedMinute: 88,
+            sequenceIndex: 1,
+          }),
+        ],
+      );
+
+      expect(scores[0]!.breakdown.gameStateBonusPoints).toBe(0);
+    });
+
+    it("charges a starting DEF who scored the decisive own goal exactly once, not twice", async () => {
+      const match = buildMatch({ id: "m1", finalHomeScore: 1, finalAwayScore: 0 });
+      const ownGoalDefender = buildPlayer({ id: "og-def", club: AWAY_CLUB, position: "DEF" });
+
+      const scores = await scoreAll(
+        [ownGoalDefender],
+        [buildPlayerMatchStat({ playerId: "og-def", matchId: "m1", ownGoalsScored: 1 })],
+        match,
+        [
+          buildMatchGoalEvent({
+            matchId: "m1",
+            beneficiaryClub: HOME_CLUB,
+            goalType: "OWN_GOAL",
+            scorerPlayerId: "og-def",
+            elapsedMinute: 88,
+          }),
+        ],
+      );
+
+      expect(scores[0]!.breakdown.gameStateBonusPoints).toBe(-10);
+    });
+  });
+
+  it("adds the bonus into totalPoints on top of the base event points", async () => {
+    const match = buildMatch({ id: "m1", finalHomeScore: 1, finalAwayScore: 0 });
+    const scorer = buildPlayer({ id: "scorer", club: HOME_CLUB, position: "FWD" });
+
+    const scores = await scoreAll(
+      [scorer],
+      [buildPlayerMatchStat({ playerId: "scorer", matchId: "m1", goalsScored: 1 })],
+      match,
+      [buildMatchGoalEvent({ matchId: "m1", beneficiaryClub: HOME_CLUB, scorerPlayerId: "scorer", elapsedMinute: 30 })],
+    );
+
+    // 1 appearance + 4 for a FWD goal + 5 game-state bonus
+    expect(scores[0]!.totalPoints).toBe(10);
   });
 });

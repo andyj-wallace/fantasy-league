@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   upsertMatch: vi.fn(),
   findPlayerByExternalId: vi.fn(),
   insertManyPlayerMatchStats: vi.fn(),
+  insertManyMatchGoalEvents: vi.fn(),
   scheduleConfirmationPass: vi.fn(),
 }));
 
@@ -24,6 +25,7 @@ vi.mock("../db/repositories", () => ({
   matchesRepository: { findByExternalId: mocks.findMatchByExternalId, upsert: mocks.upsertMatch },
   playersRepository: { findByExternalId: mocks.findPlayerByExternalId },
   playerMatchStatsRepository: { insertMany: mocks.insertManyPlayerMatchStats },
+  matchGoalEventsRepository: { insertMany: mocks.insertManyMatchGoalEvents },
   pendingConfirmationPassesRepository: { schedule: mocks.scheduleConfirmationPass },
 }));
 

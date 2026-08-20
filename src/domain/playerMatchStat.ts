@@ -15,4 +15,7 @@ export interface PlayerMatchStat {
   penaltiesConceded: number;
   receivedYellowCard: boolean;
   receivedRedCard: boolean;
+  /** Whether the player was in their club's starting XI (provider: `games.substitute === false`).
+   * Scopes the losing-goal penalty, which applies to starting GKs/DEFs only. */
+  wasInStartingLineup: boolean;
 }

@@ -3,6 +3,7 @@ import type {
   Gameweek,
   League,
   Match,
+  MatchGoalEvent,
   Player,
   PlayerMatchStat,
   PlayerPosition,
@@ -63,6 +64,24 @@ export function buildPlayerMatchStat(
     penaltiesConceded: 0,
     receivedYellowCard: false,
     receivedRedCard: false,
+    wasInStartingLineup: true,
+    ...overrides,
+  };
+}
+
+/** One goal on a Match's timeline. Defaults to a first-half normal goal, so a test spells out
+ * only the minute and beneficiary it is actually reasoning about. */
+export function buildMatchGoalEvent(
+  overrides: Partial<MatchGoalEvent> & { matchId: string; beneficiaryClub: string },
+): MatchGoalEvent {
+  return {
+    id: overrides.id ?? randomUUID(),
+    scorerPlayerId: null,
+    assistPlayerId: null,
+    goalType: "NORMAL",
+    elapsedMinute: 30,
+    addedTimeMinute: 0,
+    sequenceIndex: 0,
     ...overrides,
   };
 }

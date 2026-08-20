@@ -2,6 +2,8 @@ import type { PlayerPosition, PlayerProfile, PlayerSeasonStatistics } from "../d
 import type {
   FootballDataProvider,
   ProviderFixture,
+  ProviderFixtureDetail,
+  ProviderGoalEvent,
   ProviderInjuryEntry,
   ProviderPlayerMatchStat,
   ProviderRosterEntry,
@@ -39,8 +41,8 @@ const PER_MINUTE_WINDOW_MS = 60_000;
  * the exhausted counter, not when the provider's window actually started. */
 const PER_MINUTE_WINDOW_RESET_BUFFER_MS = 2_000;
 /** Dispatch is paused while the observed per-minute remaining is at or below this. One (not
- * zero) so the concurrent pair in fetchFixturePlayerStats can't race past an almost-spent
- * window between snapshot reads. */
+ * zero) so the concurrent pair in fetchFixturePlayerStatsAndGoalEvents can't race past an
+ * almost-spent window between snapshot reads. */
 const PER_MINUTE_REMAINING_RESERVE = 1;
 /** Upper bound on the single 429 retry wait — a full per-minute window plus buffer. */
 const MAX_RATE_LIMITED_RETRY_WAIT_MS = 65_000;
@@ -116,17 +118,21 @@ interface RawFixture {
 interface RawFixtureEvent {
   type: string;
   detail: string;
+  time: { elapsed: number | null; extra: number | null };
+  team: { name: string };
   player: { id: number | null; name: string | null };
+  assist: { id: number | null; name: string | null };
 }
 
 interface RawFixturePlayerStatistics {
-  games: { minutes: number | null };
+  games: { minutes: number | null; substitute: boolean | null };
   goals: { total: number | null; assists: number | null; saves: number | null };
   cards: { yellow: number | null; red: number | null };
   penalty: { won: number | null; commited?: number | null; committed?: number | null };
 }
 
 interface RawFixturePlayersBlock {
+  team: { name: string };
   players: { player: { id: number }; statistics: RawFixturePlayerStatistics[] }[];
 }
 
@@ -302,7 +308,7 @@ export class ApiFootballProvider implements FootballDataProvider {
     const snapshot = this.latestRateLimitSnapshot;
     if (snapshot?.perMinuteRequestsRemaining != null) {
       // Optimistic pre-decrement so concurrent callers (the Promise.all pair in
-      // fetchFixturePlayerStats) see this dispatch before its response headers land.
+      // fetchFixturePlayerStatsAndGoalEvents) see this dispatch before its response headers land.
       snapshot.perMinuteRequestsRemaining = Math.max(0, snapshot.perMinuteRequestsRemaining - 1);
     }
     const res = await fetch(url, { headers: { "x-apisports-key": this.apiKey } });
@@ -384,10 +390,12 @@ export class ApiFootballProvider implements FootballDataProvider {
     return response.map(toProviderFixture);
   }
 
-  async fetchFixturePlayerStats(externalFixtureId: string): Promise<ProviderPlayerMatchStat[]> {
+  async fetchFixturePlayerStatsAndGoalEvents(externalFixtureId: string): Promise<ProviderFixtureDetail> {
     if (!this.coverageFixturePlayerStats) {
-      console.log(`[provider] fetchFixturePlayerStats skipped — statistics_players not covered for season ${this.seasonYear}`);
-      return [];
+      console.log(
+        `[provider] fetchFixturePlayerStatsAndGoalEvents skipped — statistics_players not covered for season ${this.seasonYear}`,
+      );
+      return { playerStats: [], goalEvents: [] };
     }
     const [playersResult, eventsResult] = await Promise.all([
       this.request<RawFixturePlayersBlock[]>("fixtures/players", { fixture: externalFixtureId }),
@@ -402,14 +410,36 @@ export class ApiFootballProvider implements FootballDataProvider {
       }
     }
 
-    const stats: ProviderPlayerMatchStat[] = [];
+    // The provider credits an own goal to the scorer's own club; the goal counts for the other
+    // one. Normalizing here keeps every downstream consumer free of the special case.
+    const clubNamesInFixture = playersResult.response.map((teamBlock) => teamBlock.team.name);
+    const goalEvents: ProviderGoalEvent[] = [];
+    for (const [eventIndex, event] of eventsResult.response.entries()) {
+      // "Missed Penalty" arrives as type "Goal" in this feed, but it is neither a PENALTY goal nor
+      // a change to the scoreline — including it would corrupt the running scoreline walk.
+      if (event.type !== "Goal" || event.detail === "Missed Penalty") continue;
+      const isOwnGoal = event.detail === "Own Goal";
+      const opposingClubName = clubNamesInFixture.find((clubName) => clubName !== event.team.name);
+      const beneficiaryClub = isOwnGoal ? (opposingClubName ?? event.team.name) : event.team.name;
+      goalEvents.push({
+        externalScorerPlayerId: event.player.id == null ? null : String(event.player.id),
+        externalAssistPlayerId: isOwnGoal || event.assist.id == null ? null : String(event.assist.id),
+        beneficiaryClub,
+        goalType: isOwnGoal ? "OWN_GOAL" : event.detail === "Penalty" ? "PENALTY" : "NORMAL",
+        elapsedMinute: event.time.elapsed ?? 0,
+        addedTimeMinute: event.time.extra ?? 0,
+        sequenceIndex: eventIndex,
+      });
+    }
+
+    const playerStats: ProviderPlayerMatchStat[] = [];
     for (const teamBlock of playersResult.response) {
       for (const playerBlock of teamBlock.players) {
         const statistics = playerBlock.statistics[0];
         if (!statistics) continue;
 
         const externalPlayerId = String(playerBlock.player.id);
-        stats.push({
+        playerStats.push({
           externalPlayerId,
           minutesPlayed: statistics.games.minutes ?? 0,
           goalsScored: statistics.goals.total ?? 0,
@@ -422,10 +452,12 @@ export class ApiFootballProvider implements FootballDataProvider {
           penaltiesConceded: statistics.penalty.commited ?? statistics.penalty.committed ?? 0,
           receivedYellowCard: (statistics.cards.yellow ?? 0) > 0,
           receivedRedCard: (statistics.cards.red ?? 0) > 0,
+          // Strictly `=== false`: an absent or null flag is unknown, not "started".
+          wasInStartingLineup: statistics.games.substitute === false,
         });
       }
     }
-    return stats;
+    return { playerStats, goalEvents };
   }
 
   /** One call to enumerate the league's 20 clubs, then one /players/squads call per club — no

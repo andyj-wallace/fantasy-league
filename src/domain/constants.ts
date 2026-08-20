@@ -39,6 +39,23 @@ export const DEFAULT_INITIAL_PRICE_IN_MILLIONS_BY_POSITION: Record<PlayerPositio
  * (initialPlayerPricing.ts) so the two point tables can't drift apart. */
 export const GOAL_POINTS_BY_POSITION: Record<PlayerPosition, number> = { GK: 10, DEF: 8, MID: 6, FWD: 4 };
 
+/** Flat base bonus (or, negated, penalty) for a decisive goal, before the timing multiplier.
+ * Deliberately below base goal points (+4 to +10) so the bonus stays a bonus. */
+export const GAME_STATE_GOAL_BASE_BONUS_POINTS = 5;
+
+/** Timing multipliers applied to the game-state bonus/penalty (never to base event points),
+ * keyed by the highest effective minute in each bracket — see fantasy_league_v1_design.txt.
+ * Anything past the last bracket uses LATEST_GOAL_TIMING_MULTIPLIER. */
+export const GOAL_TIMING_MULTIPLIER_BRACKETS: readonly { maximumEffectiveMinute: number; multiplier: number }[] = [
+  { maximumEffectiveMinute: 75, multiplier: 1.0 },
+  { maximumEffectiveMinute: 80, multiplier: 1.2 },
+  { maximumEffectiveMinute: 85, multiplier: 1.6 },
+  { maximumEffectiveMinute: 90, multiplier: 2.0 },
+];
+
+/** Multiplier for any goal past 90 minutes — all added time and extra time. */
+export const LATEST_GOAL_TIMING_MULTIPLIER = 2.5;
+
 /** How many of a position's placeholder price each approximate point of previous-season average
  * output adds — see initialPlayerPricing.ts. */
 export const PRICE_PER_POINT_IN_MILLIONS = 1.0;

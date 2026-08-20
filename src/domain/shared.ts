@@ -34,3 +34,10 @@ export type GameweekStatus = "UPCOMING" | "LOCKED" | "IN_PROGRESS" | "COMPLETED"
  * Architecture.txt for why this collapses the provider's injury/suspension data into 3 states.
  */
 export type PlayerAvailabilityStatus = "AVAILABLE" | "OUT" | "QUESTIONABLE";
+
+/**
+ * How a goal was scored, as reported by the provider's fixture event feed. Own goals are
+ * called out because they score and penalize differently from a normal goal (see
+ * "Bonus Points — Game State Goals" in fantasy_league_v1_design.txt).
+ */
+export type GoalType = "NORMAL" | "PENALTY" | "OWN_GOAL";

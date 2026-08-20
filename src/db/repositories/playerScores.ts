@@ -3,13 +3,21 @@ import { db } from "../client";
 import { gameweeks, playerScores } from "../schema";
 import type { PlayerScore, PlayerScoreBreakdown } from "../../domain";
 
+/** PlayerScore rows written before the game-state bonus shipped have no gameStateBonusPoints key
+ * in their stored jsonb. Anything summing the breakdown would reduce to NaN on those rows, so
+ * default it here rather than at each call site. */
+function toPlayerScoreBreakdown(storedBreakdown: unknown): PlayerScoreBreakdown {
+  const breakdown = storedBreakdown as PlayerScoreBreakdown;
+  return { ...breakdown, gameStateBonusPoints: breakdown.gameStateBonusPoints ?? 0 };
+}
+
 function toPlayerScore(row: typeof playerScores.$inferSelect): PlayerScore {
   return {
     id: row.id,
     playerId: row.playerId,
     matchId: row.matchId,
     gameweekId: row.gameweekId,
-    breakdown: row.breakdown as PlayerScoreBreakdown,
+    breakdown: toPlayerScoreBreakdown(row.breakdown),
     totalPoints: row.totalPoints,
     calculatedAt: row.calculatedAt,
   };

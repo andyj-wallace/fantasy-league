@@ -298,17 +298,27 @@ Milestone 5 — Bonus Points: Game State Goals.
             three scenarios and all positions
         [x] "Equalizing goal" definition: ✅ only the final equalizer in a draw — mid-match
             ties subsequently broken do not qualify
-        [x] Losing-goal penalty scope: ✅ starters only (Team.startingLineup), not all
-            GK/DEF on pitch at time of concession
+        [x] Losing-goal penalty scope: ✅ starters only — the CONCEDING CLUB's real starting
+            XI, not the fantasy Team's starters, and not all GK/DEF on pitch at time of
+            concession. (Corrected 2026-08-17: earlier notes here and in remaining-gaps-todo
+            said "Team.startingLineup", but no such field exists, and a PlayerScore is per
+            player per match so it cannot depend on which manager owns the player. Sourced
+            from the provider's games.substitute flag.)
         [x] Own-goal as decisive goal: ✅ scorer takes the -5 penalty × timing multiplier;
             no assister; no positive bonus (own goals cannot "win" for the scoring side)
 
-    Implementation tasks:
-        [ ] Extend PlayerMatchStat / match event tracking to record goal_minute and
-            compute goal_type (winning / equalizing / losing) post-match from score progression
-        [ ] Add applyGameStateBonus step to calculatePlayerScores, after base event scoring
-        [ ] Add timing multiplier helper (goalMinuteToTimingMultiplier) to domain/
-        [ ] Update seedMatchStats.ts to cover game-state bonus scenarios and assert expected
-            values for each time bracket
-        [ ] Add vitest coverage: all three scenarios × all five time brackets = 15 test cases
-            minimum; plus own-goal edge cases
+    Implementation tasks — COMPLETE 2026-08-17. Full write-up in
+    docs/remaining-gaps-todo.md item 10; plan in docs/game-state-goal-bonus.md and
+    docs/game-state-goal-bonus-nano-plan.md.
+        [x] Goal-minute / goal-type tracking — landed as a new MatchGoalEvent entity
+            (match_goal_events table) rather than extra PlayerMatchStat columns: the rule
+            needs an ordered timeline, which per-player aggregate counts cannot reconstruct.
+            goal_type is the provider's NORMAL/PENALTY/OWN_GOAL; winning/equalizing/losing is
+            derived post-match by identifyDecisiveGoals walking the running scoreline.
+        [x] applyGameStateBonus step in calculatePlayerScores, after base event scoring
+        [x] goalMinuteToTimingMultiplier in domain/gameStateGoalBonus.ts
+        [x] seedMatchStats.ts carries a goal timeline; its 88th-minute decisive goal exercises
+            the 2.0x bracket, with hand-computed player and team totals asserted
+        [x] vitest coverage: 15 cases in domain/gameStateGoalBonus.test.ts (brackets,
+            boundaries, decisive-goal identification) + 20 in calculatePlayerScores.test.ts
+            (3 scenarios × 5 brackets, own-goal edges, no-double-dip, negative controls)

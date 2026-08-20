@@ -67,7 +67,7 @@ async function main(): Promise<void> {
       `${fixtureToRecord.finalHomeScore}-${fixtureToRecord.finalAwayScore} ${fixtureToRecord.awayClub}`,
   );
 
-  const playerStats = await provider.fetchFixturePlayerStats(fixtureToRecord.externalId);
+  const { playerStats } = await provider.fetchFixturePlayerStatsAndGoalEvents(fixtureToRecord.externalId);
   const injuries = await provider.fetchInjuries();
 
   await writeFile(

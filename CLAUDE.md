@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-The project is scaffolded and Milestones 0–2 are complete. Stack: **Next.js + TypeScript** frontend (`src/app`), a **Node API** (`src/api`, handler-per-route, deployable to Lambda and served locally by `src/api/localServer.ts`), background **workers** (`src/workers`), and **PostgreSQL via Drizzle ORM** (`src/db`). Business logic lives in `src/domain`. The plain-text docs at the repo root remain the authoritative ruleset (see below).
+The project is scaffolded; Milestones 0–2 and Milestone 5 (game-state goal bonus, 2026-08-17) are complete. Stack: **Next.js + TypeScript** frontend (`src/app`), a **Node API** (`src/api`, handler-per-route, deployable to Lambda and served locally by `src/api/localServer.ts`), background **workers** (`src/workers`), and **PostgreSQL via Drizzle ORM** (`src/db`). Business logic lives in `src/domain`. The plain-text docs at the repo root remain the authoritative ruleset (see below).
 
 Common commands (from `package.json`):
 - `npm run test` / `npm run test:watch` — vitest unit tests (pure; mock the `db/repositories` barrel, no Postgres needed). Config in `vitest.config.ts`; tests are co-located as `src/**/*.test.ts`. Shared fixture builders: `src/testing/fixtures.ts`.
@@ -14,7 +14,7 @@ Common commands (from `package.json`):
 - `npm run deploy:*` — AWS deployment scripts (`scripts/`): `deploy:preflight`, `deploy:infra` (CDK) / `deploy:infra:cli` (plain CloudFormation), `deploy:migrate`, `deploy:frontend`, `deploy:smoke`, `deploy:all`, `db:tunnel`. `npm run destroy` prints the ordered teardown plan (only acts with `-- --execute`; never run it without Drew's explicit go-ahead). **Prod is currently torn down** (was live 2026-07-11–2026-07-13; see `docs/deployment/README.md` for status) — read `docs/deployment/DEPLOYMENT_RUNBOOK.md` before any deploy/ops work.
 - Env lives in `.env` (gitignored; template in `.env.example`). The API needs `AUTH_TOKEN_SECRET` for the default signed-token auth provider.
 
-Test coverage is currently focused on the scoring engine (`calculatePlayerScores`, `calculateTeamScores`, `updateStandings`), the auth layer, and the read handlers that feed the season-awareness UI (`getCurrentGameweek`, `getLeagueStandings`, `getAvailableTransfers`) — the highest-risk areas. There is still no lint tooling.
+Test coverage is currently focused on the scoring engine (`calculatePlayerScores`, `calculateTeamScores`, `updateStandings`, `gameStateGoalBonus`), the auth layer, and the read handlers that feed the season-awareness UI (`getCurrentGameweek`, `getLeagueStandings`, `getAvailableTransfers`) — the highest-risk areas. 222 tests across 28 files as of 2026-08-17. There is still no lint tooling.
 
 The frontend is no longer a plain-HTML skeleton: it has a bespoke design system (`src/app/globals.css` — no Tailwind), a global `AppHeader`, and a season-awareness layer (gameweek banner, fixtures on the league page, lock context, standings gameweek labels) fed by `GET /gameweeks/current`. The Strategy-2 smoke-test UX gaps are resolved — see `docs/testing/SMOKE_TEST_FINDINGS.md` (Resolution) and `docs/remaining-gaps-todo.md` item 11. The static export's flat-`.html` URLs are handled in production by the deployed CloudFront url-rewrite Function (`infra/lib/urlRewriteFunction.js`). Remaining work is tracked in `docs/remaining-gaps-todo.md` — deployment/ops hardening is item 13.
 
@@ -59,7 +59,9 @@ Other worker-triggering events: `GAMEWEEK_COMPLETED`, `PRICE_UPDATE_DAY`, `MATCH
 
 ## Data model (from `Fantasy League MVP.txt`)
 
-`League`, `User`, `Team` (one per user per league — holds the 16-man roster, formation, and captain/vice-captain directly; there is intentionally no separate `Squad` entity), `Player`, `Transfer`, `Gameweek`, `Match` (real-world fixture data), `PlayerMatchStat` (raw imported per-player stats), `PlayerScore`, `TeamScore`, `LeagueStanding` (the three precomputed tables described above).
+`League`, `User`, `Team` (one per user per league — holds the 16-man roster, formation, and captain/vice-captain directly; there is intentionally no separate `Squad` entity), `Player`, `Transfer`, `Gameweek`, `Match` (real-world fixture data), `PlayerMatchStat` (raw imported per-player stats), `MatchGoalEvent` (raw imported per-goal timeline), `PlayerScore`, `TeamScore`, `LeagueStanding` (the three precomputed tables described above).
+
+`MatchGoalEvent` (added 2026-08-17) is the one entity not in the original MVP list. It exists because `PlayerMatchStat`'s aggregate counts carry no ordering, so they cannot answer "which goal decided this match" — the question the game-state goal bonus is built on. It sits in the same raw-import tier as `PlayerMatchStat` and costs no extra provider quota: `importMatchData` was already making the `fixtures/events` call for own-goal attribution and discarding the rest of the response.
 
 ## V1 scope decisions worth knowing before writing code
 
@@ -70,3 +72,5 @@ These are deliberate simplifications already settled — don't "fix" them withou
 - **No clean sheet bonus for MID or FWD**, only GK/DEF.
 - Postponed-match free transfers **stack** with the normal 2-per-gameweek allowance, but both are bounded by the same hard cap of 8 banked transfers.
 - League join cutoff (Gameweek 25) is **system-wide**, not per-league.
+- **Game-state goal bonus** (`src/domain/gameStateGoalBonus.ts`): the losing-goal penalty is scoped to the **conceding club's real starting XI** (`PlayerMatchStat.wasInStartingLineup`, from the provider's `games.substitute` flag) — *not* the fantasy `Team`'s starters. A `PlayerScore` is one row per player per match and cannot depend on which manager owns the player. Older notes saying `Team.startingLineup` were wrong; no such field exists.
+- Three game-state edges settled 2026-08-17, all with tests pinning them: a **draw has no losing goal** (so an equalizing own goal earns neither bonus nor penalty); recipients are a **union, not a sum** (a starting DEF who scored the decisive own goal is charged once); and bonuses **round by magnitude then take the sign** — ordinary rounding of a `.5` goes toward positive infinity, which would pay a 90+ minute winner +13 while charging the loser only -12. Values are ±5, 6, 8, 10, 13.
