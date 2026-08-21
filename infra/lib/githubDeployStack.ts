@@ -35,6 +35,9 @@ export class GitHubDeployStack extends Stack {
 
     // Deploy only ever triggers from the `release` branch (see .github/workflows/deploy.yml
     // and DEPLOYMENT_RUNBOOK.md's release-process section) — main only runs CI, never deploys.
+    // The deploy job sets `environment: production`, which changes the OIDC token's `sub`
+    // claim to the `repo:OWNER/REPO:environment:NAME` form instead of the branch-ref form —
+    // trust on the environment, not the ref, or every AssumeRoleWithWebIdentity call 403s.
     const prodDeployRole = new iam.Role(this, "ProdDeployRole", {
       roleName: "fantasy-league-prod-deploy-role", // matches DEPLOYMENT_PLAN.md's naming table
       description: "Assumed by GitHub Actions (OIDC) to deploy fantasy-league-prod from the release branch",
@@ -42,9 +45,7 @@ export class GitHubDeployStack extends Stack {
       assumedBy: new iam.OpenIdConnectPrincipal(githubOidcProvider, {
         StringEquals: {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-        },
-        StringLike: {
-          "token.actions.githubusercontent.com:sub": `repo:${GITHUB_REPO}:ref:refs/heads/release`,
+          "token.actions.githubusercontent.com:sub": `repo:${GITHUB_REPO}:environment:production`,
         },
       }),
     });
