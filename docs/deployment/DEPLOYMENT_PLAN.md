@@ -335,9 +335,9 @@ Two workflows (or one gated pipeline):
 3. `cdk deploy` — creates VPC, NAT instance, RDS, Lambdas, HTTP API, CloudFront.
 4. Invoke the migration Lambda → schema created on RDS.
 5. Run the roster hydration path as needed (`hydrate:roster`) — or the existing seed —
-   to populate players. The first real import against a database still holding the mock seed
-   hides all 20 mock players, which trips the sweep anomaly brake, so that one run needs
-   `-- --allow-large-sweep` and a human watching it. Before the season's first gameweek lock,
+   to populate players. Against an empty database (which is prod's state as of 2026-08-20) the
+   sweep has nothing to hide and no flag is needed; `-- --allow-large-sweep` is only required if
+   the table already holds a seed the import will replace wholesale. Before the season's first gameweek lock,
    follow with `hydrate:pricing` (preview first, then `-- --yes`) to replace the flat
    placeholder prices with previous-season-derived ones — see
    `docs/new-player-pricing.md`.
