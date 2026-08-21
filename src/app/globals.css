@@ -1,3 +1,18 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Fantasy League — matchday programme
+ *
+ * The direction is the printed club programme and the team sheet pinned up
+ * before kickoff: ink on chalk, typed and tabular, colour blocked rather than
+ * ruled like a newspaper. Three type roles do the work — Archivo carried wide
+ * and heavy for anything that behaves like a shirt number or a headline, IBM
+ * Plex Sans for prose, IBM Plex Mono for every figure a manager compares
+ * against another figure.
+ *
+ * Boldness is spent in one place: the team sheet (.lineup-list, .squad-list),
+ * where each player takes a printed sheet number and the captain takes the
+ * armband. Everything around it stays quiet.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
 *, *::before, *::after {
   box-sizing: border-box;
 }
@@ -9,45 +24,95 @@
    * letting the browser's dark UA styling clash with this light design. Flip here when dark ships. */
   color-scheme: light;
 
-  --color-bg: #f7f8fc;
+  /* ── Palette ───────────────────────────────────────────────
+   * Ink and chalk are the programme's two inks. Pitch is the block colour that
+   * carries the chrome. Yellow is the one loud thing a manager can press.
+   * Armband is reserved for captaincy and nothing else. */
+  --color-ink: #10201a;              /* programme ink — near-black, green cast */
+  --color-ink-soft: #3d4c45;         /* secondary prose */
+  --color-chalk: #f0f2ec;            /* page ground — line-marking white, cool */
+  --color-pitch: #0b3d2e;            /* deep pitch green — chrome blocks */
+  --color-pitch-bright: #14523e;     /* pitch, one step up for hover */
+  --color-yellow: #ffd400;           /* the primary action */
+  --color-yellow-deep: #e8c000;
+  --color-armband: #ff3d7f;          /* captain marks only — fills, never small text */
+  --color-armband-ink: #c4165a;      /* the armband at text contrast */
+
+  /* Semantic aliases — every rule below reads through these, so a future
+   * re-skin only has to move the palette above. */
+  --color-bg: var(--color-chalk);
   --color-surface: #ffffff;
-  --color-border: #e2e8f0;
-  --color-border-focus: #93c5fd;
-  --color-primary: #3b82f6;
-  --color-primary-hover: #2563eb;
-  --color-primary-text: #ffffff;
-  --color-secondary-bg: #f1f5f9;
-  --color-secondary-bg-hover: #e2e8f0;
-  --color-secondary-text: #475569;
-  --color-danger: #ef4444;
-  --color-danger-hover: #dc2626;
-  --color-text: #1e293b;
-  --color-text-muted: #64748b;
-  --color-success-bg: #f0fdf4;
-  --color-success-border: #bbf7d0;
-  --color-success-text: #15803d;
-  --color-error-bg: #fef2f2;
-  --color-error-border: #fecaca;
-  --color-error-text: #991b1b;
-  --color-warning-bg: #fffbeb;
-  --color-warning-border: #fde68a;
-  --color-warning-text: #92400e;
-  --color-info-bg: #eff6ff;
-  --color-info-border: #bfdbfe;
-  --color-info-text: #1d4ed8;
+  --color-surface-sunken: #e8ebe4;
+  --color-border: #d5dad0;
+  --color-border-strong: #b3bcb2;
+  --color-border-focus: var(--color-ink);
+  --color-primary: var(--color-yellow);
+  --color-primary-hover: var(--color-yellow-deep);
+  --color-primary-text: var(--color-ink);
+  --color-secondary-bg: #e8ebe4;
+  --color-secondary-text: #3d4c45;
+  --color-danger: #b3241c;
+  --color-danger-hover: #8f1c15;
+  --color-text: var(--color-ink);
+  --color-text-muted: #5a6a62;
+  --color-success-bg: #e4f0e8;
+  --color-success-border: #a9cbb6;
+  --color-success-text: #1a6b41;
+  --color-error-bg: #fbeae8;
+  --color-error-border: #edb9b4;
+  --color-error-text: #96201a;
+  --color-warning-bg: #fdf2d8;
+  --color-warning-border: #e6cd85;
+  --color-warning-text: #7a5600;
+  --color-info-bg: #e3ebe6;
+  --color-info-border: #b2c4b9;
+  --color-info-text: var(--color-pitch);
 
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-pill: 999px;
+  /* ── Type ──────────────────────────────────────────────────
+   * The three faces are loaded and self-hosted by next/font in layout.tsx. */
+  --font-display-stack: var(--font-display), "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-body-stack: var(--font-body), "IBM Plex Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-data-stack: var(--font-data), "IBM Plex Mono", "SF Mono", ui-monospace, monospace;
 
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  /* Radii stay crisp. Not zero — that reads as a newspaper, which this is not —
+   * but nothing here is a soft rounded card any more. */
+  --radius-sm: 3px;
+  --radius-md: 5px;
+  --radius-lg: 6px;
+
+  /* Blocks sit on the page by their own colour and a hairline, not by floating
+   * above it. The one real shadow left is on overlays, which genuinely float. */
+  --shadow-lifted: 0 12px 32px rgba(16, 32, 26, 0.22);
+}
+
+/* Anything that behaves like a shirt number, a scoreline, or a headline. The
+ * width axis is what gives it jersey-back weight — a condensed cut here would
+ * turn the whole design into the broadsheet it is trying not to be. */
+.u-display,
+h1, h2, h3,
+.landing-title,
+.empty-state-title,
+.overlay-title,
+.app-header-brand {
+  font-family: var(--font-display-stack);
+  font-variation-settings: "wdth" 108;
+}
+
+/* Every figure a manager reads against another figure. */
+.u-data,
+.stat-tile-value,
+.invite-code,
+.fixture-score,
+.budget-chip,
+.gameweek-banner-deadline {
+  font-family: var(--font-data-stack);
+  font-variant-numeric: tabular-nums;
 }
 
 body {
   background: var(--color-bg);
   color: var(--color-text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  font-family: var(--font-body-stack);
   font-size: 15px;
   line-height: 1.6;
   margin: 0;
@@ -55,227 +120,42 @@ body {
 }
 
 main {
-  max-width: 920px;
+  max-width: 1040px;
   margin: 0 auto;
   padding: 2rem 1.25rem 5rem;
 }
 
-/* ── Logged-out landing page ──────────────────────────────── */
-
-.landing-hero {
-  padding: 2.75rem 1.25rem 2.25rem;
-  background: linear-gradient(180deg, var(--color-info-bg), var(--color-surface));
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-card);
-  margin-bottom: 1.25rem;
-}
-
-.landing-eyebrow {
-  display: inline-block;
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--color-info-text);
-  background: var(--color-surface);
-  border: 1px solid var(--color-info-border);
-  padding: 0.2rem 0.75rem;
-  border-radius: var(--radius-pill);
-  margin-bottom: 1rem;
-}
-
-.landing-title {
-  font-size: clamp(1.8rem, 6vw, 2.4rem);
-  line-height: 1.12;
-  letter-spacing: -0.03em;
-  max-width: 20ch;
-  margin: 0 0 0.75rem;
-}
-
-.landing-lede {
-  font-size: 1.02rem;
-  color: var(--color-text-muted);
-  max-width: 52ch;
-  margin: 0 0 1.5rem;
-}
-
-.landing-cta {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.5rem;
-}
-
-.btn-hero {
-  display: inline-block;
-  background: var(--color-primary);
-  color: var(--color-primary-text);
-  font-weight: 600;
-  font-size: 1rem;
-  padding: 0.7rem 1.6rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-primary);
-  transition: background 0.12s;
-}
-
-.btn-hero:hover {
-  background: var(--color-primary-hover);
-  text-decoration: none;
-}
-
-.landing-cta-note {
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-}
-
-.feature-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 0.85rem;
-  margin-bottom: 1.25rem;
-}
-
-.feature-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 1.15rem 1.25rem;
-  box-shadow: var(--shadow-card);
-}
-
-.feature-title {
-  font-size: 1rem;
-  font-weight: 700;
-  text-transform: none;
-  letter-spacing: -0.01em;
-  color: var(--color-text);
-  margin: 0 0 0.35rem;
-}
-
-.landing-steps-section {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 1.5rem;
-  box-shadow: var(--shadow-card);
-}
-
-.landing-steps-heading {
-  text-transform: none;
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: var(--color-text);
-  letter-spacing: -0.01em;
-  margin: 0 0 1rem;
-}
-
-.steps {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.step {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  font-size: 0.95rem;
-  color: var(--color-text);
-}
-
-.step-number {
-  flex: 0 0 auto;
-  width: 1.75rem;
-  height: 1.75rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-pill);
-  background: var(--color-primary);
-  color: var(--color-primary-text);
-  font-weight: 700;
-  font-size: 0.85rem;
-}
-
-/* ── Login screen ─────────────────────────────────────────── */
-
-main.login-screen {
-  max-width: none;
-  margin: 0;
-  min-height: calc(100vh - 46px);   /* fill the viewport below the 46px app header */
-  min-height: calc(100dvh - 46px);
-  padding: 2rem 1.25rem 3rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(160deg, #1d4ed8 0%, #3b82f6 55%, #60a5fa 100%);
-}
-
-.login-panel {
-  width: 100%;
-  max-width: 400px;
-}
-
-.login-panel h1 {
-  color: #fff;
-  text-align: center;
-  margin-bottom: 1rem;
-}
-
-.login-panel .card {
-  width: 100%;
-}
-
-/* ── App header: the global chrome bar ────────────────────── */
-
-.app-header {
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.app-header-inner {
-  max-width: 920px;
-  margin: 0 auto;
-  padding: 0.6rem 1.25rem;
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-}
-
-.app-header-brand {
-  font-weight: 700;
-  font-size: 1rem;
-  letter-spacing: -0.02em;
-  color: var(--color-text);
-}
-
-.app-header-brand:hover {
-  text-decoration: none;
-  color: var(--color-primary);
-}
-
-.app-header-actions {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
+/* ── Headings ─────────────────────────────────────────────── */
 
 h1 {
-  font-size: 1.75rem;
-  font-weight: 700;
-  letter-spacing: -0.03em;
+  font-size: clamp(1.65rem, 4vw, 2.1rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
   margin: 0 0 1.5rem;
   color: var(--color-text);
 }
 
+/* The programme's section header: small caps set tight over a heavy rule. This
+ * is the device that repeats down every page, so it carries the identity. */
 h2 {
-  font-size: 1rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-ink);
+  margin: 2.25rem 0 0.85rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 2px solid var(--color-ink);
+}
+
+h3 {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--color-text-muted);
-  margin: 2rem 0 0.6rem;
+  margin: 0 0 0.6rem;
 }
 
 p {
@@ -285,9 +165,11 @@ p {
 }
 
 a {
-  color: var(--color-primary);
+  color: var(--color-pitch);
   text-decoration: none;
-  font-weight: 500;
+  font-weight: 600;
+  text-underline-offset: 0.18em;
+  text-decoration-thickness: 1.5px;
 }
 
 a:hover {
@@ -300,6 +182,285 @@ ul {
   margin: 0;
 }
 
+/* ── Logged-out landing page ───────────────────────────────
+ * The programme cover: one solid block of pitch green, the title set as large
+ * as it will go, and the fixture-list rules bleeding off the bottom edge. */
+
+.landing-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 3.25rem 1.75rem 2.75rem;
+  background: var(--color-pitch);
+  border-radius: var(--radius-lg);
+  margin-bottom: 1.25rem;
+  color: #fff;
+}
+
+/* The chalked centre circle, hanging off the cover's right edge. Ambient, not
+ * decoration for its own sake — it is the same mark the pitch view draws. */
+.landing-hero::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: -9rem;
+  width: 22rem;
+  height: 22rem;
+  transform: translateY(-50%);
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.landing-eyebrow {
+  display: inline-block;
+  font-family: var(--font-data-stack);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-yellow);
+  margin-bottom: 1.25rem;
+}
+
+.landing-title {
+  position: relative;
+  font-size: clamp(2.1rem, 7.5vw, 3.4rem);
+  font-weight: 800;
+  font-variation-settings: "wdth" 112;
+  line-height: 0.98;
+  letter-spacing: -0.03em;
+  word-spacing: 0.12em;
+  text-transform: uppercase;
+  max-width: 14ch;
+  color: #fff;
+  margin: 0 0 1rem;
+}
+
+.landing-lede {
+  position: relative;
+  font-size: 1.02rem;
+  color: rgba(255, 255, 255, 0.82);
+  max-width: 46ch;
+  margin: 0 0 1.75rem;
+}
+
+.landing-cta {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.btn-hero {
+  display: inline-block;
+  background: var(--color-yellow);
+  color: var(--color-ink);
+  font-family: var(--font-display-stack);
+  font-weight: 800;
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.8rem 1.9rem;
+  border-radius: var(--radius-sm);
+  border: none;
+  transition: background 0.12s, transform 0.12s;
+}
+
+.btn-hero:hover {
+  background: #fff;
+  text-decoration: none;
+  transform: translateY(-1px);
+}
+
+.landing-cta-note {
+  font-family: var(--font-data-stack);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 1px;
+  background: var(--color-border);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-bottom: 1.25rem;
+}
+
+/* Panels in a printed grid share their rules rather than each carrying a box. */
+.feature-card {
+  background: var(--color-surface);
+  padding: 1.35rem 1.35rem 1.5rem;
+}
+
+.feature-title {
+  font-family: var(--font-display-stack);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  color: var(--color-pitch);
+  margin: 0 0 0.5rem;
+  padding: 0;
+  border: none;
+}
+
+.landing-steps-section {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 1.75rem;
+}
+
+.landing-steps-heading {
+  font-family: var(--font-display-stack);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--color-ink);
+  margin: 0 0 1.25rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 2px solid var(--color-ink);
+}
+
+.steps {
+  display: grid;
+  gap: 0;
+}
+
+/* These are numbered because the content genuinely is a sequence — you cannot
+ * set a lineup before you have a squad, or a squad before you have a league. */
+.step {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.92rem;
+  color: var(--color-text);
+}
+
+.step:last-child {
+  border-bottom: none;
+}
+
+.step-number {
+  flex: 0 0 auto;
+  width: 1.9rem;
+  height: 1.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--color-pitch);
+  color: #fff;
+  font-family: var(--font-data-stack);
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+/* ── Login screen ─────────────────────────────────────────── */
+
+main.login-screen {
+  max-width: none;
+  margin: 0;
+  min-height: calc(100vh - 52px);   /* fill the viewport below the app header */
+  min-height: calc(100dvh - 52px);
+  padding: 2rem 1.25rem 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-pitch);
+  /* Floodlight falling across the pitch from above. */
+  background-image: radial-gradient(120% 80% at 50% -10%, rgba(255, 255, 255, 0.16), transparent 60%);
+}
+
+.login-panel {
+  width: 100%;
+  max-width: 400px;
+}
+
+.login-panel h1 {
+  color: #fff;
+  text-align: center;
+  text-transform: uppercase;
+  font-size: 1.5rem;
+  letter-spacing: -0.01em;
+  margin-bottom: 1.25rem;
+}
+
+.login-panel .card {
+  width: 100%;
+}
+
+/* ── App header: the scoreboard bar ────────────────────────
+ * Solid pitch green edge to edge, the way the board above the tunnel is. */
+
+.app-header {
+  background: var(--color-pitch);
+  border-bottom: 3px solid var(--color-yellow);
+}
+
+.app-header-inner {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 0.7rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.app-header-brand {
+  font-weight: 800;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #fff;
+}
+
+.app-header-brand:hover {
+  text-decoration: none;
+  color: var(--color-yellow);
+}
+
+/* The gameweek chip reads as a scoreboard readout, not a pill badge. */
+.app-header .badge {
+  font-family: var(--font-data-stack);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: var(--color-yellow);
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.06em;
+}
+
+.app-header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Chrome-bar buttons are outlines on the green, never white blocks. */
+.app-header-actions button {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.app-header-actions button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.app-header-actions button:focus-visible {
+  outline-color: var(--color-yellow);
+}
+
 /* ── Buttons ─────────────────────────────────────────────── */
 
 button {
@@ -308,14 +469,15 @@ button {
   gap: 0.35rem;
   padding: 0.45rem 0.9rem;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  font-size: 0.875rem;
-  font-weight: 500;
+  border: 1px solid var(--color-border-strong);
+  font-size: 0.82rem;
+  font-weight: 600;
   font-family: inherit;
+  letter-spacing: 0.01em;
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s, opacity 0.12s;
   background: var(--color-surface);
-  color: var(--color-secondary-text);
+  color: var(--color-ink);
   line-height: 1.4;
   white-space: nowrap;
 }
@@ -329,10 +491,15 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* The one loud control on the page. */
 button.btn-primary {
-  background: var(--color-primary);
-  color: var(--color-primary-text);
-  border-color: var(--color-primary);
+  background: var(--color-yellow);
+  color: var(--color-ink);
+  border-color: var(--color-yellow);
+  font-family: var(--font-display-stack);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 button.btn-primary:hover:not(:disabled) {
@@ -356,9 +523,11 @@ button.btn-link {
   background: none;
   border: none;
   padding: 0;
-  color: var(--color-primary);
-  font-weight: 500;
+  color: var(--color-pitch);
+  font-weight: 600;
   white-space: normal;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 button.btn-link:hover:not(:disabled) {
@@ -372,7 +541,7 @@ input,
 select,
 textarea {
   padding: 0.5rem 0.75rem;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-sm);
   font-size: 0.9rem;
   font-family: inherit;
@@ -387,7 +556,7 @@ input:focus,
 select:focus,
 textarea:focus {
   border-color: var(--color-border-focus);
-  box-shadow: 0 0 0 3px rgba(147, 197, 253, 0.3);
+  box-shadow: inset 0 -2px 0 var(--color-yellow);
 }
 
 /* Keyboard focus ring for every interactive control — form fields already have their own :focus
@@ -399,7 +568,7 @@ button:focus-visible,
 summary:focus-visible,
 [role="button"]:focus-visible,
 [role="link"]:focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-ink);
   outline-offset: 2px;
 }
 
@@ -410,7 +579,7 @@ input::placeholder {
 
 select {
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' viewBox='0 0 12 8'%3E%3Cpath stroke='%2364748b' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' viewBox='0 0 12 8'%3E%3Cpath stroke='%235a6a62' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 0.75rem center;
   padding-right: 2.25rem;
@@ -431,7 +600,7 @@ label {
 .form-stack {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.85rem;
 }
 
 .form-stack input,
@@ -443,15 +612,23 @@ label {
 .form-stack label {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  font-weight: 500;
-  font-size: 0.875rem;
+  align-items: stretch;
+  gap: 0.35rem;
+  font-weight: 700;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-muted);
 }
 
 .form-stack label input,
 .form-stack label select {
   width: 100%;
   font-weight: 400;
+  font-size: 0.9rem;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--color-text);
 }
 
 /* ── Card ─────────────────────────────────────────────────── */
@@ -459,9 +636,8 @@ label {
 .card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   padding: 1.5rem;
-  box-shadow: var(--shadow-card);
 }
 
 /* ── Page header: h1 + action button on same row ──────────── */
@@ -479,39 +655,45 @@ label {
   margin: 0;
 }
 
-/* ── Stat row: small labeled value tiles ─────────────────── */
+/* ── Stat row: the readouts along the top of the sheet ─────
+ * Shared rules, mono figures, a yellow tick under each label — a scoreboard
+ * strip rather than four floating cards. */
 
 .stat-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
-  margin: 0 0 1rem;
+  gap: 1px;
+  margin: 0 0 1.25rem;
+  background: var(--color-border);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
 }
 
 .stat-tile {
+  flex: 1 1 130px;
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 0.6rem 1rem;
+  padding: 0.7rem 1rem 0.8rem;
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
-  min-width: 120px;
+  gap: 0.25rem;
+  min-width: 0;
 }
 
 .stat-tile-label {
-  font-size: 0.7rem;
+  font-size: 0.62rem;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.12em;
   color: var(--color-text-muted);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .stat-tile-value {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--color-text);
-  line-height: 1.2;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-ink);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
 }
 
 /* ── Filter row: horizontal filter controls ──────────────── */
@@ -529,18 +711,18 @@ label {
   min-width: 0;
 }
 
-/* ── Tables ───────────────────────────────────────────────── */
+/* ── Tables: the back-page results grid ───────────────────
+ * Ink header band, mono figures, hairline rows. */
 
 .table-wrap {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  /* Wide tables scroll sideways inside the card instead of clipping — the roster and standings
+  /* Wide tables scroll sideways inside the block instead of clipping — the roster and standings
      tables run 7 columns and must stay usable on phones. */
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
-  box-shadow: var(--shadow-card);
 }
 
 table {
@@ -552,17 +734,18 @@ table {
 thead th {
   text-align: left;
   padding: 0.6rem 0.85rem;
-  font-weight: 600;
-  font-size: 0.72rem;
+  font-weight: 700;
+  font-size: 0.64rem;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-muted);
-  background: var(--color-bg);
-  border-bottom: 1px solid var(--color-border);
+  letter-spacing: 0.12em;
+  color: rgba(255, 255, 255, 0.82);
+  background: var(--color-ink);
+  border-bottom: none;
+  white-space: nowrap;
 }
 
 /* Sortable column header — a full-width button so the whole cell is the click target, styled to
- * inherit the uppercase muted-caps look of a plain <th> rather than reading as a button. */
+ * inherit the caps look of a plain <th> rather than reading as a button. */
 .sortable-header {
   display: flex;
   align-items: center;
@@ -579,11 +762,11 @@ thead th {
 }
 
 .sortable-header:hover {
-  color: var(--color-text);
+  color: #fff;
 }
 
 .sortable-header.is-active {
-  color: var(--color-text);
+  color: var(--color-yellow);
 }
 
 .sortable-header-arrow {
@@ -595,11 +778,17 @@ thead th {
   opacity: 0.35;
 }
 
+.sortable-header:focus-visible {
+  outline-color: var(--color-yellow);
+}
+
+/* Figures line up in their columns; names stay in the body face. */
 tbody td {
   padding: 0.65rem 0.85rem;
   border-bottom: 1px solid var(--color-border);
   color: var(--color-text);
   vertical-align: middle;
+  font-variant-numeric: tabular-nums;
 }
 
 tbody tr:last-child td {
@@ -607,7 +796,7 @@ tbody tr:last-child td {
 }
 
 tbody tr:hover {
-  background: #fafbfd;
+  background: var(--color-surface-sunken);
 }
 
 /* ── Player Discovery table: tighter padding + shrink-to-fit narrow columns (Pos/Price/Pts/Form
@@ -622,6 +811,14 @@ tbody tr:hover {
 .discovery-table .col-narrow {
   width: 1%;
   white-space: nowrap;
+  font-family: var(--font-data-stack);
+  font-size: 0.78rem;
+}
+
+/* The header cell of a narrow column keeps the caps treatment, not the mono figures. */
+.discovery-table th.col-narrow {
+  font-family: inherit;
+  font-size: 0.64rem;
 }
 
 /* The leading Add/Remove column: shrink-to-fit around its single +/− button. The blocked-reason
@@ -669,8 +866,8 @@ tbody tr:hover {
 .form-bar {
   width: 5px;
   min-height: 2px;
-  background: var(--color-primary);
-  border-radius: 2px 2px 0 0;
+  background: var(--color-pitch);
+  border-radius: 1px 1px 0 0;
 }
 
 .form-none {
@@ -685,42 +882,46 @@ tbody tr:hover {
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
-  margin-top: 0.75rem;
-  font-size: 0.85rem;
+  margin-top: 0.85rem;
+  font-family: var(--font-data-stack);
+  font-size: 0.78rem;
   color: var(--color-text-muted);
 }
 
-/* ── Status messages ──────────────────────────────────────── */
+/* ── Status messages ──────────────────────────────────────
+ * A colour bar down the leading edge does the signalling, so the message keeps
+ * the page's ink rather than tinting the text a second colour. */
 
 .msg {
   padding: 0.6rem 0.9rem;
   border-radius: var(--radius-sm);
   font-size: 0.875rem;
-  margin: 0.5rem 0;
+  margin: 0.6rem 0;
+  border-left: 4px solid transparent;
 }
 
 .msg-success {
   background: var(--color-success-bg);
-  border: 1px solid var(--color-success-border);
+  border-color: var(--color-success-text);
   color: var(--color-success-text);
 }
 
 .msg-error {
   background: var(--color-error-bg);
-  border: 1px solid var(--color-error-border);
+  border-color: var(--color-error-text);
   color: var(--color-error-text);
 }
 
 .msg-info {
   background: var(--color-info-bg);
-  border: 1px solid var(--color-info-border);
+  border-color: var(--color-pitch);
   color: var(--color-info-text);
 }
 
 /* A partial outcome — some of the save applied, some didn't. Distinct from success and error. */
 .msg-warning {
   background: var(--color-warning-bg);
-  border: 1px solid var(--color-warning-border);
+  border-color: var(--color-warning-text);
   color: var(--color-warning-text);
 }
 
@@ -738,8 +939,8 @@ tbody tr:hover {
   gap: 0.6rem;
   padding: 0.85rem 1.25rem;
   background: var(--color-surface);
-  border-top: 1px solid var(--color-border);
-  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+  border-top: 3px solid var(--color-ink);
+  box-shadow: 0 -6px 20px rgba(16, 32, 26, 0.12);
   max-height: 45vh;
   overflow-y: auto;
 }
@@ -748,14 +949,18 @@ tbody tr:hover {
   align-self: flex-start;
 }
 
-/* ── Badges ───────────────────────────────────────────────── */
+/* ── Badges ───────────────────────────────────────────────
+ * Squared off and typed, like the status stamps on a team sheet. */
 
 .badge {
   display: inline-block;
-  padding: 0.15rem 0.55rem;
-  border-radius: var(--radius-pill);
-  font-size: 0.72rem;
+  padding: 0.16rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-data-stack);
+  font-size: 0.66rem;
   font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   background: var(--color-secondary-bg);
   color: var(--color-secondary-text);
   white-space: nowrap;
@@ -776,69 +981,103 @@ tbody tr:hover {
   color: var(--color-error-text);
 }
 
-/* ── Squad list: horizontal player rows ───────────────────── */
+/* ═══ THE TEAM SHEET ═══════════════════════════════════════
+ * The signature. Squad and lineup lists are printed sheets: each player takes
+ * a sheet number in the data face, the position code sits in its own column,
+ * and hairlines separate rows the way a typed sheet does. The Starting XI runs
+ * 1–11 and the bench picks up at 12, which is how a real sheet is numbered —
+ * the number is information, not ornament.
+ * ═════════════════════════════════════════════════════════ */
 
-.squad-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.squad-list li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.65rem;
-  padding: 0.5rem 0.85rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  font-size: 0.9rem;
-}
-
-/* ── Lineup list: the Squad Builder's Starting XI / Bench ──
-   Text rows, not cards. Sixteen of these sit beside the pitch and are mostly read on a phone, so
-   each player is one line — position, name, availability, and a text link to the other list —
-   separated by a hairline instead of carrying its own border, padding and surface. */
-
+.squad-list,
 .lineup-list {
   display: flex;
   flex-direction: column;
+  counter-reset: teamsheet 0;
+  border-top: 2px solid var(--color-ink);
 }
 
+/* The bench continues the sheet rather than restarting it. */
+.lineup-list--bench {
+  counter-reset: teamsheet 11;
+}
+
+.squad-list li,
 .lineup-list li {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.5rem;
-  padding: 0.3rem 0;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.15rem;
   border-bottom: 1px solid var(--color-border);
   font-size: 0.875rem;
+  background: none;
+  border-radius: 0;
 }
 
+.squad-list li::before,
+.lineup-list li::before {
+  counter-increment: teamsheet;
+  content: counter(teamsheet);
+  flex: 0 0 1.6rem;
+  font-family: var(--font-data-stack);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-border-strong);
+  text-align: right;
+}
+
+.squad-list li:last-child,
 .lineup-list li:last-child {
   border-bottom: none;
 }
 
 /* Fixed width so names line up in a column regardless of GK/DEF/MID/FWD. */
 .lineup-position {
-  flex: 0 0 2.2rem;
-  color: var(--color-text-muted);
-  font-size: 0.7rem;
+  flex: 0 0 2.4rem;
+  font-family: var(--font-data-stack);
+  color: var(--color-pitch);
+  font-size: 0.66rem;
   font-weight: 600;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.08em;
 }
 
 .lineup-toggle {
   margin-left: auto;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Strike a player off the sheet. Deliberately quiet until reached for — it sits beside a control
+ * used far more often, and removing someone costs a re-pick, so it must not be the row's loudest
+ * thing. It turns red only on hover/focus, where intent is already clear. */
+.lineup-remove {
+  flex: 0 0 auto;
+  padding: 0 0.3rem;
+  border: none;
+  background: none;
+  color: var(--color-border-strong);
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.lineup-remove:hover:not(:disabled),
+.lineup-remove:focus-visible {
+  background: none;
+  color: var(--color-danger);
+}
+
+.lineup-remove:disabled {
+  opacity: 0.3;
 }
 
 /* Blocked-reason line: full row width, so an explanation never widens the row or pushes the
  * toggle link out of its column. Same role as .discovery-row-note in the table. */
 .lineup-row-note {
   flex: 0 0 100%;
-  padding-left: 2.7rem;
+  padding-left: 4.6rem;
   font-size: 0.72rem;
   line-height: 1.3;
   color: var(--color-text-muted);
@@ -848,6 +1087,19 @@ tbody tr:hover {
  * Bench/Starting toggle and captain/vice-captain options are actually disabled to match. */
 .lineup-list-item-locked {
   opacity: 0.55;
+}
+
+/* A condition that applies to a whole list or table, stated once above it rather than repeated
+ * under every row it covers. Quiet by design — it explains why controls are disabled, so it must
+ * not compete with the controls themselves. */
+.list-notice {
+  margin: 0 0 0.6rem;
+  padding: 0.4rem 0.7rem;
+  background: var(--color-surface-sunken);
+  border-left: 3px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
 }
 
 /* ── Nav / link list ──────────────────────────────────────── */
@@ -861,41 +1113,68 @@ tbody tr:hover {
 
 .link-list a {
   display: inline-block;
-  padding: 0.4rem 0.85rem;
+  padding: 0.45rem 0.9rem;
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-sm);
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--color-text);
-  transition: background 0.12s;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-ink);
+  transition: background 0.12s, border-color 0.12s;
 }
 
 .link-list a:hover {
-  background: var(--color-secondary-bg);
+  background: var(--color-ink);
+  border-color: var(--color-ink);
+  color: #fff;
   text-decoration: none;
 }
 
-/* ── Empty state (home with no leagues) ───────────────────── */
+/* ── Empty state ──────────────────────────────────────────
+ * An empty screen is an invitation to act, so it gets the chalked centre
+ * circle and a live action rather than a grey box of apology. */
 
 .empty-state {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 380px;
+  min-height: 340px;
   text-align: center;
-  padding: 4rem 1.5rem;
-  background: var(--color-secondary-bg);
+  padding: 3.5rem 1.5rem;
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   color: var(--color-text-muted);
 }
 
+.empty-state::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 17rem;
+  height: 17rem;
+  transform: translate(-50%, -50%);
+  border: 2px solid var(--color-border);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.empty-state > * {
+  position: relative;
+}
+
 .empty-state-title {
-  font-size: 1.4rem;
-  font-weight: 700;
-  color: var(--color-secondary-text);
+  font-size: 1.3rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  color: var(--color-ink);
   margin: 0 0 0.5rem;
 }
 
@@ -908,37 +1187,48 @@ tbody tr:hover {
 .league-list {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
+  gap: 1px;
+  background: var(--color-border);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-bottom: 0.85rem;
 }
 
 .league-list li {
-  padding: 0.75rem 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.85rem 1rem;
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
   font-size: 0.9rem;
 }
 
 /* ── Player tap target / inline nav link ─────────────────── */
 
 .player-tap-target {
-  color: var(--color-primary);
-  font-weight: 500;
+  color: var(--color-ink);
+  font-weight: 600;
   cursor: pointer;
+  text-underline-offset: 0.18em;
 }
 
 .player-tap-target:hover {
   text-decoration: underline;
+  text-decoration-color: var(--color-yellow);
+  text-decoration-thickness: 2px;
 }
 
 /* ── Transfer picker (details/summary) ───────────────────── */
 
 .transfer-picker summary {
   cursor: pointer;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--color-primary);
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-pitch);
   list-style: none;
   padding: 0;
   user-select: none;
@@ -954,7 +1244,7 @@ tbody tr:hover {
   gap: 0.5rem;
   margin-top: 0.5rem;
   padding: 0.75rem;
-  background: var(--color-bg);
+  background: var(--color-surface-sunken);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
 }
@@ -991,27 +1281,39 @@ tbody tr:hover {
 .captaincy-row {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.85rem;
 }
 
 .captaincy-row label {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  font-size: 0.9rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-muted);
 }
 
 .captaincy-row select {
   flex: 1;
   max-width: 280px;
+  font-size: 0.9rem;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--color-text);
 }
 
 /* ── Formation status line ────────────────────────────────── */
 
 .formation-status {
-  font-size: 0.85rem;
+  font-family: var(--font-data-stack);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
   color: var(--color-text-muted);
-  margin: 0.3rem 0 0;
+  margin: 0.5rem 0 0;
 }
 
 /* ── Builder layout: captaincy (left) + pitch (center, visual only) + roster list (right) ──
@@ -1025,7 +1327,7 @@ tbody tr:hover {
     "pitch"
     "captaincy"
     "list";
-  gap: 1.5rem;
+  gap: 1.75rem;
   margin: 1.5rem 0;
 }
 
@@ -1046,9 +1348,13 @@ tbody tr:hover {
 
 @media (min-width: 641px) {
   .builder-layout {
-    grid-template-columns: minmax(200px, 260px) minmax(260px, 340px) minmax(280px, 1fr);
-    grid-template-areas: "captaincy pitch list";
-    align-items: start;
+    grid-template-columns: minmax(260px, 380px) minmax(300px, 1fr);
+    grid-template-areas:
+      "pitch     list"
+      "captaincy list";
+    align-content: start;
+    column-gap: 2rem;
+    row-gap: 1.5rem;
   }
 }
 
@@ -1059,26 +1365,58 @@ tbody tr:hover {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.65rem;
-  padding: 0.75rem 1rem;
+  padding: 0.85rem 1rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   font-size: 0.9rem;
-  margin: 0.5rem 0;
+  margin: 0.6rem 0;
 }
 
+/* A code you read aloud to a mate — set in the data face, ink block, letters
+ * spaced far enough apart to dictate without mistakes. */
 .invite-code {
-  font-family: "SF Mono", "Fira Code", monospace;
   font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--color-text);
-  background: var(--color-bg);
-  padding: 0.2rem 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  color: var(--color-yellow);
+  background: var(--color-ink);
+  padding: 0.28rem 0.7rem;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
+  border: none;
 }
 
-/* ── Player discovery header: heading + always-visible budget chip ── */
+/* ── Player picker: a disclosure whose summary is also the sticky section header ──
+   Collapsed, the summary still reports squad count and budget, so closing the section never hides
+   the two numbers that decide whether you need it open. */
+
+.discovery-section > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.discovery-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* A caret that turns with the section, in the ink the section header is set in. */
+.discovery-section > summary h2::before {
+  content: "\25B8";
+  display: inline-block;
+  margin-right: 0.5rem;
+  font-size: 0.8em;
+  transition: transform 0.12s;
+}
+
+.discovery-section[open] > summary h2::before {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .discovery-section > summary h2::before {
+    transition: none;
+  }
+}
 
 .discovery-header {
   position: sticky;
@@ -1089,20 +1427,25 @@ tbody tr:hover {
   justify-content: space-between;
   gap: 0.75rem;
   background: var(--color-bg);
-  padding: 0.5rem 0 0.4rem;
+  padding: 0.75rem 0 0.5rem;
+  border-bottom: 2px solid var(--color-ink);
+  margin-bottom: 0.85rem;
 }
 
 .discovery-header h2 {
   margin: 0;
+  padding: 0;
+  border-bottom: none;
 }
 
 .budget-chip {
-  font-size: 0.8rem;
-  font-weight: 700;
-  padding: 0.25rem 0.7rem;
-  border-radius: var(--radius-pill);
-  background: var(--color-info-bg);
-  color: var(--color-info-text);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-ink);
+  color: var(--color-yellow);
   white-space: nowrap;
 }
 
@@ -1120,39 +1463,52 @@ tbody tr:hover {
   border: 0;
 }
 
-/* ── Gameweek banner: season-context strip on every game screen ── */
+/* ── Gameweek banner: the scoreboard strip ─────────────────
+ * Ink block with a yellow edge, the deadline in the data face. */
 
 .gameweek-banner {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.65rem;
-  padding: 0.6rem 1rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  gap: 0.7rem;
+  padding: 0.7rem 1rem;
+  background: var(--color-ink);
+  border: none;
+  border-left: 4px solid var(--color-yellow);
+  border-radius: var(--radius-sm);
   font-size: 0.9rem;
-  margin: 0 0 1rem;
-  box-shadow: var(--shadow-card);
+  color: #fff;
+  margin: 0 0 1.25rem;
+}
+
+.gameweek-banner strong {
+  font-family: var(--font-display-stack);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.9rem;
+}
+
+.gameweek-banner .badge {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.gameweek-banner .badge-green {
+  background: var(--color-yellow);
+  color: var(--color-ink);
 }
 
 .gameweek-banner-deadline {
-  color: var(--color-text-muted);
-  font-size: 0.85rem;
-}
-
-/* Phones and narrow tablets (<1024px): flat, outlined banner instead of a white card */
-@media (max-width: 1023px) {
-  .gameweek-banner {
-    background: var(--color-bg);
-    box-shadow: none;
-  }
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.76rem;
+  letter-spacing: 0.02em;
 }
 
 /* Wide screens (>=1024px): widen the page and move the banner into a sticky right sidebar */
 @media (min-width: 1024px) {
   main.page-with-sidebar {
-    max-width: 1180px;
+    max-width: 1280px;
     display: grid;
     grid-template-columns: 1fr 260px;
     align-items: start;
@@ -1177,11 +1533,21 @@ tbody tr:hover {
 
 /* ── Fixture list: match rows on the league page ─────────── */
 
+.fixture-list {
+  border-top: 2px solid var(--color-ink);
+}
+
 .fixture-list li {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.65rem;
+  padding: 0.5rem 0.15rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.fixture-list li:last-child {
+  border-bottom: none;
 }
 
 .fixture-teams {
@@ -1190,18 +1556,24 @@ tbody tr:hover {
 }
 
 .fixture-score {
-  font-weight: 700;
-  color: var(--color-text);
-  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--color-ink);
+  background: var(--color-surface-sunken);
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
 }
 
 .fixture-kickoff {
+  font-family: var(--font-data-stack);
   color: var(--color-text-muted);
-  font-size: 0.85rem;
+  font-size: 0.76rem;
   margin-left: auto;
 }
 
-/* ── Formation pitch: read-only visual reference, not an input surface ── */
+/* ── Formation pitch: read-only visual reference, not an input surface ──
+   The one full-colour moment in the design, so it keeps its own green rather
+   than borrowing the chrome's. */
 
 .pitch-wrapper {
   display: flex;
@@ -1216,10 +1588,23 @@ tbody tr:hover {
   margin: 0 auto;
   aspect-ratio: 3 / 3;
   overflow: hidden;
-  border-radius: 4px 4px var(--radius-lg) var(--radius-lg);
-  border-top: 3px solid rgba(203, 213, 225, 0.95);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-  background-image: linear-gradient(0deg, color-mix(in srgb, rgba(74, 102, 80, 0.9) 62%, white) 0%, rgba(74, 102, 80, 0.9) 100%);
+  border-radius: 2px 2px var(--radius-md) var(--radius-md);
+  border-top: 3px solid var(--color-yellow);
+  background-image: linear-gradient(0deg, #14523e 0%, #0b3d2e 100%);
+}
+
+/* Mown stripes. Ambient and nearly subliminal — enough that the surface reads
+ * as a cut pitch rather than a green rectangle. */
+.pitch::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.035) 0 12.5%,
+    transparent 12.5% 25%
+  );
+  pointer-events: none;
 }
 
 /* Halfway-line center circle, drawn hanging down from the pitch's top edge. */
@@ -1230,7 +1615,7 @@ tbody tr:hover {
   width: 34%;
   aspect-ratio: 2 / 1;
   transform: translateX(-50%);
-  border: 2px solid rgba(203, 213, 225, 0.95);
+  border: 2px solid rgba(255, 255, 255, 0.75);
   border-top: none;
   border-radius: 0 0 999px 999px;
   pointer-events: none;
@@ -1242,7 +1627,7 @@ tbody tr:hover {
   left: 20%;
   width: 60%;
   height: 24%;
-  border: 2px solid rgba(203, 213, 225, 0.95);
+  border: 2px solid rgba(255, 255, 255, 0.75);
   border-bottom: none;
   pointer-events: none;
 }
@@ -1253,33 +1638,34 @@ tbody tr:hover {
   left: 38%;
   width: 24%;
   height: 10%;
-  border: 2px solid rgba(203, 213, 225, 0.95);
+  border: 2px solid rgba(255, 255, 255, 0.75);
   border-bottom: none;
   pointer-events: none;
 }
 
 .pitch-dot-slot {
   position: absolute;
+  max-width: 19%;
   transform: translate(-50%, -50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0.35rem;
 }
 
 .pitch-dot {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--color-surface);
-  border: 2px solid var(--color-primary);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  background: #fff;
+  border: 2px solid var(--color-ink);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
 
 /* An unfilled formation slot — the shape is visible before every position is assigned a player. */
 .pitch-dot-empty {
   background: transparent;
-  border: 2px dashed rgba(255, 255, 255, 0.9);
+  border: 2px dashed rgba(255, 255, 255, 0.75);
   box-shadow: none;
 }
 
@@ -1290,12 +1676,14 @@ tbody tr:hover {
   display: flex;
   align-items: baseline;
   justify-content: center;
-  max-width: 90px;
-  font-size: 0.7rem;
-  font-weight: 700;
-  color: #000;
+  max-width: 100%;
+  font-family: var(--font-data-stack);
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: #fff;
   white-space: nowrap;
   text-align: center;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
 }
 
 .pitch-dot-name {
@@ -1313,10 +1701,13 @@ tbody tr:hover {
   text-decoration: none;
 }
 
+/* The armband. The only place this pink appears in the whole product, which is
+ * what makes it mean "captain" the instant you see it. */
 .pitch-dot-armband {
   flex-shrink: 0;
-  color: #ffd447;
-  font-weight: 700;
+  color: var(--color-armband);
+  font-weight: 600;
+  text-shadow: none;
 }
 
 @media (max-width: 640px) {
@@ -1327,7 +1718,6 @@ tbody tr:hover {
 
   .pitch-dot-label {
     font-size: 0.6rem;
-    max-width: 70px;
   }
 }
 
@@ -1336,7 +1726,7 @@ tbody tr:hover {
 .section-divider {
   border: none;
   border-top: 1px solid var(--color-border);
-  margin: 1.75rem 0;
+  margin: 2rem 0;
 }
 
 /* ── Overlay: modal popup + slide-up panel hosting folded-in surfaces ─
@@ -1347,7 +1737,7 @@ tbody tr:hover {
   position: fixed;
   inset: 0;
   display: flex;
-  background: rgba(15, 23, 42, 0.45);
+  background: rgba(11, 30, 23, 0.55);
   z-index: 100;
   animation: overlay-fade 0.15s ease-out;
 }
@@ -1369,7 +1759,7 @@ tbody tr:hover {
   flex-direction: column;
   max-height: 100%;
   background: var(--color-bg);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-lifted);
   outline: none;
 }
 
@@ -1377,7 +1767,7 @@ tbody tr:hover {
   width: 100%;
   max-width: 900px;
   height: 92vh;
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
   animation: overlay-slide-up 0.2s ease-out;
 }
 
@@ -1385,7 +1775,7 @@ tbody tr:hover {
   width: 100%;
   max-width: 560px;
   max-height: min(90vh, 720px);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   animation: overlay-pop 0.15s ease-out;
 }
 
@@ -1394,9 +1784,9 @@ tbody tr:hover {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1rem 1.25rem;
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  padding: 0.9rem 1.25rem;
+  background: var(--color-ink);
+  border-bottom: 3px solid var(--color-yellow);
   border-radius: inherit;
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
@@ -1404,23 +1794,33 @@ tbody tr:hover {
 
 .overlay-title {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: 0.95rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #fff;
+  padding: 0;
+  border: none;
 }
 
 .overlay-close {
   border: none;
   background: transparent;
   cursor: pointer;
-  font-size: 1.5rem;
+  font-size: 1.4rem;
   line-height: 1;
-  color: var(--color-text-muted);
+  color: rgba(255, 255, 255, 0.7);
   padding: 0.15rem 0.45rem;
   border-radius: var(--radius-sm);
 }
 
 .overlay-close:hover {
-  background: var(--color-secondary-bg);
-  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.overlay-close:focus-visible {
+  outline-color: var(--color-yellow);
 }
 
 .overlay-body {
@@ -1450,6 +1850,10 @@ tbody tr:hover {
   .overlay-surface--popup {
     animation: none;
   }
+
+  .btn-hero:hover {
+    transform: none;
+  }
 }
 
 /* ── Label/value list used by the player detail surface ────── */
@@ -1457,18 +1861,23 @@ tbody tr:hover {
 .detail-list {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 0.4rem 1.25rem;
+  gap: 0.5rem 1.25rem;
   margin: 0;
 }
 
 .detail-list dt {
   color: var(--color-text-muted);
-  font-size: 0.85rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  align-self: center;
 }
 
 .detail-list dd {
   margin: 0;
   font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── Player detail header (photo + name + club/position) ───── */
@@ -1481,17 +1890,28 @@ tbody tr:hover {
 }
 
 .player-detail-photo {
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
 }
 
 .player-detail-name {
-  margin: 0 0 0.15rem;
+  font-family: var(--font-display-stack);
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  color: var(--color-ink);
+  margin: 0 0 0.2rem;
+  padding: 0;
+  border: none;
 }
 
 .player-detail-meta {
   margin: 0;
-  font-size: 0.9rem;
+  font-family: var(--font-data-stack);
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--color-text-muted);
 }
 
@@ -1503,6 +1923,8 @@ button.player-tap-target {
   padding: 0;
   font: inherit;
   text-align: left;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 /* The squad builder's save bar is `position: fixed` to the viewport on its standalone page. Inside
@@ -1515,7 +1937,7 @@ button.player-tap-target {
   right: auto;
   z-index: 1;
   margin: 1rem -1.25rem -1.25rem;
-  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 -6px 20px rgba(16, 32, 26, 0.1);
 }
 
 /* ── Standalone-page → hub toggle strip ────────────────────── */
@@ -1527,13 +1949,18 @@ button.player-tap-target {
   flex-wrap: wrap;
   margin-bottom: 1rem;
   padding: 0.5rem 0.85rem;
-  background: var(--color-info-bg);
-  border: 1px solid var(--color-info-border);
-  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  border: none;
+  border-left: 4px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
   font-size: 0.85rem;
 }
 
 .view-mode-toggle-label {
+  font-family: var(--font-data-stack);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   color: var(--color-text-muted);
   font-weight: 600;
 }

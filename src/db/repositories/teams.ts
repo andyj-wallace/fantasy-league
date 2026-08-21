@@ -187,13 +187,24 @@ export async function insertOrRevive(input: NewTeamInput): Promise<Team | null> 
   return row ? toTeam(toTeamRow(row), []) : null;
 }
 
-/** Replaces a Team's roster and the resulting budget atomically. Pass an outer `tx` to
- * participate in a caller-owned transaction; omit to run in its own transaction. */
+export interface ReplaceRosterSlotsOptions {
+  /** Null out captaincy in the same write as the roster. A captain who is no longer an eligible
+   * starter must not outlive the save that benched or removed them — cleared separately, a failure
+   * between the two writes would leave the 2x multiplier pointing at a bench player or at someone
+   * no longer in the squad at all. */
+  clearCaptainPlayerId?: boolean;
+  clearViceCaptainPlayerId?: boolean;
+  /** Participate in a caller-owned transaction; omit to run in its own. */
+  tx?: DbOrTx;
+}
+
+/** Replaces a Team's roster, the resulting budget, and any captaincy the new roster invalidates,
+ * atomically. */
 export async function replaceRosterSlots(
   teamId: string,
   rosterSlots: TeamRosterSlot[],
   remainingBudgetInMillions: number,
-  tx?: DbOrTx,
+  options: ReplaceRosterSlotsOptions = {},
 ): Promise<void> {
   const execute = async (client: DbOrTx) => {
     await client.delete(teamRosterSlots).where(eq(teamRosterSlots.teamId, teamId));
@@ -202,10 +213,18 @@ export async function replaceRosterSlots(
         rosterSlots.map((slot) => ({ teamId, playerId: slot.playerId, isStarting: slot.isStarting })),
       );
     }
-    await client.update(teams).set({ remainingBudgetInMillions, updatedAt: new Date() }).where(eq(teams.id, teamId));
+    await client
+      .update(teams)
+      .set({
+        remainingBudgetInMillions,
+        ...(options.clearCaptainPlayerId ? { captainPlayerId: null } : {}),
+        ...(options.clearViceCaptainPlayerId ? { viceCaptainPlayerId: null } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(teams.id, teamId));
   };
-  if (tx) {
-    await execute(tx);
+  if (options.tx) {
+    await execute(options.tx);
   } else {
     await db.transaction(execute);
   }

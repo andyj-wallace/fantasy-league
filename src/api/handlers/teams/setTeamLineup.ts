@@ -17,6 +17,11 @@ interface SetTeamLineupRequestBody {
  * reported in the response's lockedChangeWarnings. If the skips would leave the captain and
  * vice-captain as the same player (e.g. a captain/vice swap where one side is locked), the save
  * is rejected instead.
+ *
+ * Both roles must resolve to a player in the starting XI. Only a starter can carry the 2x, and
+ * calculateTeamScores applies it by id alone, so a benched captain would otherwise double a bench
+ * player's points. The check runs on the *effective* ids, after locked-player skips: keeping a
+ * previous captain who has since been benched is just as invalid as naming one outright.
  */
 export const setTeamLineup: ApiHandler = requireAuth(async (event, session) => {
   const teamId = event.pathParameters?.teamId ?? "";
@@ -78,6 +83,21 @@ export const setTeamLineup: ApiHandler = requireAuth(async (event, session) => {
         lockedChangeWarnings.push(`${newViceCaptain.name} is locked — vice-captain unchanged`);
       }
     }
+  }
+
+  const startingPlayerIds = new Set(rosterSlots.filter((slot) => slot.isStarting).map((slot) => slot.playerId));
+  for (const role of ["captain", "vice-captain"] as const) {
+    const playerId = role === "captain" ? effectiveCaptainPlayerId : effectiveViceCaptainPlayerId;
+    if (startingPlayerIds.has(playerId)) continue;
+
+    const player = allRosterPlayersById.get(playerId);
+    const wasKeptByALockedSkip = playerId !== (role === "captain" ? body.captainPlayerId : body.viceCaptainPlayerId);
+    const keptExplanation = wasKeptByALockedSkip ? ` after skipping locked-player changes (${lockedChangeWarnings.join("; ")})` : "";
+    return badRequestResponse(
+      player
+        ? `${player.name} is on the bench — your ${role} must be in the starting XI${keptExplanation}`
+        : `your ${role} must be a player in your squad's starting XI${keptExplanation}`,
+    );
   }
 
   if (effectiveCaptainPlayerId === effectiveViceCaptainPlayerId) {

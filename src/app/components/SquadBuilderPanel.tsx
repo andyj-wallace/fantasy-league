@@ -39,6 +39,15 @@ const PLAYERS_PER_PAGE = 15;
  * to cover so it reads as a continuation of the player row above it. */
 const DISCOVERY_TABLE_COLUMN_COUNT = 7;
 
+/** The one blocked reason that is a property of the whole squad rather than of the player in the
+ * row it appears under. It applies to every addable player at once, so it is stated once above the
+ * table instead of repeating identically under all fifteen rows on the page. */
+const SQUAD_IS_FULL_REASON = `Squad is full (${SQUAD_SIZE}/${SQUAD_SIZE})`;
+
+/** Ids for the two hoisted notices, so every row they cover can point `aria-describedby` at them. */
+const SQUAD_FULL_NOTICE_ID = "discovery-squad-full-notice";
+const BENCH_FORMATION_NOTICE_ID = "bench-formation-notice";
+
 /** Discovery-table columns the user can sort by, each mapped to the comparable value it sorts on.
  * Position sorts in on-pitch order (GK→FWD) rather than alphabetically. Form sorts by the most
  * recent points value, with "Insufficient Data" (null) always sorting last. */
@@ -147,6 +156,9 @@ function LineupPlayerRow({
   isLocked,
   toggleLabel,
   blockedReason,
+  hoistedReasonElementId,
+  onRemove,
+  removeBlockedReason,
   onToggle,
 }: {
   player: PlayerWithStats;
@@ -154,11 +166,20 @@ function LineupPlayerRow({
    * without being locked (a bench player the formation has no starting slot for), which reads as
    * an ordinary disabled link rather than a fade. */
   isLocked: boolean;
-  toggleLabel: "Bench" | "Starting";
+  toggleLabel: "Bench" | "Start";
   blockedReason: string | null;
+  /** Non-null when the player can't leave the squad (their match has kicked off); the reason is
+   * shown on hover and read out, matching how the discovery table explains the same block. */
+  removeBlockedReason: string | null;
+  onRemove: () => void;
+  /** When the whole list shares one blocked reason, the row points its screen-reader description
+   * at that single hoisted element and prints no note of its own. */
+  hoistedReasonElementId?: string;
   onToggle: () => void;
 }) {
-  const blockedReasonElementId = `lineup-note-${player.id}`;
+  const ownReasonElementId = `lineup-note-${player.id}`;
+  const describedById = hoistedReasonElementId ?? (blockedReason ? ownReasonElementId : undefined);
+  const printsOwnReasonNote = blockedReason !== null && hoistedReasonElementId === undefined;
   return (
     <li className={isLocked ? "lineup-list-item-locked" : undefined}>
       <span className="lineup-position">{player.position}</span>
@@ -170,12 +191,22 @@ function LineupPlayerRow({
         onClick={onToggle}
         disabled={blockedReason !== null}
         title={blockedReason ?? ""}
-        aria-describedby={blockedReason ? blockedReasonElementId : undefined}
+        aria-describedby={describedById}
       >
         {toggleLabel}
       </button>
-      {blockedReason && (
-        <span className="lineup-row-note" id={blockedReasonElementId}>
+      <button
+        type="button"
+        className="lineup-remove"
+        onClick={onRemove}
+        disabled={removeBlockedReason !== null}
+        title={removeBlockedReason ?? `Remove ${player.name} from squad`}
+        aria-label={`Remove ${player.name} from squad`}
+      >
+        &times;
+      </button>
+      {printsOwnReasonNote && (
+        <span className="lineup-row-note" id={ownReasonElementId}>
           {blockedReason}
         </span>
       )}
@@ -224,6 +255,8 @@ interface SaveResult {
  * lifecycle. `onChanged` fires after a successful save so the host can refresh dependent views
  * (the league's squad-status badge and remaining budget). */
 export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onChanged?: () => void }) {
+  /** Null until the manager opens or closes the player picker themselves; see isPlayerPickerExpanded. */
+  const [isPlayerPickerOpen, setIsPlayerPickerOpen] = useState<boolean | null>(null);
   const [team, setTeam] = useState<Team | null>(null);
   const [allPlayers, setAllPlayers] = useState<PlayerWithStats[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -318,6 +351,52 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
   const totalSpentInMillions = draftSquadPlayers.reduce((sum, { player }) => sum + player.priceInMillions, 0);
   const remainingBudgetInMillions = STARTING_SQUAD_BUDGET_IN_MILLIONS - totalSpentInMillions;
   const goalkeeperCount = draftSquadPlayers.filter(({ player }) => player.position === "GK").length;
+
+  /** The fewest outfield players of each position any valid formation can field, derived from the
+   * formation list rather than restated — 3 DEF, 2 MID, 1 FWD today. A 16-man squad holding fewer
+   * than this of any position can never put out a legal XI, no matter how it is arranged. */
+  const fewestStartersAnyFormationNeeds = useMemo(() => {
+    const outfieldPositions = ["DEF", "MID", "FWD"] as const;
+    const fewest = { DEF: Infinity, MID: Infinity, FWD: Infinity };
+    for (const formation of VALID_STARTING_FORMATIONS) {
+      const required = formationRequiredCounts(formation);
+      for (const position of outfieldPositions) {
+        fewest[position] = Math.min(fewest[position], required[position]);
+      }
+    }
+    return fewest;
+  }, []);
+
+  /** What the squad is still missing before it could field any legal XI, and whether enough empty
+   * slots remain to fix it. Surfaced while picking, because the alternative is spending the whole
+   * £110M and only being told at save time that the squad is unfieldable. */
+  const unfieldableSquadWarning = useMemo(() => {
+    const shortfalls = (["DEF", "MID", "FWD"] as const)
+      .map((position) => ({
+        position,
+        stillNeeded:
+          fewestStartersAnyFormationNeeds[position] -
+          draftSquadPlayers.filter(({ player }) => player.position === position).length,
+      }))
+      .filter((shortfall) => shortfall.stillNeeded > 0);
+    if (shortfalls.length === 0) return null;
+
+    const shortfallList = shortfalls
+      .map((shortfall) => `${shortfall.stillNeeded} ${shortfall.position}`)
+      .join(", ");
+    const totalStillNeeded = shortfalls.reduce((sum, shortfall) => sum + shortfall.stillNeeded, 0);
+    const emptySlotCount = SQUAD_SIZE - draftRosterSlots.length;
+
+    return totalStillNeeded > emptySlotCount
+      ? {
+          isBlocking: true,
+          message: `This squad can't field a legal XI: it still needs ${shortfallList}, but only ${emptySlotCount} ${emptySlotCount === 1 ? "slot is" : "slots are"} free. Remove someone to make room.`,
+        }
+      : {
+          isBlocking: false,
+          message: `Every formation starts at least 3 DEF, 2 MID and 1 FWD — you still need ${shortfallList}.`,
+        };
+  }, [draftSquadPlayers, draftRosterSlots.length, fewestStartersAnyFormationNeeds]);
   const countsByClub = useMemo(() => {
     const counts = new Map<string, number>();
     for (const { player } of draftSquadPlayers) counts.set(player.club, (counts.get(player.club) ?? 0) + 1);
@@ -326,6 +405,11 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
 
   const starters = draftSquadPlayers.filter((entry) => entry.isStarting);
   const bench = draftSquadPlayers.filter((entry) => !entry.isStarting);
+  const squadIsFull = draftRosterSlots.length >= SQUAD_SIZE;
+  /** Null means "follow the squad": picking players is the task while the squad is short, and is
+   * not once it's complete. Any explicit open/close by the manager pins it and wins from then on,
+   * so the section never collapses out from under someone who opened it. */
+  const isPlayerPickerExpanded = isPlayerPickerOpen ?? !squadIsFull;
   const startingCountsByPosition = useMemo(() => {
     const counts: Record<PlayerPosition, number> = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
     for (const { player } of starters) counts[player.position]++;
@@ -420,7 +504,7 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
   function squadChangeBlockedReason(player: PlayerWithStats): string | null {
     if (isPlayerLocked(player)) return lockedSinceLabel(player) ?? "Locked";
     if (draftRosterSlots.some((slot) => slot.playerId === player.id)) return null;
-    if (draftRosterSlots.length >= SQUAD_SIZE) return `Squad is full (${SQUAD_SIZE}/${SQUAD_SIZE})`;
+    if (draftRosterSlots.length >= SQUAD_SIZE) return SQUAD_IS_FULL_REASON;
     if (player.position === "GK" && goalkeeperCount >= REQUIRED_GOALKEEPER_COUNT) {
       return `Squad already has ${REQUIRED_GOALKEEPER_COUNT} goalkeepers`;
     }
@@ -475,6 +559,9 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
   }
 
   function handleRemovePlayer(playerId: string) {
+    // Removing a player is the start of a swap, so the picker opens and stays open from here on
+    // rather than collapsing again the instant the squad is back to 16.
+    setIsPlayerPickerOpen(true);
     clearSaveFeedback();
     const player = playersById.get(playerId);
     if (player && squadChangeBlockedReason(player)) return;
@@ -620,6 +707,13 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
     }
   }
 
+  /** True only when no bench player can be promoted at all, which is the ordinary state of a
+   * complete squad — the XI is exactly full, so every position is closed. When only some
+   * positions are closed the rows keep their individual reasons, because they differ. */
+  const everyBenchPlayerIsBlockedByFormation =
+    bench.length > 0 &&
+    bench.every(({ player }) => isPlayerLocked(player) || toggleStartingError(player) !== null);
+
   if (loadError) return <p className="msg msg-error">{loadError}</p>;
   if (!team) return <LoadingState label="Loading your squad…" />;
 
@@ -630,10 +724,20 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
       </p>
 
       <div className="stat-row">
-        <StatTile label="Budget remaining" value={`£${remainingBudgetInMillions.toFixed(1)}M`} />
+        <StatTile
+          label={remainingBudgetInMillions < 0 ? "Over budget" : "Budget remaining"}
+          value={`£${remainingBudgetInMillions.toFixed(1)}M`}
+          valueStyle={remainingBudgetInMillions < 0 ? { color: "var(--color-error-text)" } : undefined}
+        />
         <StatTile label="Squad" value={`${draftRosterSlots.length}/${SQUAD_SIZE}`} />
         <StatTile label="Goalkeepers" value={`${goalkeeperCount}/${REQUIRED_GOALKEEPER_COUNT}`} />
       </div>
+
+      {unfieldableSquadWarning && (
+        <p className={unfieldableSquadWarning.isBlocking ? "msg msg-error" : "list-notice"}>
+          {unfieldableSquadWarning.message}
+        </p>
+      )}
 
       <h2>Formation</h2>
       <p>
@@ -711,6 +815,8 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
                   isLocked={locked}
                   toggleLabel="Bench"
                   blockedReason={locked ? (lockedSinceLabel(player) ?? "Locked") : null}
+                  removeBlockedReason={locked ? (lockedSinceLabel(player) ?? "Locked") : null}
+                  onRemove={() => handleRemovePlayer(player.id)}
                   onToggle={() => handleToggleStarting(player.id, false)}
                 />
               );
@@ -718,7 +824,12 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
           </ul>
 
           <h3>Bench</h3>
-          <ul className="lineup-list">
+          {everyBenchPlayerIsBlockedByFormation && (
+            <p className="list-notice" id={BENCH_FORMATION_NOTICE_ID}>
+              Your {selectedFormation} XI is full. Bench a starter to promote someone.
+            </p>
+          )}
+          <ul className="lineup-list lineup-list--bench">
             {bench.map(({ player }) => {
               const locked = isPlayerLocked(player);
               return (
@@ -726,8 +837,13 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
                   key={player.id}
                   player={player}
                   isLocked={locked}
-                  toggleLabel="Starting"
+                  toggleLabel="Start"
                   blockedReason={locked ? (lockedSinceLabel(player) ?? "Locked") : toggleStartingError(player)}
+                  hoistedReasonElementId={
+                    everyBenchPlayerIsBlockedByFormation && !locked ? BENCH_FORMATION_NOTICE_ID : undefined
+                  }
+                  removeBlockedReason={locked ? (lockedSinceLabel(player) ?? "Locked") : null}
+                  onRemove={() => handleRemovePlayer(player.id)}
                   onToggle={() => handleToggleStarting(player.id, true)}
                 />
               );
@@ -736,10 +852,17 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
         </div>
       </div>
 
-      <div className="discovery-header">
-        <h2>Player Discovery</h2>
-        <span className="budget-chip">£{remainingBudgetInMillions.toFixed(1)}M left</span>
-      </div>
+      <details
+        className="discovery-section"
+        open={isPlayerPickerExpanded}
+        onToggle={(event) => setIsPlayerPickerOpen(event.currentTarget.open)}
+      >
+      <summary className="discovery-header">
+        <h2>{squadIsFull ? "Change players" : "Add players"}</h2>
+        <span className="budget-chip">
+          {draftRosterSlots.length}/{SQUAD_SIZE} · £{remainingBudgetInMillions.toFixed(1)}M left
+        </span>
+      </summary>
       <p>
         All available players this season. Pick {SQUAD_SIZE}: {REQUIRED_GOALKEEPER_COUNT} goalkeepers +{" "}
         {SQUAD_SIZE - REQUIRED_GOALKEEPER_COUNT} outfield, max {MAX_PLAYERS_PER_CLUB} per club, within £
@@ -767,6 +890,12 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
         />
       </div>
 
+      {squadIsFull && (
+        <p className="list-notice" id={SQUAD_FULL_NOTICE_ID}>
+          {SQUAD_IS_FULL_REASON}. Remove a player to make room for another.
+        </p>
+      )}
+
       <div className="table-wrap">
         <table className="discovery-table">
           <thead>
@@ -785,11 +914,14 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
               const inSquad = draftRosterSlots.some((slot) => slot.playerId === player.id);
               const locked = isPlayerLocked(player);
               const blockedReason = squadChangeBlockedReason(player);
-              const blockedReasonElementId = `discovery-note-${player.id}`;
+              const ownNoteElementId = `discovery-note-${player.id}`;
+              const reasonIsHoisted = blockedReason === SQUAD_IS_FULL_REASON;
+              const blockedReasonElementId = reasonIsHoisted ? SQUAD_FULL_NOTICE_ID : ownNoteElementId;
+              const printsOwnNote = blockedReason !== null && !reasonIsHoisted;
               return (
                 <Fragment key={player.id}>
                   <tr
-                    className={[locked ? "row-locked" : "", blockedReason ? "has-row-note" : ""]
+                    className={[locked ? "row-locked" : "", printsOwnNote ? "has-row-note" : ""]
                       .filter(Boolean)
                       .join(" ")}
                   >
@@ -831,9 +963,9 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
                   {/* The reason sits on its own full-width line under the player rather than inside
                       the narrow leading action column, where a full sentence wrapped to three or
                       four lines and stretched the row with it. */}
-                  {blockedReason && (
+                  {printsOwnNote && (
                     <tr className={locked ? "discovery-row-note row-locked" : "discovery-row-note"}>
-                      <td colSpan={DISCOVERY_TABLE_COLUMN_COUNT} id={blockedReasonElementId}>
+                      <td colSpan={DISCOVERY_TABLE_COLUMN_COUNT} id={ownNoteElementId}>
                         {blockedReason}
                       </td>
                     </tr>
@@ -858,6 +990,7 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
           Next
         </button>
       </div>
+      </details>
 
       <div className="save-bar">
         {!isConfirmingSave && (
