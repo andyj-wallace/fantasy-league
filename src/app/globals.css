@@ -461,6 +461,23 @@ main.login-screen {
   outline-color: var(--color-yellow);
 }
 
+/* Chrome-bar links carry no border — the outlined button stays the only bordered thing up here.
+ * They need their own colour because the page-wide link colour is the header's own green. */
+.app-header-actions a {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.app-header-actions a:hover {
+  color: var(--color-yellow);
+  text-decoration: none;
+}
+
+.app-header-actions a:focus-visible {
+  outline-color: var(--color-yellow);
+}
+
 /* ── Buttons ─────────────────────────────────────────────── */
 
 button {
