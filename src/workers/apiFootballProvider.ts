@@ -1,3 +1,4 @@
+import { PREMIER_LEAGUE_EXTERNAL_LEAGUE_ID } from "../domain";
 import type { PlayerPosition, PlayerProfile, PlayerSeasonStatistics } from "../domain";
 import type {
   FootballDataProvider,
@@ -5,6 +6,8 @@ import type {
   ProviderFixtureDetail,
   ProviderGoalEvent,
   ProviderInjuryEntry,
+  ProviderLeagueSeason,
+  ProviderLeagueTeam,
   ProviderPlayerMatchStat,
   ProviderRosterEntry,
   ProviderSeasonInfo,
@@ -12,7 +15,7 @@ import type {
 } from "./footballDataProvider";
 
 /** Premier League's API-Football league ID. */
-const PREMIER_LEAGUE_ID = 39;
+const PREMIER_LEAGUE_ID = PREMIER_LEAGUE_EXTERNAL_LEAGUE_ID;
 
 /** Inter-request delay for loops that issue several calls back to back (one /players/squads
  * call per club, one /players call per page) — lower API-Football plan tiers (including Free)
@@ -160,6 +163,7 @@ interface RawLeagueSeasonEntry {
   year: number;
   current: boolean;
   coverage: {
+    players: boolean;
     fixtures: { statistics_players: boolean };
     injuries: boolean;
   };
@@ -167,6 +171,11 @@ interface RawLeagueSeasonEntry {
 
 interface RawLeagueEntry {
   seasons: RawLeagueSeasonEntry[];
+}
+
+/** /leagues?type=league — identity only; the season/coverage blocks are ignored here. */
+interface RawLeagueTypeEntry {
+  league: { id: number | null };
 }
 
 /** /players/profiles' single-player bio response. */
@@ -195,23 +204,27 @@ interface RawPlayerStatisticsEntry {
   player: { id: number; name: string };
   statistics: {
     team: { name: string };
-    league: { name: string };
+    league: { id: number | null; name: string };
     games: { appearences: number | null; minutes: number | null; position: string | null; rating: string | null };
     goals: { total: number | null; assists: number | null; saves: number | null };
     cards: { yellow: number | null; red: number | null };
   }[];
 }
 
-/** Maps a RawPlayerStatisticsEntry's first statistics block into PlayerSeasonStatistics — null
- * when the player has no statistics entry for the requested season at all. */
-function toPlayerSeasonStatistics(entry: RawPlayerStatisticsEntry, season: number): PlayerSeasonStatistics | null {
-  const statistics = entry.statistics[0];
-  if (!statistics) return null;
+type RawStatisticsBlock = RawPlayerStatisticsEntry["statistics"][number];
+
+/** Maps one competition's statistics block into PlayerSeasonStatistics. */
+function toPlayerSeasonStatisticsFromBlock(
+  player: RawPlayerStatisticsEntry["player"],
+  statistics: RawStatisticsBlock,
+  season: number,
+): PlayerSeasonStatistics {
   return {
-    externalId: String(entry.player.id),
+    externalId: String(player.id),
     season,
     club: statistics.team.name,
     leagueName: statistics.league.name,
+    leagueId: statistics.league.id,
     position: mapProviderPositionLabel(statistics.games.position),
     appearances: statistics.games.appearences ?? 0,
     minutesPlayed: statistics.games.minutes ?? 0,
@@ -222,6 +235,25 @@ function toPlayerSeasonStatistics(entry: RawPlayerStatisticsEntry, season: numbe
     yellowCards: statistics.cards.yellow ?? 0,
     redCards: statistics.cards.red ?? 0,
   };
+}
+
+/** Maps a RawPlayerStatisticsEntry's first statistics block into PlayerSeasonStatistics — null
+ * when the player has no statistics entry for the requested season at all.
+ *
+ * "First" is only meaningful for a league-scoped request, where every block belongs to the league
+ * asked for. On an unscoped single-player request the blocks span every competition in arbitrary
+ * order, and the caller wants toAllPlayerSeasonStatistics + selectPrimaryDomesticLeagueEntry
+ * instead. */
+function toPlayerSeasonStatistics(entry: RawPlayerStatisticsEntry, season: number): PlayerSeasonStatistics | null {
+  const statistics = entry.statistics[0];
+  if (!statistics) return null;
+  return toPlayerSeasonStatisticsFromBlock(entry.player, statistics, season);
+}
+
+/** Every competition the player appeared in that season, one PlayerSeasonStatistics per block.
+ * Entries share an externalId — the caller groups and picks (see selectPrimaryDomesticLeagueEntry). */
+function toAllPlayerSeasonStatistics(entry: RawPlayerStatisticsEntry, season: number): PlayerSeasonStatistics[] {
+  return entry.statistics.map((statistics) => toPlayerSeasonStatisticsFromBlock(entry.player, statistics, season));
 }
 
 /** Parses API-Football's "175 cm" / "68 kg" string fields down to a bare number. */
@@ -506,6 +538,7 @@ export class ApiFootballProvider implements FootballDataProvider {
   private async paginateLeaguePlayersForSeason<T>(
     season: number,
     toResult: (entry: RawPlayerStatisticsEntry) => T | null,
+    scope: { league: number } | { team: number } = { league: PREMIER_LEAGUE_ID },
   ): Promise<T[]> {
     const results: T[] = [];
     let currentPage = 1;
@@ -516,7 +549,7 @@ export class ApiFootballProvider implements FootballDataProvider {
       let paging: { current: number; total: number } | undefined;
       try {
         ({ response, paging } = await this.request<RawPlayerStatisticsEntry[]>("players", {
-          league: PREMIER_LEAGUE_ID,
+          ...scope,
           season,
           page: currentPage,
         }));
@@ -582,17 +615,21 @@ export class ApiFootballProvider implements FootballDataProvider {
     }));
   }
 
-  async fetchLeagueCurrentSeason(): Promise<ProviderSeasonInfo | null> {
+  async fetchLeagueSeasons(): Promise<ProviderLeagueSeason[]> {
     const { response } = await this.request<RawLeagueEntry[]>("leagues", { id: PREMIER_LEAGUE_ID });
     const leagueEntry = response[0];
-    if (!leagueEntry) return null;
-    const currentSeason = leagueEntry.seasons.find((s) => s.current);
-    if (!currentSeason) return null;
-    return {
-      seasonYear: currentSeason.year,
-      coverageFixturePlayerStats: currentSeason.coverage.fixtures.statistics_players,
-      coverageInjuries: currentSeason.coverage.injuries,
-    };
+    if (!leagueEntry) return [];
+    return leagueEntry.seasons.map((season) => ({
+      seasonYear: season.year,
+      isCurrentSeason: season.current,
+      coverageFixturePlayerStats: season.coverage.fixtures.statistics_players,
+      coveragePlayers: season.coverage.players,
+      coverageInjuries: season.coverage.injuries,
+    }));
+  }
+
+  async fetchLeagueCurrentSeason(): Promise<ProviderSeasonInfo | null> {
+    return (await this.fetchLeagueSeasons()).find((season) => season.isCurrentSeason) ?? null;
   }
 
   async fetchQuotaStatus(): Promise<QuotaStatus> {
@@ -628,5 +665,36 @@ export class ApiFootballProvider implements FootballDataProvider {
     const { response } = await this.request<RawPlayerStatisticsEntry[]>("players", { id: externalPlayerId, season });
     const entry = response[0];
     return entry ? toPlayerSeasonStatistics(entry, season) : null;
+  }
+
+  async fetchPlayerSeasonStatisticsAcrossCompetitions(
+    externalPlayerId: string,
+    season: number,
+  ): Promise<PlayerSeasonStatistics[]> {
+    const { response } = await this.request<RawPlayerStatisticsEntry[]>("players", { id: externalPlayerId, season });
+    const entry = response[0];
+    return entry ? toAllPlayerSeasonStatistics(entry, season) : [];
+  }
+
+  async fetchTeamPlayerSeasonStatistics(externalTeamId: string, season: number): Promise<PlayerSeasonStatistics[]> {
+    const perPlayerEntries = await this.paginateLeaguePlayersForSeason(
+      season,
+      (entry) => toAllPlayerSeasonStatistics(entry, season),
+      { team: Number(externalTeamId) },
+    );
+    return perPlayerEntries.flat();
+  }
+
+  async fetchLeagueTeams(season: number): Promise<ProviderLeagueTeam[]> {
+    const { response } = await this.request<RawTeam[]>("teams", { league: PREMIER_LEAGUE_ID, season });
+    return response.map((entry) => ({ externalId: String(entry.team.id), name: entry.team.name }));
+  }
+
+  async fetchDomesticLeagueIds(): Promise<Set<number>> {
+    // One unpaginated call returns every league the provider classifies as a domestic league
+    // (type=league), which is what separates a Bundesliga season from a DFB Pokal run or a U21
+    // international qualifying campaign in a player's competition list.
+    const { response } = await this.request<RawLeagueTypeEntry[]>("leagues", { type: "league" });
+    return new Set(response.map((entry) => entry.league.id).filter((id): id is number => id !== null));
   }
 }

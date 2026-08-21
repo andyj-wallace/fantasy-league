@@ -12,6 +12,10 @@ export interface Player {
   availabilityStatus: PlayerAvailabilityStatus;
   /** Raw provider text ("Knee Injury", "Suspended", ...) for tooltip/label display alongside availabilityStatus. */
   availabilityReason: string | null;
+  /** False once a roster import no longer finds this player in a current Premier League squad —
+   * a relegated club's player, or one transferred out of the league. Kept in the table (historic
+   * score rows reference it) but hidden from player discovery. */
+  isInCurrentSeasonSquad: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

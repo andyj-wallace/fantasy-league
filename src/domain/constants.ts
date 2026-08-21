@@ -23,9 +23,10 @@ export const IS_COMMISSIONERSHIP_TRANSFER_ENABLED = false;
 
 /**
  * Flat per-position placeholder price assigned to a Player the first time the roster importer
- * sees them, and left in place by the initial-pricing hydration script
- * (hydrateInitialPlayerPricingOnce.ts) for anyone without enough previous-season data to price
- * confidently — see MINIMUM_PREVIOUS_SEASON_MINUTES_FOR_PRICING.
+ * sees them, and left in place by the pricing hydration script (hydratePlayerPricing.ts) for
+ * anyone without enough previous-season data to price confidently — see
+ * MINIMUM_PREVIOUS_SEASON_MINUTES_FOR_PRICING. Sitting at exactly this price is also how that
+ * script recognises who is still waiting to be priced, so nothing else may write it.
  */
 export const DEFAULT_INITIAL_PRICE_IN_MILLIONS_BY_POSITION: Record<PlayerPosition, number> = {
   GK: 3,
@@ -69,3 +70,38 @@ export const MAX_INITIAL_PRICE_IN_MILLIONS = 13.0;
  * DEFAULT_INITIAL_PRICE_IN_MILLIONS_BY_POSITION placeholder. ~5 full matches, matching
  * playerPricing.ts's FORM_WINDOW_MATCHES convention for "enough data to trust". */
 export const MINIMUM_PREVIOUS_SEASON_MINUTES_FOR_PRICING = 450;
+
+/** The provider's id for the Premier League — the one real-world competition this game is built
+ * around, and the reference league every other league's strength is measured against. */
+export const PREMIER_LEAGUE_EXTERNAL_LEAGUE_ID = 39;
+
+/**
+ * How much a season's output in each league is worth relative to the same output in the Premier
+ * League, keyed by API-Football's league id. A player arriving from elsewhere is priced off the
+ * league he actually played in, so 20 Championship goals must not price like 20 Premier League
+ * goals — see leagueStrength.ts and docs/new-player-pricing.md.
+ *
+ * These are first-pass estimates, deliberately named and grouped so they can be tuned
+ * independently once real arrival prices can be eyeballed. The ordering judgement worth knowing:
+ * the strong continental leagues below sit *above* the Championship, on the view that their
+ * output translates to the Premier League better than a second-tier English season does.
+ */
+export const LEAGUE_STRENGTH_MULTIPLIER_BY_EXTERNAL_LEAGUE_ID: Record<number, number> = {
+  39: 1.0, // Premier League (England) — the reference league, by definition 1.0
+  140: 0.85, // La Liga (Spain)
+  135: 0.85, // Serie A (Italy)
+  78: 0.85, // Bundesliga (Germany)
+  61: 0.85, // Ligue 1 (France)
+  88: 0.7, // Eredivisie (Netherlands)
+  94: 0.7, // Primeira Liga (Portugal)
+  203: 0.65, // Süper Lig (Turkey)
+  144: 0.65, // Jupiler Pro League (Belgium)
+  40: 0.6, // Championship (England)
+  179: 0.6, // Premiership (Scotland)
+  253: 0.55, // Major League Soccer (USA)
+};
+
+/** Applied to any domestic league not named in LEAGUE_STRENGTH_MULTIPLIER_BY_EXTERNAL_LEAGUE_ID.
+ * Deliberately pessimistic: an unlisted league is one we have no opinion on, and underpricing an
+ * unknown arrival is cheaper to correct than overpricing one. */
+export const DEFAULT_LEAGUE_STRENGTH_MULTIPLIER = 0.5;

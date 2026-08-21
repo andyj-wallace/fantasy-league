@@ -102,6 +102,11 @@ export const players = pgTable("players", {
   // Raw provider text ("Knee Injury", "Suspended", ...) for tooltip/label display — kept separate
   // from the enum rather than string-matched into it (fragile across providers/leagues).
   availabilityReason: text("availability_reason"),
+  // False once a roster import no longer finds this player in any current Premier League squad —
+  // relegated clubs' players, and anyone transferred out of the league. The row is kept (past
+  // PlayerScore/PlayerMatchStat rows reference it) but hidden from player discovery. Defaults true
+  // so seeded and pre-migration rows stay visible until an import says otherwise.
+  isInCurrentSeasonSquad: boolean("is_in_current_season_squad").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

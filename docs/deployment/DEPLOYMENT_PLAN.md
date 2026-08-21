@@ -335,11 +335,12 @@ Two workflows (or one gated pipeline):
 3. `cdk deploy` — creates VPC, NAT instance, RDS, Lambdas, HTTP API, CloudFront.
 4. Invoke the migration Lambda → schema created on RDS.
 5. Run the roster hydration path as needed (`hydrate:roster`) — or the existing seed —
-   to populate players (subject to the free/paid API-Football plan, tracked separately).
-   Before the season's first gameweek lock, follow with `hydrate:initial-pricing` to
-   replace the flat placeholder prices with previous-season-derived ones (see
-   `docs/initial-player-pricing.md`; not yet verified against the real API — see
-   `docs/remaining-gaps-todo.md` item 15).
+   to populate players. The first real import against a database still holding the mock seed
+   hides all 20 mock players, which trips the sweep anomaly brake, so that one run needs
+   `-- --allow-large-sweep` and a human watching it. Before the season's first gameweek lock,
+   follow with `hydrate:pricing` (preview first, then `-- --yes`) to replace the flat
+   placeholder prices with previous-season-derived ones — see
+   `docs/new-player-pricing.md`.
 6. Build + sync the frontend to S3, invalidate CloudFront.
 7. Smoke test (below). Then run the one-time **Strategy 3** live API-Football check.
 

@@ -30,6 +30,10 @@ export interface PlayerSeasonStatistics {
   season: number;
   club: string;
   leagueName: string;
+  /** API-Football's league id, needed to weight this stat line by league strength when pricing a
+   * player who played outside the Premier League. Null on the few competitions the provider
+   * reports without one. */
+  leagueId: number | null;
   position: PlayerPosition | null;
   appearances: number;
   minutesPlayed: number;

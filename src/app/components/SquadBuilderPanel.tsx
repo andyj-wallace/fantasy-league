@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { authedFetch } from "@/app/lib/apiFetch";
 import { API_CACHE_TTL_MS, getCachedJson, invalidateCached } from "@/app/lib/apiCache";
@@ -34,6 +34,10 @@ import {
 
 const ALL_POSITIONS: PlayerPosition[] = ["GK", "DEF", "MID", "FWD"];
 const PLAYERS_PER_PAGE = 15;
+
+/** Add/remove action, Name, Club, Pos, Price, Pts, Form — the span a blocked-reason note row needs
+ * to cover so it reads as a continuation of the player row above it. */
+const DISCOVERY_TABLE_COLUMN_COUNT = 7;
 
 /** Discovery-table columns the user can sort by, each mapped to the comparable value it sorts on.
  * Position sorts in on-pitch order (GK→FWD) rather than alphabetically. Form sorts by the most
@@ -129,6 +133,83 @@ function clearStoredSquadDraft(teamId: string): void {
   window.sessionStorage.removeItem(squadDraftStorageKey(teamId));
 }
 
+/**
+ * One player in the Starting XI or Bench list: a flat line of text — position, name, availability —
+ * ending in a text link that moves them to the other list. Deliberately not a card with a bordered
+ * button: the two lists run 16 rows deep and are mostly read on phones, where per-row chrome costs
+ * more vertical space than it earns.
+ *
+ * `blockedReason` disables the link and prints the reason as its own line under the row rather than
+ * beside it, so an explanation never widens or stretches the row.
+ */
+function LineupPlayerRow({
+  player,
+  isLocked,
+  toggleLabel,
+  blockedReason,
+  onToggle,
+}: {
+  player: PlayerWithStats;
+  /** Faded row treatment, for a player whose club has already kicked off. A row can be blocked
+   * without being locked (a bench player the formation has no starting slot for), which reads as
+   * an ordinary disabled link rather than a fade. */
+  isLocked: boolean;
+  toggleLabel: "Bench" | "Starting";
+  blockedReason: string | null;
+  onToggle: () => void;
+}) {
+  const blockedReasonElementId = `lineup-note-${player.id}`;
+  return (
+    <li className={isLocked ? "lineup-list-item-locked" : undefined}>
+      <span className="lineup-position">{player.position}</span>
+      <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
+      <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
+      <button
+        type="button"
+        className="btn-link lineup-toggle"
+        onClick={onToggle}
+        disabled={blockedReason !== null}
+        title={blockedReason ?? ""}
+        aria-describedby={blockedReason ? blockedReasonElementId : undefined}
+      >
+        {toggleLabel}
+      </button>
+      {blockedReason && (
+        <span className="lineup-row-note" id={blockedReasonElementId}>
+          {blockedReason}
+        </span>
+      )}
+    </li>
+  );
+}
+
+/**
+ * Player discovery (`GET /players`) only lists players still in a current Premier League squad, but
+ * a manager keeps holding a player whose club has left the league until they transfer him out.
+ * Without this backfill those roster slots resolve to nothing and the player silently disappears
+ * from the manager's own Starting XI — taking their price out of the budget total and letting a
+ * 15-man roster be saved over a 16-man one.
+ *
+ * Costs no extra request in the normal case: the follow-up by-id lookup only fires when a roster
+ * slot is actually missing from the discovery list.
+ */
+async function withRosterPlayersMissingFromDiscovery(
+  discoveryPlayers: PlayerWithStats[],
+  rosterSlots: TeamRosterSlot[],
+): Promise<PlayerWithStats[]> {
+  const discoveredPlayerIds = new Set(discoveryPlayers.map((player) => player.id));
+  const missingPlayerIds = rosterSlots
+    .map((slot) => slot.playerId)
+    .filter((playerId) => !discoveredPlayerIds.has(playerId));
+  if (missingPlayerIds.length === 0) return discoveryPlayers;
+
+  const missingPlayers = await getCachedJson<PlayerWithStats[]>(
+    `${getApiBaseUrl()}/players?playerIds=${missingPlayerIds.join(",")}`,
+    API_CACHE_TTL_MS.PLAYER_DATA,
+  ).catch(() => [] as PlayerWithStats[]);
+  return [...discoveryPlayers, ...missingPlayers];
+}
+
 /** Save feedback in three distinct shapes: full success, partial apply (the server skipped
  * changes to locked players and returned lockedChangeWarnings), and outright rejection. Kept
  * structured rather than as one string so partial saves can't be misread as clean successes. */
@@ -174,25 +255,36 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
       getCachedJson<Team>(`${getApiBaseUrl()}/teams/${teamId}`, API_CACHE_TTL_MS.SHORT),
       getCachedJson<PlayerWithStats[]>(`${getApiBaseUrl()}/players`, API_CACHE_TTL_MS.PLAYER_DATA),
     ])
-      .then(([loadedTeam, players]) => {
+      .then(async ([loadedTeam, players]) => {
         if (!loadedTeam?.rosterSlots) {
           setLoadError("Could not load this team — check the link and try again.");
           return;
         }
         setTeam(loadedTeam);
-        setAllPlayers(players);
 
         const storedDraft = readStoredSquadDraft(teamId);
+        const rosterSlots = storedDraft ? storedDraft.rosterSlots : loadedTeam.rosterSlots;
+        setAllPlayers(await withRosterPlayersMissingFromDiscovery(players, rosterSlots));
+
         if (storedDraft) {
           setDraftRosterSlots(storedDraft.rosterSlots);
           setSelectedFormation(storedDraft.formation);
           setCaptainPlayerId(storedDraft.captainPlayerId);
-          setViceCaptainPlayerId(storedDraft.viceCaptainPlayerId);
+          // A draft saved before captain/vice-captain became mutually exclusive (or a team saved
+          // that way server-side) can name the same player twice — drop the vice-captaincy rather
+          // than render a value the vice-captain list no longer offers.
+          setViceCaptainPlayerId(
+            storedDraft.viceCaptainPlayerId === storedDraft.captainPlayerId ? "" : storedDraft.viceCaptainPlayerId,
+          );
         } else {
           setDraftRosterSlots(loadedTeam.rosterSlots);
           setSelectedFormation(loadedTeam.formation ?? "4-4-2");
           setCaptainPlayerId(loadedTeam.captainPlayerId ?? "");
-          setViceCaptainPlayerId(loadedTeam.viceCaptainPlayerId ?? "");
+          setViceCaptainPlayerId(
+            loadedTeam.viceCaptainPlayerId === loadedTeam.captainPlayerId
+              ? ""
+              : (loadedTeam.viceCaptainPlayerId ?? ""),
+          );
         }
       })
       .catch(() => setLoadError("Could not load the squad builder — try refreshing."));
@@ -321,7 +413,12 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
     [sortedPlayers, pageStartIndex],
   );
 
-  function addPlayerError(player: PlayerWithStats): string | null {
+  /** Why this player's squad membership can't be changed right now, or null if it can. Covers both
+   * directions: a locked player can neither be added nor removed (the same rule setTeamRoster
+   * enforces on save), and an unlocked player outside the squad is checked against the squad-size,
+   * goalkeeper, per-club and budget limits. */
+  function squadChangeBlockedReason(player: PlayerWithStats): string | null {
+    if (isPlayerLocked(player)) return lockedSinceLabel(player) ?? "Locked";
     if (draftRosterSlots.some((slot) => slot.playerId === player.id)) return null;
     if (draftRosterSlots.length >= SQUAD_SIZE) return `Squad is full (${SQUAD_SIZE}/${SQUAD_SIZE})`;
     if (player.position === "GK" && goalkeeperCount >= REQUIRED_GOALKEEPER_COUNT) {
@@ -353,6 +450,15 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
     setViceCaptainPlayerId(playerId);
   }
 
+  /** Starters one of the two captaincy dropdowns may offer: everyone except whoever already holds
+   * the other armband. Captain and vice-captain must be different players (the save path rejects a
+   * squad where they aren't), so offering the same name in both lists only invites a rejection. */
+  function startersEligibleForCaptaincy(playerIdHoldingOtherArmband: string): PlayerWithStats[] {
+    return starters
+      .map(({ player }) => player)
+      .filter((player) => player.id !== playerIdHoldingOtherArmband);
+  }
+
   /** Whether the selected formation still has room for another starter at this position, given
    * who's already starting. Drives both auto-placement on add and the manual bench/starting toggle. */
   function hasOpenStartingSlot(position: PlayerPosition): boolean {
@@ -361,7 +467,7 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
 
   function handleAddPlayer(player: PlayerWithStats) {
     clearSaveFeedback();
-    if (addPlayerError(player)) return;
+    if (squadChangeBlockedReason(player)) return;
     setDraftRosterSlots((slots) => [
       ...slots,
       { playerId: player.id, isStarting: hasOpenStartingSlot(player.position) },
@@ -370,6 +476,8 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
 
   function handleRemovePlayer(playerId: string) {
     clearSaveFeedback();
+    const player = playersById.get(playerId);
+    if (player && squadChangeBlockedReason(player)) return;
     setDraftRosterSlots((slots) => slots.filter((slot) => slot.playerId !== playerId));
     if (captainPlayerId === playerId) setCaptainPlayerId("");
     if (viceCaptainPlayerId === playerId) setViceCaptainPlayerId("");
@@ -561,7 +669,7 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
               Captain
               <select value={captainPlayerId} onChange={(event) => handleSetCaptain(event.target.value)}>
                 <option value="">Choose captain</option>
-                {starters.map(({ player }) => (
+                {startersEligibleForCaptaincy(viceCaptainPlayerId).map((player) => (
                   <option key={player.id} value={player.id} disabled={isPlayerLocked(player)}>
                     {player.name}{isPlayerLocked(player) ? " (Locked)" : ""}
                   </option>
@@ -572,7 +680,7 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
               Vice-Captain
               <select value={viceCaptainPlayerId} onChange={(event) => handleSetViceCaptain(event.target.value)}>
                 <option value="">Choose vice-captain</option>
-                {starters.map(({ player }) => (
+                {startersEligibleForCaptaincy(captainPlayerId).map((player) => (
                   <option key={player.id} value={player.id} disabled={isPlayerLocked(player)}>
                     {player.name}{isPlayerLocked(player) ? " (Locked)" : ""}
                   </option>
@@ -593,52 +701,35 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
 
         <div className="builder-layout-list">
           <h3>Starting XI</h3>
-          <ul className="squad-list">
+          <ul className="lineup-list">
             {starters.map(({ player }) => {
               const locked = isPlayerLocked(player);
               return (
-                <li key={player.id} className={locked ? "squad-list-item-locked" : undefined}>
-                  <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
-                  <span className="badge">{player.position}</span>
-                  {locked && <span className="sr-only">{lockedSinceLabel(player) ?? "Locked"}</span>}
-                  <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
-                  <div className="cell-action" style={{ marginLeft: "auto" }}>
-                    <button
-                      onClick={() => handleToggleStarting(player.id, false)}
-                      disabled={locked}
-                      title={locked ? lockedSinceLabel(player) : ""}
-                    >
-                      → Bench
-                    </button>
-                    {locked && <span className="action-hint">{lockedSinceLabel(player) ?? "Locked"}</span>}
-                  </div>
-                </li>
+                <LineupPlayerRow
+                  key={player.id}
+                  player={player}
+                  isLocked={locked}
+                  toggleLabel="Bench"
+                  blockedReason={locked ? (lockedSinceLabel(player) ?? "Locked") : null}
+                  onToggle={() => handleToggleStarting(player.id, false)}
+                />
               );
             })}
           </ul>
 
           <h3>Bench</h3>
-          <ul className="squad-list">
+          <ul className="lineup-list">
             {bench.map(({ player }) => {
               const locked = isPlayerLocked(player);
-              const blockedReason = locked ? (lockedSinceLabel(player) ?? "Locked") : toggleStartingError(player);
               return (
-                <li key={player.id} className={locked ? "squad-list-item-locked" : undefined}>
-                  <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
-                  <span className="badge">{player.position}</span>
-                  {locked && <span className="sr-only">{lockedSinceLabel(player) ?? "Locked"}</span>}
-                  <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
-                  <div className="cell-action" style={{ marginLeft: "auto" }}>
-                    <button
-                      onClick={() => handleToggleStarting(player.id, true)}
-                      disabled={!!blockedReason}
-                      title={blockedReason ?? ""}
-                    >
-                      → Starting
-                    </button>
-                    {blockedReason && <span className="action-hint">{blockedReason}</span>}
-                  </div>
-                </li>
+                <LineupPlayerRow
+                  key={player.id}
+                  player={player}
+                  isLocked={locked}
+                  toggleLabel="Starting"
+                  blockedReason={locked ? (lockedSinceLabel(player) ?? "Locked") : toggleStartingError(player)}
+                  onToggle={() => handleToggleStarting(player.id, true)}
+                />
               );
             })}
           </ul>
@@ -692,44 +783,62 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
           <tbody>
             {paginatedPlayers.map((player) => {
               const inSquad = draftRosterSlots.some((slot) => slot.playerId === player.id);
-              const blockedReason = inSquad ? null : addPlayerError(player);
+              const locked = isPlayerLocked(player);
+              const blockedReason = squadChangeBlockedReason(player);
+              const blockedReasonElementId = `discovery-note-${player.id}`;
               return (
-                <tr key={player.id}>
-                  <td className="col-action">
-                    {inSquad ? (
-                      <button
-                        onClick={() => handleRemovePlayer(player.id)}
-                        aria-label={`Remove ${player.name} from squad`}
-                        title="Remove"
-                      >
-                        &minus;
-                      </button>
-                    ) : (
-                      <div className="cell-action">
+                <Fragment key={player.id}>
+                  <tr
+                    className={[locked ? "row-locked" : "", blockedReason ? "has-row-note" : ""]
+                      .filter(Boolean)
+                      .join(" ")}
+                  >
+                    <td className="col-action">
+                      {inSquad ? (
+                        <button
+                          onClick={() => handleRemovePlayer(player.id)}
+                          disabled={blockedReason !== null}
+                          aria-label={`Remove ${player.name} from squad`}
+                          aria-describedby={blockedReason ? blockedReasonElementId : undefined}
+                          title={blockedReason ?? "Remove"}
+                        >
+                          &minus;
+                        </button>
+                      ) : (
                         <button
                           className={!blockedReason ? "btn-primary" : ""}
                           onClick={() => handleAddPlayer(player)}
-                          disabled={!!blockedReason}
+                          disabled={blockedReason !== null}
                           aria-label={`Add ${player.name} to squad`}
+                          aria-describedby={blockedReason ? blockedReasonElementId : undefined}
                           title={blockedReason ?? "Add"}
                         >
                           +
                         </button>
-                        {blockedReason && <span className="action-hint">{blockedReason}</span>}
-                      </div>
-                    )}
-                  </td>
-                  <td>
-                    <PlayerNameTapTarget playerId={player.id} playerName={player.name} />{" "}
-                    {isPlayerLocked(player) && <LockedBadge contextLabel={lockedSinceLabel(player)} />}{" "}
-                    <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
-                  </td>
-                  <td>{player.club}</td>
-                  <td className="col-narrow">{player.position}</td>
-                  <td className="col-narrow">£{player.priceInMillions}M</td>
-                  <td className="col-narrow">{player.totalFantasyPoints}</td>
-                  <td className="col-narrow"><RecentFormBars points={player.recentFormPoints} /></td>
-                </tr>
+                      )}
+                    </td>
+                    <td>
+                      <PlayerNameTapTarget playerId={player.id} playerName={player.name} />{" "}
+                      {locked && <LockedBadge contextLabel={lockedSinceLabel(player)} />}{" "}
+                      <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
+                    </td>
+                    <td>{player.club}</td>
+                    <td className="col-narrow">{player.position}</td>
+                    <td className="col-narrow">£{player.priceInMillions}M</td>
+                    <td className="col-narrow">{player.totalFantasyPoints}</td>
+                    <td className="col-narrow"><RecentFormBars points={player.recentFormPoints} /></td>
+                  </tr>
+                  {/* The reason sits on its own full-width line under the player rather than inside
+                      the narrow leading action column, where a full sentence wrapped to three or
+                      four lines and stretched the row with it. */}
+                  {blockedReason && (
+                    <tr className={locked ? "discovery-row-note row-locked" : "discovery-row-note"}>
+                      <td colSpan={DISCOVERY_TABLE_COLUMN_COUNT} id={blockedReasonElementId}>
+                        {blockedReason}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               );
             })}
           </tbody>

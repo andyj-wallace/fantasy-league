@@ -41,7 +41,7 @@ async function openLeaguePage(page: Page, entities: SeededScenarioEntities): Pro
 async function openAlphaTransfersPanel(page: Page, entities: SeededScenarioEntities): Promise<Locator> {
   await page.goto(`/leagues?leagueId=${entities.leagueId}&panel=transfers&teamId=${entities.alphaTeamId}`);
   const overlay = page.locator(".overlay-surface");
-  await expect(overlay.getByRole("heading", { name: "Transfers" })).toBeVisible();
+  await expect(overlay.getByRole("heading", { name: "Transfers", exact: true })).toBeVisible();
   await expect(overlay.locator("tbody tr")).toHaveCount(16);
   return overlay;
 }
@@ -105,7 +105,7 @@ test("a gameweek spread across four days: per-kickoff locks, transfers, a postpo
   await test.step("warm up the dev-server routes so recordings show real state changes, not compiles", async () => {
     await openLeaguePage(page, entities);
     await page.goto(`/leagues?leagueId=${entities.leagueId}&panel=transfers&teamId=${entities.alphaTeamId}`);
-    await expect(page.locator(".overlay-surface").getByRole("heading", { name: "Transfers" })).toBeVisible();
+    await expect(page.locator(".overlay-surface").getByRole("heading", { name: "Transfers", exact: true })).toBeVisible();
   });
 
   await test.step("A — pre-gameweek: everything scheduled, nobody locked", async () => {

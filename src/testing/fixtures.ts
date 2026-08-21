@@ -28,6 +28,7 @@ export function buildPlayer(overrides: Partial<Player> = {}): Player {
     priceInMillions: 5,
     availabilityStatus: "AVAILABLE",
     availabilityReason: null,
+    isInCurrentSeasonSquad: true,
     createdAt: new Date("2026-07-01T00:00:00Z"),
     updatedAt: new Date("2026-07-01T00:00:00Z"),
     ...overrides,

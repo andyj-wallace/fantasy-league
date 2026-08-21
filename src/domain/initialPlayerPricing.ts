@@ -20,6 +20,10 @@ export interface InitialPlayerPricingInput {
   previousSeasonSaves: number;
   previousSeasonYellowCards: number;
   previousSeasonRedCards: number;
+  /** How much this player's league is worth relative to the Premier League — see
+   * leagueStrength.ts. Omit for a Premier League stat line; defaults to 1.0 (no adjustment) so a
+   * caller pricing off the Premier League bulk pull needs no extra argument. */
+  leagueStrengthMultiplier?: number;
 }
 
 /**
@@ -50,7 +54,11 @@ export function calculateInitialPriceInMillions(input: InitialPlayerPricingInput
     input.previousSeasonYellowCards * 1 -
     input.previousSeasonRedCards * 2;
 
-  const avgPointsPerMatch = approxSeasonPoints / input.previousSeasonAppearances;
+  // Discount the player's per-match output by how far his league sits below the Premier League,
+  // rather than the price itself — a weaker league should shrink the *earned* portion of the
+  // price, never push a player below his position's placeholder floor.
+  const avgPointsPerMatch =
+    (approxSeasonPoints / input.previousSeasonAppearances) * (input.leagueStrengthMultiplier ?? 1);
   const basePrice = DEFAULT_INITIAL_PRICE_IN_MILLIONS_BY_POSITION[input.position];
   const rawPrice = basePrice + avgPointsPerMatch * PRICE_PER_POINT_IN_MILLIONS;
   const clampedPrice = Math.max(basePrice, Math.min(MAX_INITIAL_PRICE_IN_MILLIONS, rawPrice));

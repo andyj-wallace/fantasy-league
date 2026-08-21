@@ -17,7 +17,7 @@
     "seed:match-stats": "tsx src/db/seedMatchStats.ts",
     "smoke:recorded": "tsx src/testing/recordedSmoke/runRecordedSmokeTest.ts",
     "hydrate:roster": "tsx src/workers/hydratePlayerRosterOnce.ts",
-    "hydrate:initial-pricing": "tsx src/workers/hydrateInitialPlayerPricingOnce.ts",
+    "hydrate:pricing": "tsx src/workers/hydratePlayerPricing.ts",
     "record:fixtures": "tsx src/workers/recordProviderFixturesOnce.ts",
     "dev:stop": "lsof -ti tcp:3000,3001 | xargs kill -9",
     "deploy:preflight": "scripts/deployment-preflight.sh",

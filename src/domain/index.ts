@@ -8,6 +8,8 @@ export * from "./player";
 export * from "./playerProfile";
 export * from "./playerPricing";
 export * from "./initialPlayerPricing";
+export * from "./leagueStrength";
+export * from "./hydrationCostModel";
 export * from "./playerForm";
 export * from "./gameweek";
 export * from "./transfer";
