@@ -292,7 +292,7 @@ async function main(): Promise<void> {
   console.log("Asserting playerScores:");
   for (const seedPlayer of SEED_PLAYERS) {
     const playerId = playerIdByExternalId.get(seedPlayer.externalId)!;
-    const score = await playerScoresRepository.findByPlayerAndGameweek(playerId, gameweek.id);
+    const score = await playerScoresRepository.findPlayerGameweekPoints(playerId, gameweek.id);
     assertPoints(seedPlayer.name, EXPECTED_PLAYER_POINTS[seedPlayer.externalId]!, score?.totalPoints ?? null);
   }
 

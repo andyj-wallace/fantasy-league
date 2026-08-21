@@ -1,4 +1,5 @@
 import type { PlayerAvailabilityStatus, PlayerPosition } from "./shared";
+import type { PlayerGameweekPoints } from "./playerScore";
 
 /** A real-world Premier League footballer available to be drafted into a Team. */
 export interface Player {
@@ -26,4 +27,8 @@ export interface PlayerWithStats extends Player {
   totalFantasyPoints: number;
   /** Most-recent-first points from up to the last 5 scored matches; null if fewer than 3 ("Insufficient Data"). */
   recentFormPoints: number[] | null;
+  /** Points keyed by gameweek number, for every gameweek this player has a scored match in. A
+   * missing key means "nothing scored yet" — no fixture this gameweek, or their match hasn't
+   * finished — which the UI must render differently from a present entry worth 0 points. */
+  pointsByGameweekNumber: Record<number, PlayerGameweekPoints>;
 }

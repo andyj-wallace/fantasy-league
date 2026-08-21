@@ -1,50 +1,48 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../client";
 import { gameweeks, playerScores } from "../schema";
-import type { PlayerScore, PlayerScoreBreakdown } from "../../domain";
+import type { PlayerGameweekPoints, PlayerScore } from "../../domain";
 
-/** PlayerScore rows written before the game-state bonus shipped have no gameStateBonusPoints key
- * in their stored jsonb. Anything summing the breakdown would reduce to NaN on those rows, so
- * default it here rather than at each call site. */
-function toPlayerScoreBreakdown(storedBreakdown: unknown): PlayerScoreBreakdown {
-  const breakdown = storedBreakdown as PlayerScoreBreakdown;
-  return { ...breakdown, gameStateBonusPoints: breakdown.gameStateBonusPoints ?? 0 };
-}
+/** SQL for "did this row's player take the field", from the stored breakdown's appearance points.
+ * Coalesced because rows written before a breakdown key existed would otherwise yield NULL. */
+const didAppearExpression = sql<boolean>`coalesce((${playerScores.breakdown} ->> 'appearancePoints')::int, 0) > 0`;
 
-function toPlayerScore(row: typeof playerScores.$inferSelect): PlayerScore {
-  return {
-    id: row.id,
-    playerId: row.playerId,
-    matchId: row.matchId,
-    gameweekId: row.gameweekId,
-    breakdown: toPlayerScoreBreakdown(row.breakdown),
-    totalPoints: row.totalPoints,
-    calculatedAt: row.calculatedAt,
-  };
-}
-
-export async function findByPlayerAndGameweek(
+/**
+ * A player's collapsed points for one gameweek, or null if they have no scored match in it.
+ * Sums across rows rather than returning the first: (playerId, matchId) is unique but
+ * (playerId, gameweekId) is not, so a club with two matches attributed to one gameweek — a
+ * postponed fixture replayed under its original round label — would otherwise be under-counted.
+ */
+export async function findPlayerGameweekPoints(
   playerId: string,
   gameweekId: string,
-): Promise<PlayerScore | null> {
+): Promise<PlayerGameweekPoints | null> {
   const [row] = await db
-    .select()
+    .select({
+      scoredMatchCount: sql<number>`count(*)::int`,
+      totalPoints: sql<number>`coalesce(sum(${playerScores.totalPoints}), 0)::int`,
+      didAppear: sql<boolean>`coalesce(bool_or(${didAppearExpression}), false)`,
+    })
     .from(playerScores)
     .where(and(eq(playerScores.playerId, playerId), eq(playerScores.gameweekId, gameweekId)));
-  return row ? toPlayerScore(row) : null;
+
+  if (!row || row.scoredMatchCount === 0) return null;
+  return { totalPoints: row.totalPoints, didAppear: row.didAppear };
 }
 
 /** Every scored match's points for the given players, newest gameweek first — the shape squad-
- * builder player cards need for total points and recent form, without the full breakdown. */
+ * builder player cards need for total points, recent form, and per-gameweek points, without
+ * carrying the full breakdown jsonb across the wire for every row. */
 export async function findManyByPlayerIds(
   playerIds: string[],
-): Promise<{ playerId: string; gameweekNumber: number; totalPoints: number }[]> {
+): Promise<{ playerId: string; gameweekNumber: number; totalPoints: number; didAppear: boolean }[]> {
   if (playerIds.length === 0) return [];
   return db
     .select({
       playerId: playerScores.playerId,
       gameweekNumber: gameweeks.number,
       totalPoints: playerScores.totalPoints,
+      didAppear: didAppearExpression,
     })
     .from(playerScores)
     .innerJoin(gameweeks, eq(playerScores.gameweekId, gameweeks.id))

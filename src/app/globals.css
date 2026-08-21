@@ -1043,8 +1043,10 @@ tbody tr:hover {
   letter-spacing: 0.08em;
 }
 
+/* The auto margin that pushes the right-hand controls over now lives on .lineup-gameweek-points,
+ * which always renders (empty when no gameweek is in play) and therefore always sits between the
+ * name and the controls. */
 .lineup-toggle {
-  margin-left: auto;
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -1087,6 +1089,101 @@ tbody tr:hover {
  * Bench/Starting toggle and captain/vice-captain options are actually disabled to match. */
 .lineup-list-item-locked {
   opacity: 0.55;
+}
+
+/* This gameweek's points for one player, in the data face so the column reads as a scoreboard
+ * rather than prose. Fixed width and tabular figures keep single- and double-digit scores on the
+ * same axis; the auto margin divides the row into "who" on the left and "what they did / what you
+ * can do" on the right. An em-dash means no scored match yet, which must not look like a 0. */
+.lineup-gameweek-points {
+  margin-left: auto;
+  flex: 0 0 2.2rem;
+  font-family: var(--font-data-stack);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: right;
+  color: var(--color-ink);
+}
+
+/* ── Gameweek summary: the team sheet's totals block ───────────
+ * Sits under the bench and closes the arithmetic — per-player points, the armband bonus, and the
+ * total they sum to. Styled as the foot of a printed sheet: a rule above, figures in the data
+ * face, right-aligned in one column. */
+.gameweek-summary {
+  margin-top: 1.25rem;
+  padding-top: 0.75rem;
+  border-top: 2px solid var(--color-ink);
+}
+
+.gameweek-summary h3 {
+  margin: 0 0 0.2rem;
+}
+
+.gameweek-summary-progress {
+  margin: 0 0 0.6rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+}
+
+.gameweek-summary-lines {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.gameweek-summary-lines > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.35rem 0.15rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.gameweek-summary-lines dt {
+  font-size: 0.82rem;
+  color: var(--color-ink-soft);
+}
+
+.gameweek-summary-lines dd {
+  margin: 0;
+  font-family: var(--font-data-stack);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+/* Captaincy, so it takes the armband colour — the one thing this pink is allowed to mean. */
+.gameweek-summary-lines > div:nth-child(2) dd {
+  color: var(--color-armband-ink);
+}
+
+.gameweek-summary-note {
+  color: var(--color-text-muted);
+  font-size: 0.76rem;
+}
+
+/* The figure the whole block exists to justify, so it carries the sheet's closing rule. */
+.gameweek-summary-lines > div.gameweek-summary-total {
+  border-bottom: 2px solid var(--color-ink);
+}
+
+.gameweek-summary-total dt {
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.gameweek-summary-total dd {
+  font-size: 1.15rem;
+}
+
+.gameweek-summary-footnote {
+  margin: 0.5rem 0 0;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: var(--color-text-muted);
 }
 
 /* A condition that applies to a whole list or table, stated once above it rather than repeated
