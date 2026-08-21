@@ -187,3 +187,85 @@ describe("setTeamRoster — partial apply for locked players", () => {
     expect(mocks.replaceRosterSlots).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * A roster save is the one write that can quietly invalidate captaincy: it can bench or drop
+ * whoever wears the armband, and nothing else revisits the assignment. Left alone, the stored
+ * captain would outlive their place in the XI and still collect the 2x when the gameweek scored.
+ */
+describe("setTeamRoster — captaincy the new roster invalidates", () => {
+  function givenTeamWithCaptaincy(captainPlayerId: string | null, viceCaptainPlayerId: string | null) {
+    mocks.findTeamById.mockResolvedValue(
+      buildTeam({ id: TEAM_ID, userId: USER_ID, captainPlayerId, viceCaptainPlayerId }),
+    );
+  }
+
+  it("clears the captain when the save benches them, and says so", async () => {
+    givenTeamWithCaptaincy("p13", "p14");
+
+    // Starter p13 (the captain) swaps to the bench; bench p15 comes in, keeping a valid 4-4-2.
+    const submitted = withStartingStatus(withStartingStatus(squad.currentSlots, "p13", false), "p15", true);
+    const { statusCode, body } = await callSetTeamRoster(submitted);
+
+    expect(statusCode).toBe(200);
+    expect(body.captaincyChangeWarnings).toEqual([
+      "Player p13 is no longer in your starting XI — captain cleared, pick a new one",
+    ]);
+    expect(mocks.replaceRosterSlots).toHaveBeenCalledWith(
+      TEAM_ID,
+      expect.anything(),
+      expect.any(Number),
+      { clearCaptainPlayerId: true, clearViceCaptainPlayerId: false },
+    );
+  });
+
+  it("clears the vice-captain independently of the captain", async () => {
+    givenTeamWithCaptaincy("p14", "p13");
+
+    const submitted = withStartingStatus(withStartingStatus(squad.currentSlots, "p13", false), "p15", true);
+    const { statusCode, body } = await callSetTeamRoster(submitted);
+
+    expect(statusCode).toBe(200);
+    expect(body.captaincyChangeWarnings).toEqual([
+      "Player p13 is no longer in your starting XI — vice-captain cleared, pick a new one",
+    ]);
+    expect(mocks.replaceRosterSlots).toHaveBeenCalledWith(
+      TEAM_ID,
+      expect.anything(),
+      expect.any(Number),
+      { clearCaptainPlayerId: false, clearViceCaptainPlayerId: true },
+    );
+  });
+
+  it("leaves captaincy alone when both still start", async () => {
+    givenTeamWithCaptaincy("p13", "p14");
+
+    // A swap that touches neither of them: starter p11 down, bench p12 up (both MID).
+    const submitted = withStartingStatus(withStartingStatus(squad.currentSlots, "p11", false), "p12", true);
+    const { statusCode, body } = await callSetTeamRoster(submitted);
+
+    expect(statusCode).toBe(200);
+    expect(body.captaincyChangeWarnings).toEqual([]);
+    expect(mocks.replaceRosterSlots).toHaveBeenCalledWith(
+      TEAM_ID,
+      expect.anything(),
+      expect.any(Number),
+      { clearCaptainPlayerId: false, clearViceCaptainPlayerId: false },
+    );
+  });
+
+  it("clears nothing for a team that has never set a captain", async () => {
+    givenTeamWithCaptaincy(null, null);
+
+    const { statusCode, body } = await callSetTeamRoster(squad.currentSlots);
+
+    expect(statusCode).toBe(200);
+    expect(body.captaincyChangeWarnings).toEqual([]);
+    expect(mocks.replaceRosterSlots).toHaveBeenCalledWith(
+      TEAM_ID,
+      expect.anything(),
+      expect.any(Number),
+      { clearCaptainPlayerId: false, clearViceCaptainPlayerId: false },
+    );
+  });
+});

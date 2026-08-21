@@ -160,3 +160,57 @@ describe("setTeamLineup — partial apply for locked players", () => {
     expect(mocks.updateLineup).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Only a starter can wear the armband. calculateTeamScores applies the 2x by player id alone, so
+ * a benched captain that reached the database would double a bench player's points — and V1 adds
+ * bench points to the team total regardless, so nothing downstream would catch it.
+ */
+describe("setTeamLineup — captain and vice-captain must be in the starting XI", () => {
+  it("rejects a captain who is on the bench", async () => {
+    givenTeamWithCaptaincy("p01", "p03");
+
+    // p15 is a bench FWD at an unlocked club, so nothing but the starter rule can stop it.
+    const { statusCode, body } = await callSetTeamLineup({ captainPlayerId: "p15", viceCaptainPlayerId: "p03" });
+
+    expect(statusCode).toBe(400);
+    expect(body.message).toBe("Player p15 is on the bench — your captain must be in the starting XI");
+    expect(mocks.updateLineup).not.toHaveBeenCalled();
+  });
+
+  it("rejects a vice-captain who is on the bench", async () => {
+    givenTeamWithCaptaincy("p01", "p03");
+
+    const { statusCode, body } = await callSetTeamLineup({ captainPlayerId: "p01", viceCaptainPlayerId: "p12" });
+
+    expect(statusCode).toBe(400);
+    expect(body.message).toBe("Player p12 is on the bench — your vice-captain must be in the starting XI");
+    expect(mocks.updateLineup).not.toHaveBeenCalled();
+  });
+
+  it("rejects a benched captain that a locked-player skip would have reinstated", async () => {
+    // The stored captain p15 is already on the bench. Moving the armband to locked p14 is skipped,
+    // which would ordinarily keep p15 — so the skip must not smuggle a bench player back in.
+    givenTeamWithCaptaincy("p15", "p03");
+
+    const { statusCode, body } = await callSetTeamLineup({ captainPlayerId: "p14", viceCaptainPlayerId: "p03" });
+
+    expect(statusCode).toBe(400);
+    expect(body.message).toContain("Player p15 is on the bench — your captain must be in the starting XI");
+    expect(body.message).toContain("after skipping locked-player changes");
+    expect(mocks.updateLineup).not.toHaveBeenCalled();
+  });
+
+  it("still saves when both captain and vice-captain are starters", async () => {
+    givenTeamWithCaptaincy("p01", "p03");
+
+    const { statusCode } = await callSetTeamLineup({ captainPlayerId: "p04", viceCaptainPlayerId: "p03" });
+
+    expect(statusCode).toBe(200);
+    expect(mocks.updateLineup).toHaveBeenCalledWith(TEAM_ID, {
+      formation: FORMATION,
+      captainPlayerId: "p04",
+      viceCaptainPlayerId: "p03",
+    });
+  });
+});

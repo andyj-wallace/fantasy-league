@@ -97,8 +97,40 @@ export const setTeamRoster: ApiHandler = requireAuth(async (event, session) => {
   const totalSpentInMillions = effectivePlayers.reduce((sum, player) => sum + player.priceInMillions, 0);
   const remainingBudgetInMillions = STARTING_SQUAD_BUDGET_IN_MILLIONS - totalSpentInMillions;
 
-  await teamsRepository.replaceRosterSlots(teamId, effectiveSlots, remainingBudgetInMillions);
+  // A roster save can bench or drop whoever currently wears the armband, and nothing else revisits
+  // captaincy — so without this the stored captain could outlive their place in the XI and still
+  // collect the 2x. Cleared in the same write as the roster, and reported so the manager knows to
+  // pick again rather than discovering it when the gameweek scores.
+  const effectiveStartingPlayerIds = new Set(
+    effectiveSlots.filter((slot) => slot.isStarting).map((slot) => slot.playerId),
+  );
+  const captaincyToClear = (["captain", "vice-captain"] as const)
+    .map((role) => ({
+      role,
+      playerId: role === "captain" ? team.captainPlayerId : team.viceCaptainPlayerId,
+    }))
+    .filter(
+      (assignment): assignment is { role: "captain" | "vice-captain"; playerId: string } =>
+        assignment.playerId !== null && !effectiveStartingPlayerIds.has(assignment.playerId),
+    );
+
+  const captaincyChangeWarnings: string[] = [];
+  if (captaincyToClear.length > 0) {
+    const clearedPlayers = await playersRepository.findManyByIds(captaincyToClear.map((a) => a.playerId));
+    const nameByPlayerId = new Map(clearedPlayers.map((player) => [player.id, player.name]));
+    for (const { role, playerId } of captaincyToClear) {
+      const name = nameByPlayerId.get(playerId);
+      captaincyChangeWarnings.push(
+        `${name ?? `Your ${role}`} is no longer in your starting XI — ${role} cleared, pick a new one`,
+      );
+    }
+  }
+
+  await teamsRepository.replaceRosterSlots(teamId, effectiveSlots, remainingBudgetInMillions, {
+    clearCaptainPlayerId: captaincyToClear.some((a) => a.role === "captain"),
+    clearViceCaptainPlayerId: captaincyToClear.some((a) => a.role === "vice-captain"),
+  });
 
   const updatedTeam = await teamsRepository.findFullTeamById(teamId);
-  return jsonResponse(200, { ...updatedTeam, lockedChangeWarnings });
+  return jsonResponse(200, { ...updatedTeam, lockedChangeWarnings, captaincyChangeWarnings });
 });
