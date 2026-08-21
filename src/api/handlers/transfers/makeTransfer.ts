@@ -74,7 +74,11 @@ export const makeTransfer: ApiHandler = requireAuth(async (event, session) => {
 
     if (remainingBudgetInMillions < 0) return badRequestResponse("Insufficient budget for this transfer");
 
-    await teamsRepository.replaceRosterSlots(teamId, updatedRosterSlots, remainingBudgetInMillions, tx);
+    await teamsRepository.replaceRosterSlots(teamId, updatedRosterSlots, remainingBudgetInMillions, {
+      tx,
+      clearCaptainPlayerId: lockedTeam.captainPlayerId === body.playerOutId,
+      clearViceCaptainPlayerId: lockedTeam.viceCaptainPlayerId === body.playerOutId,
+    });
     await teamsRepository.updateAfterTransfer(teamId, { remainingBudgetInMillions, bankedFreeTransferCount }, tx);
 
     const transfer: Transfer = {
@@ -88,6 +92,17 @@ export const makeTransfer: ApiHandler = requireAuth(async (event, session) => {
     };
     await transfersRepository.insert(transfer, tx);
 
-    return jsonResponse(201, transfer);
+    // Nothing follows a transfer the way a lineup save follows a roster save, so if this transfer
+    // took the armband out of the squad the manager has to be told here or not at all.
+    const clearedCaptaincyRoles = (["captain", "vice-captain"] as const).filter((role) =>
+      role === "captain"
+        ? lockedTeam.captainPlayerId === body.playerOutId
+        : lockedTeam.viceCaptainPlayerId === body.playerOutId,
+    );
+    const captaincyChangeWarnings = clearedCaptaincyRoles.map(
+      (role) => `${playerOut.name} was your ${role} — ${role} cleared, pick a new one before the deadline`,
+    );
+
+    return jsonResponse(201, { ...transfer, captaincyChangeWarnings });
   });
 });

@@ -34,11 +34,11 @@ export function LoggedOutLanding() {
   return (
     <main>
       <section className="landing-hero">
-        <span className="landing-eyebrow">Private Fantasy Premier League</span>
-        <h1 className="landing-title">Draft your squad. Outsmart your mates.</h1>
+        <span className="landing-eyebrow">Invite-only · Fantasy Premier League</span>
+        <h1 className="landing-title">Pick your sixteen. Beat your mates.</h1>
         <p className="landing-lede">
-          Build a 16-man squad on a £110M budget, make your transfers each gameweek, and battle your friends
-          up the table all season long.
+          £110M to spend, two free transfers a gameweek, and one captain who scores double. Every
+          result is scored the moment the final whistle goes.
         </p>
         <div className="landing-cta">
           <Link href="/login" className="btn-hero">Log in or sign up</Link>

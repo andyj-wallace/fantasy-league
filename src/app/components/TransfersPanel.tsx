@@ -233,7 +233,10 @@ export function TransfersPanel({
     invalidateCached(`${getApiBaseUrl()}/teams/${teamId}/transfers/available`);
     invalidateCached(`${getApiBaseUrl()}/me/teams`);
     await loadData();
-    setPageMessage(`Transfer confirmed: ${outgoing.name} → ${replacement?.name ?? replacementPlayerId}.`);
+    const captaincyChangeWarnings: string[] = body.captaincyChangeWarnings ?? [];
+    setPageMessage(
+      [`Transfer confirmed: ${outgoing.name} → ${replacement?.name ?? replacementPlayerId}.`, ...captaincyChangeWarnings].join(" "),
+    );
     onChanged?.();
     return null;
   }
