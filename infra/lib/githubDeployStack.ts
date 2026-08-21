@@ -91,10 +91,16 @@ export class GitHubDeployStack extends Stack {
         resources: ["*"],
       }),
     );
+    // rds:AddTagsToResource is required even though run-database-migrations.sh passes no
+    // --tags of its own: the DB instance is created with CDK's default copyTagsToSnapshot=true,
+    // so CreateDBSnapshot copies the instance's tags (Project/Environment/ManagedBy/Component)
+    // onto the new snapshot, and RDS authorizes that copy as a separate tagging call against
+    // the snapshot ARN. Without it CreateDBSnapshot fails with
+    // "not authorized to perform: rds:AddTagsToResource on resource: …:snapshot:…".
     prodDeployRole.addToPolicy(
       new iam.PolicyStatement({
         sid: "PreMigrationSnapshot",
-        actions: ["rds:CreateDBSnapshot", "rds:DescribeDBSnapshots"],
+        actions: ["rds:CreateDBSnapshot", "rds:DescribeDBSnapshots", "rds:AddTagsToResource"],
         resources: [
           `arn:aws:rds:${DEPLOYMENT_REGION}:${DEPLOYMENT_ACCOUNT}:db:fantasy-league-prod-db`,
           `arn:aws:rds:${DEPLOYMENT_REGION}:${DEPLOYMENT_ACCOUNT}:snapshot:fantasy-league-prod-pre-migrate-*`,
