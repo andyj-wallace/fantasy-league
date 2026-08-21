@@ -622,16 +622,25 @@ export class FantasyLeagueStack extends Stack {
     });
 
     // ── Cost guardrail ──────────────────────────────────────────────────────────────────
-    // Account-wide monthly cost budget (tag-scoped budgets need cost-allocation tags activated
-    // in the billing console first — revisit once that one-time activation is done). Alarms on
-    // absolute dollar amounts rather than a percentage of the budget limit, so the thresholds
-    // read the same regardless of what budgetLimit is set to.
+    // Monthly cost budget scoped to this environment's own spend. The Project, Environment,
+    // and Component cost-allocation tags were activated in the billing console on 2026-08-03,
+    // which is what makes costFilters possible — before that this had to be account-wide and
+    // unrelated spend counted against the limit.
+    //
+    // Two things to know about tag-scoped budgets: cost-allocation tags only attribute costs
+    // incurred *after* activation (earlier spend stays untagged forever), and anything the tags
+    // miss is now invisible to this budget. Alarms on absolute dollar amounts rather than a
+    // percentage of the limit, so the thresholds read the same regardless of budgetLimit.
     new budgets.CfnBudget(this, "MonthlyCostBudget", {
       budget: {
         budgetName: resourceName("monthly-cost"),
         budgetType: "COST",
         timeUnit: "MONTHLY",
         budgetLimit: { amount: 150, unit: "USD" },
+        // "user:" marks a user-defined (not AWS-generated) tag; Key$Value is the pairing syntax.
+        costFilters: {
+          TagKeyValue: [`user:Project$fantasy-league`, `user:Environment$${environmentName}`],
+        },
       },
       notificationsWithSubscribers: [
         {

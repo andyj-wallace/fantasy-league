@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 import {
   gameweeksRepository,
   matchesRepository,
+  matchGoalEventsRepository,
   pendingConfirmationPassesRepository,
   playerMatchStatsRepository,
   playersRepository,
 } from "../db/repositories";
-import type { Match, PlayerMatchStat } from "../domain";
-import type { FootballDataProvider, ProviderFixture, ProviderPlayerMatchStat } from "./footballDataProvider";
+import type { Match, MatchGoalEvent, PlayerMatchStat } from "../domain";
+import type { FootballDataProvider, ProviderFixture, ProviderGoalEvent, ProviderPlayerMatchStat } from "./footballDataProvider";
 import { mapApiFootballStatusToMatchStatus } from "./footballMatchStatusMapping";
 
 export interface ImportMatchDataResult {
@@ -53,9 +54,38 @@ export async function resolvePlayerMatchStats(matchId: string, providerStats: Pr
       penaltiesConceded: providerStat.penaltiesConceded,
       receivedYellowCard: providerStat.receivedYellowCard,
       receivedRedCard: providerStat.receivedRedCard,
+      wasInStartingLineup: providerStat.wasInStartingLineup,
     });
   }
   return stats;
+}
+
+/** Exported for reuse by the confirmation-pass re-poll, alongside resolvePlayerMatchStats.
+ * Unlike stats, an unresolvable scorer does NOT drop the event — the timeline has to stay
+ * complete for the running scoreline walk in identifyDecisiveGoals to be correct. */
+export async function resolveMatchGoalEvents(matchId: string, providerGoalEvents: ProviderGoalEvent[]): Promise<MatchGoalEvent[]> {
+  const goalEvents: MatchGoalEvent[] = [];
+  for (const providerGoalEvent of providerGoalEvents) {
+    const scorer = providerGoalEvent.externalScorerPlayerId
+      ? await playersRepository.findByExternalId(providerGoalEvent.externalScorerPlayerId)
+      : null;
+    const assister = providerGoalEvent.externalAssistPlayerId
+      ? await playersRepository.findByExternalId(providerGoalEvent.externalAssistPlayerId)
+      : null;
+
+    goalEvents.push({
+      id: randomUUID(),
+      matchId,
+      scorerPlayerId: scorer?.id ?? null,
+      assistPlayerId: assister?.id ?? null,
+      beneficiaryClub: providerGoalEvent.beneficiaryClub,
+      goalType: providerGoalEvent.goalType,
+      elapsedMinute: providerGoalEvent.elapsedMinute,
+      addedTimeMinute: providerGoalEvent.addedTimeMinute,
+      sequenceIndex: providerGoalEvent.sequenceIndex,
+    });
+  }
+  return goalEvents;
 }
 
 /**
@@ -99,9 +129,10 @@ export async function importMatchData(
     await matchesRepository.upsert(match);
 
     if (status === "COMPLETED" && previousStatus !== undefined && previousStatus !== "COMPLETED") {
-      const providerStats = await provider.fetchFixturePlayerStats(fixture.externalId);
-      const stats = await resolvePlayerMatchStats(match.id, providerStats);
+      const { playerStats, goalEvents: providerGoalEvents } = await provider.fetchFixturePlayerStatsAndGoalEvents(fixture.externalId);
+      const stats = await resolvePlayerMatchStats(match.id, playerStats);
       await playerMatchStatsRepository.insertMany(stats);
+      await matchGoalEventsRepository.insertMany(await resolveMatchGoalEvents(match.id, providerGoalEvents));
       await pendingConfirmationPassesRepository.schedule(
         match.id,
         fixture.externalId,

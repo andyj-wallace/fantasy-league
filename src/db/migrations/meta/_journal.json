@@ -71,6 +71,20 @@
       "when": 1785719934368,
       "tag": "0009_abandoned_microbe",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787015261662,
+      "tag": "0010_fast_toro",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1787260049901,
+      "tag": "0011_pale_power_man",
+      "breakpoints": true
     }
   ]
 }

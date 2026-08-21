@@ -14,6 +14,11 @@ export interface PlayerScoreBreakdown {
   redCardPoints: number;
   ownGoalPoints: number;
   penaltyConcededPoints: number;
+  /** The game-state bonus/penalty for a decisive goal, already multiplied by the timing
+   * multiplier and rounded. Positive for a winning/equalizing goal's scorer and assister,
+   * negative for the conceding team's starting GKs/DEFs. 0 for everyone else, which is the
+   * overwhelming majority of rows. */
+  gameStateBonusPoints: number;
 }
 
 /** A player's calculated fantasy points for one match, precomputed by calculatePlayerScores(matchId). */

@@ -1,8 +1,13 @@
+import { PREMIER_LEAGUE_EXTERNAL_LEAGUE_ID } from "../domain";
 import type { PlayerPosition, PlayerProfile, PlayerSeasonStatistics } from "../domain";
 import type {
   FootballDataProvider,
   ProviderFixture,
+  ProviderFixtureDetail,
+  ProviderGoalEvent,
   ProviderInjuryEntry,
+  ProviderLeagueSeason,
+  ProviderLeagueTeam,
   ProviderPlayerMatchStat,
   ProviderRosterEntry,
   ProviderSeasonInfo,
@@ -10,7 +15,7 @@ import type {
 } from "./footballDataProvider";
 
 /** Premier League's API-Football league ID. */
-const PREMIER_LEAGUE_ID = 39;
+const PREMIER_LEAGUE_ID = PREMIER_LEAGUE_EXTERNAL_LEAGUE_ID;
 
 /** Inter-request delay for loops that issue several calls back to back (one /players/squads
  * call per club, one /players call per page) — lower API-Football plan tiers (including Free)
@@ -39,8 +44,8 @@ const PER_MINUTE_WINDOW_MS = 60_000;
  * the exhausted counter, not when the provider's window actually started. */
 const PER_MINUTE_WINDOW_RESET_BUFFER_MS = 2_000;
 /** Dispatch is paused while the observed per-minute remaining is at or below this. One (not
- * zero) so the concurrent pair in fetchFixturePlayerStats can't race past an almost-spent
- * window between snapshot reads. */
+ * zero) so the concurrent pair in fetchFixturePlayerStatsAndGoalEvents can't race past an
+ * almost-spent window between snapshot reads. */
 const PER_MINUTE_REMAINING_RESERVE = 1;
 /** Upper bound on the single 429 retry wait — a full per-minute window plus buffer. */
 const MAX_RATE_LIMITED_RETRY_WAIT_MS = 65_000;
@@ -116,17 +121,21 @@ interface RawFixture {
 interface RawFixtureEvent {
   type: string;
   detail: string;
+  time: { elapsed: number | null; extra: number | null };
+  team: { name: string };
   player: { id: number | null; name: string | null };
+  assist: { id: number | null; name: string | null };
 }
 
 interface RawFixturePlayerStatistics {
-  games: { minutes: number | null };
+  games: { minutes: number | null; substitute: boolean | null };
   goals: { total: number | null; assists: number | null; saves: number | null };
   cards: { yellow: number | null; red: number | null };
   penalty: { won: number | null; commited?: number | null; committed?: number | null };
 }
 
 interface RawFixturePlayersBlock {
+  team: { name: string };
   players: { player: { id: number }; statistics: RawFixturePlayerStatistics[] }[];
 }
 
@@ -154,6 +163,7 @@ interface RawLeagueSeasonEntry {
   year: number;
   current: boolean;
   coverage: {
+    players: boolean;
     fixtures: { statistics_players: boolean };
     injuries: boolean;
   };
@@ -161,6 +171,11 @@ interface RawLeagueSeasonEntry {
 
 interface RawLeagueEntry {
   seasons: RawLeagueSeasonEntry[];
+}
+
+/** /leagues?type=league — identity only; the season/coverage blocks are ignored here. */
+interface RawLeagueTypeEntry {
+  league: { id: number | null };
 }
 
 /** /players/profiles' single-player bio response. */
@@ -189,23 +204,27 @@ interface RawPlayerStatisticsEntry {
   player: { id: number; name: string };
   statistics: {
     team: { name: string };
-    league: { name: string };
+    league: { id: number | null; name: string };
     games: { appearences: number | null; minutes: number | null; position: string | null; rating: string | null };
     goals: { total: number | null; assists: number | null; saves: number | null };
     cards: { yellow: number | null; red: number | null };
   }[];
 }
 
-/** Maps a RawPlayerStatisticsEntry's first statistics block into PlayerSeasonStatistics — null
- * when the player has no statistics entry for the requested season at all. */
-function toPlayerSeasonStatistics(entry: RawPlayerStatisticsEntry, season: number): PlayerSeasonStatistics | null {
-  const statistics = entry.statistics[0];
-  if (!statistics) return null;
+type RawStatisticsBlock = RawPlayerStatisticsEntry["statistics"][number];
+
+/** Maps one competition's statistics block into PlayerSeasonStatistics. */
+function toPlayerSeasonStatisticsFromBlock(
+  player: RawPlayerStatisticsEntry["player"],
+  statistics: RawStatisticsBlock,
+  season: number,
+): PlayerSeasonStatistics {
   return {
-    externalId: String(entry.player.id),
+    externalId: String(player.id),
     season,
     club: statistics.team.name,
     leagueName: statistics.league.name,
+    leagueId: statistics.league.id,
     position: mapProviderPositionLabel(statistics.games.position),
     appearances: statistics.games.appearences ?? 0,
     minutesPlayed: statistics.games.minutes ?? 0,
@@ -216,6 +235,25 @@ function toPlayerSeasonStatistics(entry: RawPlayerStatisticsEntry, season: numbe
     yellowCards: statistics.cards.yellow ?? 0,
     redCards: statistics.cards.red ?? 0,
   };
+}
+
+/** Maps a RawPlayerStatisticsEntry's first statistics block into PlayerSeasonStatistics — null
+ * when the player has no statistics entry for the requested season at all.
+ *
+ * "First" is only meaningful for a league-scoped request, where every block belongs to the league
+ * asked for. On an unscoped single-player request the blocks span every competition in arbitrary
+ * order, and the caller wants toAllPlayerSeasonStatistics + selectPrimaryDomesticLeagueEntry
+ * instead. */
+function toPlayerSeasonStatistics(entry: RawPlayerStatisticsEntry, season: number): PlayerSeasonStatistics | null {
+  const statistics = entry.statistics[0];
+  if (!statistics) return null;
+  return toPlayerSeasonStatisticsFromBlock(entry.player, statistics, season);
+}
+
+/** Every competition the player appeared in that season, one PlayerSeasonStatistics per block.
+ * Entries share an externalId — the caller groups and picks (see selectPrimaryDomesticLeagueEntry). */
+function toAllPlayerSeasonStatistics(entry: RawPlayerStatisticsEntry, season: number): PlayerSeasonStatistics[] {
+  return entry.statistics.map((statistics) => toPlayerSeasonStatisticsFromBlock(entry.player, statistics, season));
 }
 
 /** Parses API-Football's "175 cm" / "68 kg" string fields down to a bare number. */
@@ -302,7 +340,7 @@ export class ApiFootballProvider implements FootballDataProvider {
     const snapshot = this.latestRateLimitSnapshot;
     if (snapshot?.perMinuteRequestsRemaining != null) {
       // Optimistic pre-decrement so concurrent callers (the Promise.all pair in
-      // fetchFixturePlayerStats) see this dispatch before its response headers land.
+      // fetchFixturePlayerStatsAndGoalEvents) see this dispatch before its response headers land.
       snapshot.perMinuteRequestsRemaining = Math.max(0, snapshot.perMinuteRequestsRemaining - 1);
     }
     const res = await fetch(url, { headers: { "x-apisports-key": this.apiKey } });
@@ -384,10 +422,12 @@ export class ApiFootballProvider implements FootballDataProvider {
     return response.map(toProviderFixture);
   }
 
-  async fetchFixturePlayerStats(externalFixtureId: string): Promise<ProviderPlayerMatchStat[]> {
+  async fetchFixturePlayerStatsAndGoalEvents(externalFixtureId: string): Promise<ProviderFixtureDetail> {
     if (!this.coverageFixturePlayerStats) {
-      console.log(`[provider] fetchFixturePlayerStats skipped — statistics_players not covered for season ${this.seasonYear}`);
-      return [];
+      console.log(
+        `[provider] fetchFixturePlayerStatsAndGoalEvents skipped — statistics_players not covered for season ${this.seasonYear}`,
+      );
+      return { playerStats: [], goalEvents: [] };
     }
     const [playersResult, eventsResult] = await Promise.all([
       this.request<RawFixturePlayersBlock[]>("fixtures/players", { fixture: externalFixtureId }),
@@ -402,14 +442,36 @@ export class ApiFootballProvider implements FootballDataProvider {
       }
     }
 
-    const stats: ProviderPlayerMatchStat[] = [];
+    // The provider credits an own goal to the scorer's own club; the goal counts for the other
+    // one. Normalizing here keeps every downstream consumer free of the special case.
+    const clubNamesInFixture = playersResult.response.map((teamBlock) => teamBlock.team.name);
+    const goalEvents: ProviderGoalEvent[] = [];
+    for (const [eventIndex, event] of eventsResult.response.entries()) {
+      // "Missed Penalty" arrives as type "Goal" in this feed, but it is neither a PENALTY goal nor
+      // a change to the scoreline — including it would corrupt the running scoreline walk.
+      if (event.type !== "Goal" || event.detail === "Missed Penalty") continue;
+      const isOwnGoal = event.detail === "Own Goal";
+      const opposingClubName = clubNamesInFixture.find((clubName) => clubName !== event.team.name);
+      const beneficiaryClub = isOwnGoal ? (opposingClubName ?? event.team.name) : event.team.name;
+      goalEvents.push({
+        externalScorerPlayerId: event.player.id == null ? null : String(event.player.id),
+        externalAssistPlayerId: isOwnGoal || event.assist.id == null ? null : String(event.assist.id),
+        beneficiaryClub,
+        goalType: isOwnGoal ? "OWN_GOAL" : event.detail === "Penalty" ? "PENALTY" : "NORMAL",
+        elapsedMinute: event.time.elapsed ?? 0,
+        addedTimeMinute: event.time.extra ?? 0,
+        sequenceIndex: eventIndex,
+      });
+    }
+
+    const playerStats: ProviderPlayerMatchStat[] = [];
     for (const teamBlock of playersResult.response) {
       for (const playerBlock of teamBlock.players) {
         const statistics = playerBlock.statistics[0];
         if (!statistics) continue;
 
         const externalPlayerId = String(playerBlock.player.id);
-        stats.push({
+        playerStats.push({
           externalPlayerId,
           minutesPlayed: statistics.games.minutes ?? 0,
           goalsScored: statistics.goals.total ?? 0,
@@ -422,10 +484,12 @@ export class ApiFootballProvider implements FootballDataProvider {
           penaltiesConceded: statistics.penalty.commited ?? statistics.penalty.committed ?? 0,
           receivedYellowCard: (statistics.cards.yellow ?? 0) > 0,
           receivedRedCard: (statistics.cards.red ?? 0) > 0,
+          // Strictly `=== false`: an absent or null flag is unknown, not "started".
+          wasInStartingLineup: statistics.games.substitute === false,
         });
       }
     }
-    return stats;
+    return { playerStats, goalEvents };
   }
 
   /** One call to enumerate the league's 20 clubs, then one /players/squads call per club — no
@@ -474,6 +538,7 @@ export class ApiFootballProvider implements FootballDataProvider {
   private async paginateLeaguePlayersForSeason<T>(
     season: number,
     toResult: (entry: RawPlayerStatisticsEntry) => T | null,
+    scope: { league: number } | { team: number } = { league: PREMIER_LEAGUE_ID },
   ): Promise<T[]> {
     const results: T[] = [];
     let currentPage = 1;
@@ -484,7 +549,7 @@ export class ApiFootballProvider implements FootballDataProvider {
       let paging: { current: number; total: number } | undefined;
       try {
         ({ response, paging } = await this.request<RawPlayerStatisticsEntry[]>("players", {
-          league: PREMIER_LEAGUE_ID,
+          ...scope,
           season,
           page: currentPage,
         }));
@@ -550,17 +615,21 @@ export class ApiFootballProvider implements FootballDataProvider {
     }));
   }
 
-  async fetchLeagueCurrentSeason(): Promise<ProviderSeasonInfo | null> {
+  async fetchLeagueSeasons(): Promise<ProviderLeagueSeason[]> {
     const { response } = await this.request<RawLeagueEntry[]>("leagues", { id: PREMIER_LEAGUE_ID });
     const leagueEntry = response[0];
-    if (!leagueEntry) return null;
-    const currentSeason = leagueEntry.seasons.find((s) => s.current);
-    if (!currentSeason) return null;
-    return {
-      seasonYear: currentSeason.year,
-      coverageFixturePlayerStats: currentSeason.coverage.fixtures.statistics_players,
-      coverageInjuries: currentSeason.coverage.injuries,
-    };
+    if (!leagueEntry) return [];
+    return leagueEntry.seasons.map((season) => ({
+      seasonYear: season.year,
+      isCurrentSeason: season.current,
+      coverageFixturePlayerStats: season.coverage.fixtures.statistics_players,
+      coveragePlayers: season.coverage.players,
+      coverageInjuries: season.coverage.injuries,
+    }));
+  }
+
+  async fetchLeagueCurrentSeason(): Promise<ProviderSeasonInfo | null> {
+    return (await this.fetchLeagueSeasons()).find((season) => season.isCurrentSeason) ?? null;
   }
 
   async fetchQuotaStatus(): Promise<QuotaStatus> {
@@ -596,5 +665,36 @@ export class ApiFootballProvider implements FootballDataProvider {
     const { response } = await this.request<RawPlayerStatisticsEntry[]>("players", { id: externalPlayerId, season });
     const entry = response[0];
     return entry ? toPlayerSeasonStatistics(entry, season) : null;
+  }
+
+  async fetchPlayerSeasonStatisticsAcrossCompetitions(
+    externalPlayerId: string,
+    season: number,
+  ): Promise<PlayerSeasonStatistics[]> {
+    const { response } = await this.request<RawPlayerStatisticsEntry[]>("players", { id: externalPlayerId, season });
+    const entry = response[0];
+    return entry ? toAllPlayerSeasonStatistics(entry, season) : [];
+  }
+
+  async fetchTeamPlayerSeasonStatistics(externalTeamId: string, season: number): Promise<PlayerSeasonStatistics[]> {
+    const perPlayerEntries = await this.paginateLeaguePlayersForSeason(
+      season,
+      (entry) => toAllPlayerSeasonStatistics(entry, season),
+      { team: Number(externalTeamId) },
+    );
+    return perPlayerEntries.flat();
+  }
+
+  async fetchLeagueTeams(season: number): Promise<ProviderLeagueTeam[]> {
+    const { response } = await this.request<RawTeam[]>("teams", { league: PREMIER_LEAGUE_ID, season });
+    return response.map((entry) => ({ externalId: String(entry.team.id), name: entry.team.name }));
+  }
+
+  async fetchDomesticLeagueIds(): Promise<Set<number>> {
+    // One unpaginated call returns every league the provider classifies as a domestic league
+    // (type=league), which is what separates a Bundesliga season from a DFB Pokal run or a U21
+    // international qualifying campaign in a player's competition list.
+    const { response } = await this.request<RawLeagueTypeEntry[]>("leagues", { type: "league" });
+    return new Set(response.map((entry) => entry.league.id).filter((id): id is number => id !== null));
   }
 }

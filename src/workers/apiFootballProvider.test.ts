@@ -3,10 +3,11 @@ import type { ApiFootballEnvelope } from "./apiFootballProvider";
 import { ApiFootballProvider } from "./apiFootballProvider";
 
 /**
- * Parsing tests for ApiFootballProvider.fetchFixturePlayerStats' players+events merge, fed with
- * in-memory envelopes mirroring API-Football's documented shapes (the recorded Tottenham 3-6
- * Liverpool fixture in __fixtures__ contains no own goal, so the own-goal attribution path is
- * pinned here with a synthetic event instead — same envelope shape, no extra API quota spent).
+ * Parsing tests for ApiFootballProvider.fetchFixturePlayerStatsAndGoalEvents' players+events
+ * merge, fed with in-memory envelopes mirroring API-Football's documented shapes (the recorded
+ * Tottenham 3-6 Liverpool fixture in __fixtures__ contains no own goal, so the own-goal
+ * attribution path is pinned here with a synthetic event instead — same envelope shape, no extra
+ * API quota spent).
  */
 class InMemoryEnvelopeProvider extends ApiFootballProvider {
   constructor(private readonly envelopesByPath: Record<string, unknown>) {
@@ -21,8 +22,12 @@ class InMemoryEnvelopeProvider extends ApiFootballProvider {
   }
 }
 
+const HOME_CLUB_NAME = "Home FC";
+const AWAY_CLUB_NAME = "Away FC";
+
 function playerStatisticsBlock(overrides: {
   minutes?: number | null;
+  substitute?: boolean | null;
   goals?: number | null;
   assists?: number | null;
   saves?: number | null;
@@ -32,38 +37,61 @@ function playerStatisticsBlock(overrides: {
   penaltyCommited?: number | null;
 }) {
   return {
-    games: { minutes: overrides.minutes ?? 90 },
+    games: { minutes: overrides.minutes ?? 90, substitute: overrides.substitute === undefined ? false : overrides.substitute },
     goals: { total: overrides.goals ?? null, assists: overrides.assists ?? null, saves: overrides.saves ?? null },
     cards: { yellow: overrides.yellow ?? 0, red: overrides.red ?? 0 },
     penalty: { won: overrides.penaltyWon ?? null, commited: overrides.penaltyCommited ?? null },
   };
 }
 
-describe("ApiFootballProvider.fetchFixturePlayerStats — players+events merge", () => {
+/** One entry of /fixtures/events. `club` is the provider's own attribution — for an own goal that
+ * is the scorer's club, not the club the goal counts for. */
+function fixtureEvent(overrides: {
+  type?: string;
+  detail?: string;
+  club: string;
+  elapsed?: number | null;
+  extra?: number | null;
+  playerId?: number | null;
+  assistId?: number | null;
+}) {
+  return {
+    type: overrides.type ?? "Goal",
+    detail: overrides.detail ?? "Normal Goal",
+    time: { elapsed: overrides.elapsed ?? 30, extra: overrides.extra ?? null },
+    team: { name: overrides.club },
+    player: { id: overrides.playerId ?? null, name: null },
+    assist: { id: overrides.assistId ?? null, name: null },
+  };
+}
+
+describe("ApiFootballProvider.fetchFixturePlayerStatsAndGoalEvents — players+events merge", () => {
   it("attributes own goals from the events feed to the right player and maps stat fields", async () => {
     const provider = new InMemoryEnvelopeProvider({
       "fixtures/players": [
         {
+          team: { name: HOME_CLUB_NAME },
           players: [
             { player: { id: 100 }, statistics: [playerStatisticsBlock({ goals: 2, assists: 1, yellow: 1 })] },
             { player: { id: 200 }, statistics: [playerStatisticsBlock({ minutes: 78, red: 1 })] },
           ],
         },
         {
+          team: { name: AWAY_CLUB_NAME },
           players: [{ player: { id: 300 }, statistics: [playerStatisticsBlock({ saves: 5, penaltyCommited: 1 })] }],
         },
       ],
       "fixtures/events": [
-        { type: "Goal", detail: "Normal Goal", player: { id: 100, name: "Scorer" } },
-        { type: "Goal", detail: "Own Goal", player: { id: 200, name: "Unlucky Defender" } },
-        { type: "Card", detail: "Yellow Card", player: { id: 100, name: "Scorer" } },
+        fixtureEvent({ detail: "Normal Goal", club: HOME_CLUB_NAME, playerId: 100 }),
+        fixtureEvent({ detail: "Own Goal", club: HOME_CLUB_NAME, playerId: 200 }),
+        fixtureEvent({ type: "Card", detail: "Yellow Card", club: HOME_CLUB_NAME, playerId: 100 }),
       ],
     });
 
-    const stats = await provider.fetchFixturePlayerStats("12345");
+    const { playerStats } = await provider.fetchFixturePlayerStatsAndGoalEvents("12345");
 
-    expect(stats).toHaveLength(3);
-    const statByExternalPlayerId = new Map(stats.map((stat) => [stat.externalPlayerId, stat]));
+    expect(playerStats).toHaveLength(3);
+    const statByExternalPlayerId = new Map(playerStats.map((stat) => [stat.externalPlayerId, stat]));
 
     const scorer = statByExternalPlayerId.get("100")!;
     expect(scorer.goalsScored).toBe(2);
@@ -86,19 +114,110 @@ describe("ApiFootballProvider.fetchFixturePlayerStats — players+events merge",
   it("counts multiple own goals by the same player and skips events with no player id", async () => {
     const provider = new InMemoryEnvelopeProvider({
       "fixtures/players": [
-        { players: [{ player: { id: 200 }, statistics: [playerStatisticsBlock({})] }] },
+        { team: { name: HOME_CLUB_NAME }, players: [{ player: { id: 200 }, statistics: [playerStatisticsBlock({})] }] },
       ],
       "fixtures/events": [
-        { type: "Goal", detail: "Own Goal", player: { id: 200, name: "Unlucky Defender" } },
-        { type: "Goal", detail: "Own Goal", player: { id: 200, name: "Unlucky Defender" } },
-        { type: "Goal", detail: "Own Goal", player: { id: null, name: null } },
+        fixtureEvent({ detail: "Own Goal", club: HOME_CLUB_NAME, playerId: 200 }),
+        fixtureEvent({ detail: "Own Goal", club: HOME_CLUB_NAME, playerId: 200 }),
+        fixtureEvent({ detail: "Own Goal", club: HOME_CLUB_NAME, playerId: null }),
       ],
     });
 
-    const stats = await provider.fetchFixturePlayerStats("12345");
+    const { playerStats } = await provider.fetchFixturePlayerStatsAndGoalEvents("12345");
 
-    expect(stats).toHaveLength(1);
-    expect(stats[0]!.ownGoalsScored).toBe(2);
+    expect(playerStats).toHaveLength(1);
+    expect(playerStats[0]!.ownGoalsScored).toBe(2);
+  });
+
+  it("treats only an explicit substitute:false as having started, never a null or absent flag", async () => {
+    const provider = new InMemoryEnvelopeProvider({
+      "fixtures/players": [
+        {
+          team: { name: HOME_CLUB_NAME },
+          players: [
+            { player: { id: 100 }, statistics: [playerStatisticsBlock({ substitute: false })] },
+            { player: { id: 200 }, statistics: [playerStatisticsBlock({ substitute: true })] },
+            { player: { id: 300 }, statistics: [playerStatisticsBlock({ substitute: null })] },
+          ],
+        },
+      ],
+      "fixtures/events": [],
+    });
+
+    const { playerStats } = await provider.fetchFixturePlayerStatsAndGoalEvents("12345");
+
+    expect(playerStats.map((stat) => stat.wasInStartingLineup)).toEqual([true, false, false]);
+  });
+});
+
+describe("ApiFootballProvider.fetchFixturePlayerStatsAndGoalEvents — goal timeline", () => {
+  function twoClubFixtureProvider(events: unknown[]): InMemoryEnvelopeProvider {
+    return new InMemoryEnvelopeProvider({
+      "fixtures/players": [
+        { team: { name: HOME_CLUB_NAME }, players: [{ player: { id: 100 }, statistics: [playerStatisticsBlock({})] }] },
+        { team: { name: AWAY_CLUB_NAME }, players: [{ player: { id: 200 }, statistics: [playerStatisticsBlock({})] }] },
+      ],
+      "fixtures/events": events,
+    });
+  }
+
+  it("credits an own goal to the opposing club, not the club the provider attributes it to", async () => {
+    const provider = twoClubFixtureProvider([
+      fixtureEvent({ detail: "Own Goal", club: HOME_CLUB_NAME, playerId: 100, assistId: 999, elapsed: 62 }),
+    ]);
+
+    const { goalEvents } = await provider.fetchFixturePlayerStatsAndGoalEvents("12345");
+
+    expect(goalEvents).toEqual([
+      {
+        externalScorerPlayerId: "100",
+        // An own goal has no assister to credit, whatever the provider reports alongside it.
+        externalAssistPlayerId: null,
+        beneficiaryClub: AWAY_CLUB_NAME,
+        goalType: "OWN_GOAL",
+        elapsedMinute: 62,
+        addedTimeMinute: 0,
+        sequenceIndex: 0,
+      },
+    ]);
+  });
+
+  it("credits a normal goal to the scoring club and carries its assist through", async () => {
+    const provider = twoClubFixtureProvider([
+      fixtureEvent({ detail: "Normal Goal", club: AWAY_CLUB_NAME, playerId: 200, assistId: 201, elapsed: 90, extra: 4 }),
+    ]);
+
+    const { goalEvents } = await provider.fetchFixturePlayerStatsAndGoalEvents("12345");
+
+    expect(goalEvents).toEqual([
+      {
+        externalScorerPlayerId: "200",
+        externalAssistPlayerId: "201",
+        beneficiaryClub: AWAY_CLUB_NAME,
+        goalType: "NORMAL",
+        elapsedMinute: 90,
+        addedTimeMinute: 4,
+        sequenceIndex: 0,
+      },
+    ]);
+  });
+
+  it("keeps penalties, drops missed penalties and non-goal events, and indexes by raw feed position", async () => {
+    const provider = twoClubFixtureProvider([
+      fixtureEvent({ type: "Card", detail: "Yellow Card", club: HOME_CLUB_NAME, playerId: 100 }),
+      // Reported as type "Goal" by the provider, but no goal was scored — including it would move
+      // the running scoreline and mis-identify the decisive goal.
+      fixtureEvent({ detail: "Missed Penalty", club: HOME_CLUB_NAME, playerId: 100, elapsed: 55 }),
+      fixtureEvent({ detail: "Penalty", club: AWAY_CLUB_NAME, playerId: 200, elapsed: 70 }),
+      fixtureEvent({ type: "subst", detail: "Substitution 1", club: AWAY_CLUB_NAME, playerId: 200 }),
+    ]);
+
+    const { goalEvents } = await provider.fetchFixturePlayerStatsAndGoalEvents("12345");
+
+    expect(goalEvents).toHaveLength(1);
+    expect(goalEvents[0]!.goalType).toBe("PENALTY");
+    expect(goalEvents[0]!.elapsedMinute).toBe(70);
+    expect(goalEvents[0]!.sequenceIndex).toBe(2);
   });
 });
 

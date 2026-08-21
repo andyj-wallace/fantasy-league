@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_INITIAL_PRICE_IN_MILLIONS_BY_POSITION } from "./constants";
 import { calculateInitialPriceInMillions, type InitialPlayerPricingInput } from "./initialPlayerPricing";
 
 /**
@@ -89,5 +90,42 @@ describe("calculateInitialPriceInMillions — rounding", () => {
     const input = buildInput({ position: "MID", previousSeasonGoals: 3, previousSeasonAssists: 4 });
     const price = calculateInitialPriceInMillions(input)!;
     expect(Math.round(price * 10) / 10).toBe(price);
+  });
+});
+
+describe("calculateInitialPriceInMillions — league strength", () => {
+  const productiveSeason = { position: "FWD" as const, previousSeasonGoals: 15, previousSeasonAssists: 6 };
+
+  it("defaults to no adjustment, so a Premier League caller needs no extra argument", () => {
+    const unspecified = calculateInitialPriceInMillions(buildInput(productiveSeason));
+    const explicitlyUnadjusted = calculateInitialPriceInMillions(
+      buildInput({ ...productiveSeason, leagueStrengthMultiplier: 1 }),
+    );
+    expect(unspecified).toBe(explicitlyUnadjusted);
+  });
+
+  it("prices an identical stat line lower in a weaker league", () => {
+    const premierLeaguePrice = calculateInitialPriceInMillions(buildInput(productiveSeason))!;
+    const championshipPrice = calculateInitialPriceInMillions(
+      buildInput({ ...productiveSeason, leagueStrengthMultiplier: 0.6 }),
+    )!;
+    expect(championshipPrice).toBeLessThan(premierLeaguePrice);
+  });
+
+  it("never discounts a player below their position's placeholder floor", () => {
+    // A punishing multiplier must shrink the earned portion of the price, not the floor itself.
+    const price = calculateInitialPriceInMillions(
+      buildInput({ position: "GK", previousSeasonYellowCards: 12, leagueStrengthMultiplier: 0.05 }),
+    )!;
+    expect(price).toBeGreaterThanOrEqual(DEFAULT_INITIAL_PRICE_IN_MILLIONS_BY_POSITION.GK);
+  });
+
+  it("still leaves a sub-threshold season unpriced regardless of league", () => {
+    const input = buildInput({
+      previousSeasonAppearances: 5,
+      previousSeasonMinutesPlayed: 449,
+      leagueStrengthMultiplier: 1,
+    });
+    expect(calculateInitialPriceInMillions(input)).toBeNull();
   });
 });

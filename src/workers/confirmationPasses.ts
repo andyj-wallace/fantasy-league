@@ -1,7 +1,7 @@
-import { pendingConfirmationPassesRepository, playerMatchStatsRepository } from "../db/repositories";
+import { matchGoalEventsRepository, pendingConfirmationPassesRepository, playerMatchStatsRepository } from "../db/repositories";
 import { calculatePlayerScores } from "./calculatePlayerScores";
 import type { FootballDataProvider } from "./footballDataProvider";
-import { resolvePlayerMatchStats } from "./importMatchData";
+import { resolveMatchGoalEvents, resolvePlayerMatchStats } from "./importMatchData";
 
 /**
  * Re-polls any Match whose confirmation pass has come due (~45-60min after MATCH_COMPLETED,
@@ -20,9 +20,10 @@ export async function runDueConfirmationPasses(provider: FootballDataProvider): 
   const duePasses = await pendingConfirmationPassesRepository.findDue(new Date());
 
   for (const pass of duePasses) {
-    const providerStats = await provider.fetchFixturePlayerStats(pass.externalFixtureId);
-    const stats = await resolvePlayerMatchStats(pass.matchId, providerStats);
+    const { playerStats, goalEvents: providerGoalEvents } = await provider.fetchFixturePlayerStatsAndGoalEvents(pass.externalFixtureId);
+    const stats = await resolvePlayerMatchStats(pass.matchId, playerStats);
     await playerMatchStatsRepository.replaceForMatch(pass.matchId, stats);
+    await matchGoalEventsRepository.replaceForMatch(pass.matchId, await resolveMatchGoalEvents(pass.matchId, providerGoalEvents));
     await calculatePlayerScores(pass.matchId);
     await pendingConfirmationPassesRepository.remove(pass.id);
   }

@@ -1,0 +1,1 @@
+ALTER TABLE "players" ADD COLUMN "is_in_current_season_squad" boolean DEFAULT true NOT NULL;

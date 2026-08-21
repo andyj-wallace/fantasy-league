@@ -20,17 +20,19 @@ GitHub once the one-time setup in DEPLOYMENT_RUNBOOK.md's "Release process" sect
 complete. Infra deploys work two interchangeable ways: `deploy:infra` (CDK) and
 `deploy:infra:cli` (synth → publish assets → plain `aws cloudformation deploy`).
 
-**Status:** **App stack NOT DEPLOYED; CI/CD infra is.** Prod was live 2026-07-11
-through 2026-07-13, then fully torn down (stack, VPC, database, snapshot, bucket, SSM
-params — see DEPLOYMENT_RUNBOOK.md's Teardown section, including the 2026-07-13 as-run
-incident and fix) and hasn't been redeployed since. Separately, as of 2026-08-16 the
-account-level `FantasyLeagueGitHubDeploy` stack (GitHub OIDC provider + deploy role) is
-live, and `release` has branch protection requiring `integration-smoke` — see
-DEPLOYMENT_RUNBOOK.md's Release process section for what's still open (the
-`production` environment's required-reviewer rule) before a `release` push can be
-trusted to deploy unattended. Before the *first* deploy attempt since the teardown,
-run `npm run deploy:secrets` — the teardown deleted every `/fantasy-league/prod/*` SSM
-parameter and nothing recreates them automatically (see runbook Troubleshooting row
-16). The `infra/` CDK app itself is production-ready — see DEPLOYMENT_RUNBOOK.md for
-the as-run commands and remaining open follow-ups (reserved concurrency quota,
+**Status:** **LIVE as of 2026-08-17** — https://d3ktr55dnycetc.cloudfront.net. Prod was
+live 2026-07-11 through 2026-07-13, torn down, then redeployed via the `main`→`release`
+GitHub Actions pipeline (first successful end-to-end run of that pipeline — see
+DEPLOYMENT_RUNBOOK.md's Troubleshooting rows 15-16 for the two bugs it took to get
+there: an OIDC trust-policy/environment-claim mismatch, and SSM secrets that needed
+re-seeding after the teardown). That run's infra step (`cdk deploy`) was accidentally
+cancelled from the GitHub UI partway through — CloudFormation kept building regardless
+(cancelling the workflow doesn't cancel the underlying stack operation) and reached
+`CREATE_COMPLETE` on its own, but the workflow's remaining steps (migrate/frontend/
+smoke) never ran as a result. Those three were finished manually with `npm run
+deploy:migrate`, `deploy:frontend`, `deploy:smoke` — all passed. The account-level
+`FantasyLeagueGitHubDeploy` stack (GitHub OIDC provider + deploy role) is also live,
+and `release` has branch protection requiring `integration-smoke`. **Still open:** the
+`production` environment's required-reviewer rule — see DEPLOYMENT_RUNBOOK.md's
+Release process section — and the pre-existing follow-ups (reserved concurrency quota,
 match-poll schedule pending the API-Football plan decision).

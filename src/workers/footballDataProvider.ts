@@ -1,4 +1,4 @@
-import type { PlayerPosition, PlayerProfile, PlayerSeasonStatistics } from "../domain";
+import type { GoalType, PlayerPosition, PlayerProfile, PlayerSeasonStatistics } from "../domain";
 
 /**
  * Boundary between our system and an external football data source (currently API-Football,
@@ -30,6 +30,27 @@ export interface ProviderPlayerMatchStat {
   penaltiesConceded: number;
   receivedYellowCard: boolean;
   receivedRedCard: boolean;
+  wasInStartingLineup: boolean;
+}
+
+/** One goal off the provider's fixture event feed. beneficiaryClub is already own-goal
+ * normalized by the provider implementation, so importers never redo that reasoning. */
+export interface ProviderGoalEvent {
+  externalScorerPlayerId: string | null;
+  externalAssistPlayerId: string | null;
+  beneficiaryClub: string;
+  goalType: GoalType;
+  elapsedMinute: number;
+  addedTimeMinute: number;
+  sequenceIndex: number;
+}
+
+/** Everything one fixture-detail poll yields. The two halves travel together because they come
+ * from a single parallel fixtures/players + fixtures/events pair — splitting them into separate
+ * provider methods would double the per-fixture request cost (see docs/polling-budget.md). */
+export interface ProviderFixtureDetail {
+  playerStats: ProviderPlayerMatchStat[];
+  goalEvents: ProviderGoalEvent[];
 }
 
 export interface ProviderRosterEntry {
@@ -37,6 +58,12 @@ export interface ProviderRosterEntry {
   name: string;
   club: string;
   position: PlayerPosition;
+}
+
+/** One club in the league, as the provider identifies it. */
+export interface ProviderLeagueTeam {
+  externalId: string;
+  name: string;
 }
 
 export interface ProviderInjuryEntry {
@@ -55,8 +82,18 @@ export interface ProviderSeasonInfo {
   seasonYear: number;
   /** Whether the provider currently has per-player stats for completed fixtures (`fixtures/players` endpoint). */
   coverageFixturePlayerStats: boolean;
+  /** Whether the provider currently has the season's league-wide player list (`players?league&season`).
+   * Split out from the fixture-stats flag because the two genuinely diverge: season 2026 served
+   * `/teams` and `/players/squads` correctly while `/players?league=39&season=2026` returned zero
+   * results, so a caller must ask about the endpoint it is actually going to call. */
+  coveragePlayers: boolean;
   /** Whether the provider currently has injury/suspension data for the season (`injuries` endpoint). */
   coverageInjuries: boolean;
+}
+
+/** One season of the league as the provider holds it, with what it covers. */
+export interface ProviderLeagueSeason extends ProviderSeasonInfo {
+  isCurrentSeason: boolean;
 }
 
 export interface FootballDataProvider {
@@ -68,7 +105,7 @@ export interface FootballDataProvider {
   /** 1 call: broad status-only list of every fixture currently in play. */
   fetchLiveFixtures(): Promise<ProviderFixture[]>;
   /** 2 calls (events + players) for one fixture. */
-  fetchFixturePlayerStats(externalFixtureId: string): Promise<ProviderPlayerMatchStat[]>;
+  fetchFixturePlayerStatsAndGoalEvents(externalFixtureId: string): Promise<ProviderFixtureDetail>;
   /** ~21 calls (1 /teams + 20 /players/squads): current squads only, no pagination — cheap, but
    * misses new signings/promoted-club players not yet linked to a squad block. */
   fetchPlayerRoster(): Promise<ProviderRosterEntry[]>;
@@ -91,6 +128,11 @@ export interface FootballDataProvider {
   /** Monthly: resolves the current PL season year and what data is actually covered by the provider
    * for that season. Drives setCurrentSeason — null means provider unreachable, keep existing. */
   fetchLeagueCurrentSeason(): Promise<ProviderSeasonInfo | null>;
+  /** Every season of the league the provider holds, with coverage flags and which one is current —
+   * the same single /leagues call fetchLeagueCurrentSeason makes, read across all seasons. A
+   * hydration run deliberately pointed at a completed season needs *that* season's coverage flags,
+   * which the current-season answer cannot give it. */
+  fetchLeagueSeasons(): Promise<ProviderLeagueSeason[]>;
   /** Bio/photo detail for the player-detail page. Fetched live on each request — this is
    * presentational data outside the scoring pipeline, so unlike the methods above it has no
    * importer worker and nothing is persisted from it. */
@@ -98,6 +140,22 @@ export interface FootballDataProvider {
   /** One season's aggregated stat line for the player-detail page. Same live, not-persisted
    * rationale as fetchPlayerProfile. */
   fetchPlayerSeasonStatistics(externalPlayerId: string, season: number): Promise<PlayerSeasonStatistics | null>;
+  /** Every competition the player appeared in that season — one entry per competition, sharing an
+   * externalId. Unlike fetchPlayerSeasonStatistics this makes no guess about which one matters;
+   * pricing a player who arrived from outside the Premier League needs the whole list so it can
+   * pick his primary domestic league (see domain/leagueStrength.ts). */
+  fetchPlayerSeasonStatisticsAcrossCompetitions(externalPlayerId: string, season: number): Promise<PlayerSeasonStatistics[]>;
+  /** Every competition entry for every player who appeared for one club that season. The bulk
+   * alternative to a per-player lookup when many new signings share a former club — a club is
+   * ~2 pages where a whole league is ~48. */
+  fetchTeamPlayerSeasonStatistics(externalTeamId: string, season: number): Promise<PlayerSeasonStatistics[]>;
+  /** Ids of every competition the provider classifies as a domestic league, so cups and
+   * international tournaments can be excluded when picking a stat line to price from. One call;
+   * stable enough to cache across runs. */
+  fetchDomesticLeagueIds(): Promise<Set<number>>;
+  /** The league's clubs for a season, as id/name pairs — Player rows carry only a club name, so
+   * grouping players by club for a per-club bulk pull needs this mapping. */
+  fetchLeagueTeams(season: number): Promise<ProviderLeagueTeam[]>;
 }
 
 export class StubFootballDataProvider implements FootballDataProvider {
@@ -111,8 +169,8 @@ export class StubFootballDataProvider implements FootballDataProvider {
     return [];
   }
 
-  async fetchFixturePlayerStats(_externalFixtureId: string): Promise<ProviderPlayerMatchStat[]> {
-    return [];
+  async fetchFixturePlayerStatsAndGoalEvents(_externalFixtureId: string): Promise<ProviderFixtureDetail> {
+    return { playerStats: [], goalEvents: [] };
   }
 
   async fetchPlayerRoster(): Promise<ProviderRosterEntry[]> {
@@ -143,7 +201,30 @@ export class StubFootballDataProvider implements FootballDataProvider {
     return null;
   }
 
+  async fetchPlayerSeasonStatisticsAcrossCompetitions(
+    _externalPlayerId: string,
+    _season: number,
+  ): Promise<PlayerSeasonStatistics[]> {
+    return [];
+  }
+
+  async fetchTeamPlayerSeasonStatistics(_externalTeamId: string, _season: number): Promise<PlayerSeasonStatistics[]> {
+    return [];
+  }
+
+  async fetchDomesticLeagueIds(): Promise<Set<number>> {
+    return new Set();
+  }
+
+  async fetchLeagueTeams(_season: number): Promise<ProviderLeagueTeam[]> {
+    return [];
+  }
+
   async fetchLeagueCurrentSeason(): Promise<ProviderSeasonInfo | null> {
     return null;
+  }
+
+  async fetchLeagueSeasons(): Promise<ProviderLeagueSeason[]> {
+    return [];
   }
 }

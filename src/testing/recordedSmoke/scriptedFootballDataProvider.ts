@@ -1,4 +1,4 @@
-import { StubFootballDataProvider, type ProviderFixture, type ProviderPlayerMatchStat } from "../../workers/footballDataProvider";
+import { StubFootballDataProvider, type ProviderFixture, type ProviderFixtureDetail } from "../../workers/footballDataProvider";
 import {
   findCheckpoint,
   resolveFixtureSnapshot,
@@ -41,10 +41,12 @@ export class ScriptedFootballDataProvider extends StubFootballDataProvider {
   }
 
   /** Called by importMatchData exactly once per fixture, on its non-COMPLETED -> COMPLETED
-   * transition — so a static per-fixture stats map is all a scripted season needs. */
-  override async fetchFixturePlayerStats(externalFixtureId: string): Promise<ProviderPlayerMatchStat[]> {
+   * transition — so a static per-fixture stats map is all a scripted season needs. The goal
+   * timeline is deliberately empty: this scenario asserts on captaincy and standings, and a
+   * scored match with no goal events simply yields a zero game-state bonus everywhere. */
+  override async fetchFixturePlayerStatsAndGoalEvents(externalFixtureId: string): Promise<ProviderFixtureDetail> {
     const statLines = SCENARIO_STATS_BY_FIXTURE_EXTERNAL_ID[externalFixtureId] ?? [];
-    return statLines.map((line) => ({
+    const playerStats = statLines.map((line) => ({
       externalPlayerId: line.externalPlayerId,
       minutesPlayed: line.minutesPlayed ?? 90,
       goalsScored: line.goalsScored ?? 0,
@@ -55,6 +57,8 @@ export class ScriptedFootballDataProvider extends StubFootballDataProvider {
       penaltiesConceded: 0,
       receivedYellowCard: line.receivedYellowCard ?? false,
       receivedRedCard: line.receivedRedCard ?? false,
+      wasInStartingLineup: true,
     }));
+    return { playerStats, goalEvents: [] };
   }
 }

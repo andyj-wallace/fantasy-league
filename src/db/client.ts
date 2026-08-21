@@ -6,6 +6,18 @@ import * as schema from "./schema";
 
 const LOCAL_DATABASE_HOSTNAMES = new Set(["localhost", "127.0.0.1"]);
 
+/** Whether a connection string points at a developer's own Postgres rather than a deployed
+ * database. Exported so destructive dev-only scripts can refuse to run anywhere else — note a
+ * tunnelled connection to RDS (`db:tunnel`) is also localhost, so this is a guard against
+ * pointing a seed at a plain remote URL, not a guarantee the database is disposable. */
+export function isLocalDatabaseUrl(connectionString: string): boolean {
+  try {
+    return LOCAL_DATABASE_HOSTNAMES.has(new URL(connectionString).hostname);
+  } catch {
+    return false;
+  }
+}
+
 /** RDS server certificates chain to Amazon's private CA, which is not in Node's default trust
  * store — the regional bundle is committed next to this file and copied into the Lambda bundle
  * by the infra build. Only read when connecting to a non-local database. */

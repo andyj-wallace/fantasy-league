@@ -414,6 +414,24 @@ Two branches, two gates:
 teardown deleted every `/fantasy-league/prod/*` SSM parameter, and `deploy.yml`
 deliberately never recreates them in CI. See Troubleshooting row 16.
 
+**As-run: first successful pipeline deploy (2026-08-17).** Promotion happened as a
+local `git merge main` + `git push origin release` rather than a GitHub PR (no `gh`
+CLI/token available in the environment doing the merge that day) — the normal path is
+still the PR described above; this was a one-off. It took two pushes to actually land:
+the first (`fd824ba`, the OIDC fix itself) failed at the changeset-creation step
+(Troubleshooting row 16 — SSM secrets hadn't been re-seeded since the teardown yet);
+after running `npm run deploy:secrets`, the second push (`e13c1f8`, merging in the
+`deploy:rotate-football-key` doc/script work) got through `configure-aws-credentials`
+successfully, confirming the row-15 fix. Partway through the infra step, the workflow
+run was **accidentally cancelled from the GitHub UI**. That only killed the GitHub
+Actions job — the CloudFormation stack it had already kicked off kept building
+independently and reached `CREATE_COMPLETE` on its own a few minutes later (cancelling
+a workflow run does not cancel an in-flight stack operation). Since the job never
+reached steps 8-10, migrations/frontend/smoke were finished manually afterward:
+`npm run deploy:migrate` (10 migrations, pre-migration snapshot taken automatically),
+`npm run deploy:frontend`, `npm run deploy:smoke` — all passed. Live at
+https://d3ktr55dnycetc.cloudfront.net.
+
 ## Teardown — destroying an environment completely
 
 **Scripted (preferred):** `npm run destroy` prints the full ordered plan (read-only);
@@ -571,16 +589,34 @@ see `RELIABILITY_PLAN.md`) or re-seed via `npm run db:tunnel` + `npm run seed:mo
    CloudFront origin custom header, and the value is readable via `aws cloudfront
    get-distribution-config` regardless of how it is stored. It proves a request came
    through the CDN; it guards no data on its own.
-9. **The distribution is on CloudFront's Free pricing plan** (discovered 2026-08-03 — it was
-   applied automatically at creation, not chosen). Three consequences the stack now works with
-   rather than against, each of which blocked a deploy or a teardown until it was understood
-   (troubleshooting rows 12-14): a WebACL is **mandatory** and CloudFront manages it,
-   `PriceClass` is **forbidden** with everything pinned to `PriceClass_All`, and **the
-   distribution cannot be deleted at all** until the plan is cancelled in the console.
+9. **CloudFront flat-rate pricing plans are per-distribution, and not something we choose.**
+   The **dev** distribution (2026-08-02 to 2026-08-03) was auto-enrolled in the Free plan at
+   creation. Three consequences, each of which blocked a deploy or a teardown until it was
+   understood (troubleshooting rows 12-14): a WebACL is **mandatory** and CloudFront manages
+   it, `PriceClass` is **forbidden** with everything pinned to `PriceClass_All`, and **the
+   distribution cannot be deleted** until the plan is cancelled in the console. That last one
+   makes teardown two-phase: cancel the plan, then tear down. `destroy-environment.sh` defers
+   rather than aborting on it, but cannot cancel or pre-detect the plan for you.
 
-   That last one makes teardown a two-phase operation whenever a distribution exists: cancel
-   the plan, then run the teardown. Budget for it — `npm run destroy` cannot do it for you and
-   cannot even detect it in advance.
+   **The prod distribution stays on the Free plan** — settled by Drew 2026-08-03. Note that
+   no CloudFront API or CLI exposes plan subscription (checked: `get-distribution`,
+   `get-distribution-config`, and the Cost Explorer `Global-CloudFrontPlan-Free` meter, which
+   shows usage on dates when no fantasy-league distribution existed and so can't be attributed
+   to one). The console's distribution detail page is the only reliable read — don't infer it
+   from a distribution's WebACL, and don't assume one environment matches another.
+
+   The consequence to plan around: **prod teardown is two-phase.** Cancel the plan in the
+   console first, or `destroy-environment.sh` takes its deferred path and stops short of
+   deleting the stack, VPC, and subnets.
+
+   **Prod has no WAF, and that is a deliberate, revisitable choice.** It has no
+   `CommonRuleSet`, `KnownBadInputsRuleSet`, or `AmazonIpReputationList` — dev got those free,
+   prod never had them. Deferred 2026-08-03: the site is being used by Drew, friends, and a
+   handful of others, and WAF is not worth paying for at that scale. **Revisit if usage
+   grows** — that is the stated trigger. Closing it means owning a `wafv2.CfnWebACL` in the
+   stack (the `webAclId` prop is already wired for it) at roughly $5/month/environment plus
+   rule and request charges. Until then, API Gateway throttling (50 rps / 100 burst) and the
+   CloudFront origin lock are what protect the API path.
 10. **Rotating `football-data-api-key` doesn't take effect until the consuming Lambda
     cold-starts** (added 2026-08-16). `loadRuntimeConfigFromSsm.ts` reads SSM once per
     cold start and caches the result in `process.env` for the life of that execution
