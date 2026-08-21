@@ -1,7 +1,7 @@
 "use client";
 
 import type { CurrentGameweekResponse } from "@/app/lib/gameweekContext";
-import type { GameweekStatus, LeagueStanding } from "../../domain";
+import { summarizeGameweekMatchProgress, type GameweekStatus, type LeagueStanding } from "../../domain";
 
 export interface StandingEntry extends LeagueStanding {
   teamName: string;
@@ -16,6 +16,32 @@ export interface StandingsResponse {
 /** The specified tooltip copy for the standings timestamp — see fantasy_league_user_flows_v1.txt. */
 const STANDINGS_UPDATE_TOOLTIP =
   "Scores update shortly after each match ends. On busier days with several matches finishing close together, it can take a bit longer for every score to come through.";
+
+/**
+ * Why the table is empty, said precisely. Standings are written only once every match in the
+ * gameweek is final — not per match as they finish — so mid-gameweek the honest answer includes
+ * how many fixtures are still outstanding. Without that count an empty leaderboard during a
+ * gameweek reads as breakage rather than as "not yet".
+ */
+function emptyStandingsExplanation(currentGameweek: CurrentGameweekResponse | null): string {
+  const gameweek = currentGameweek?.gameweek;
+  if (!gameweek) return "No standings yet — these appear once a gameweek's matches have been scored.";
+
+  const progress = summarizeGameweekMatchProgress(currentGameweek?.matches ?? []);
+  if (progress.totalMatchCount === 0) {
+    return `No standings yet — Gameweek ${gameweek.number}'s fixtures haven't been published yet.`;
+  }
+  if (progress.isGameweekFullyPlayed) {
+    return `No standings yet — Gameweek ${gameweek.number}'s matches have all finished, so scores are being calculated.`;
+  }
+  const outstandingMatchCount = progress.totalMatchCount - progress.finalizedMatchCount;
+  return (
+    `No standings yet — Gameweek ${gameweek.number} is ${progress.finalizedMatchCount} of ` +
+    `${progress.totalMatchCount} matches in. Standings appear once the remaining ` +
+    `${outstandingMatchCount === 1 ? "match has" : `${outstandingMatchCount} matches have`} finished. ` +
+    `Your players' points so far are in the Squad Builder.`
+  );
+}
 
 /** The precomputed leaderboard for a league — heading with the gameweek it reflects, a
  * provisional/final note, the ranked table, and a last-updated timestamp. Handles its own
@@ -49,14 +75,7 @@ export function LeagueStandingsSection({
         </p>
       )}
       {standings === null && <p>Loading…</p>}
-      {standings !== null && standings.length === 0 && (
-        <p>
-          No standings yet —{" "}
-          {currentGameweek?.gameweek
-            ? `Gameweek ${currentGameweek.gameweek.number}'s scores appear here once its matches finish.`
-            : "these appear once a gameweek's matches have been scored."}
-        </p>
-      )}
+      {standings !== null && standings.length === 0 && <p>{emptyStandingsExplanation(currentGameweek)}</p>}
       {standings !== null && standings.length > 0 && (
         <>
           <div className="table-wrap">

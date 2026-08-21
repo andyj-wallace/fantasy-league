@@ -31,3 +31,17 @@ export interface PlayerScore {
   totalPoints: number;
   calculatedAt: Date;
 }
+
+/**
+ * One player's contribution for a single gameweek, collapsed from their PlayerScore row(s).
+ * A gameweek normally holds exactly one match per club, but nothing in the schema guarantees it
+ * — a postponed fixture replayed later keeps its original round label, and therefore its original
+ * gameweek — so points are summed across every row rather than read from the first one found.
+ */
+export interface PlayerGameweekPoints {
+  totalPoints: number;
+  /** True if the player actually took the field (appearancePoints > 0 on any of the gameweek's
+   * rows). A scored row with didAppear false is an unused substitute: reported by the provider
+   * with 0 minutes, so present in the data but ineligible for the captain bonus. */
+  didAppear: boolean;
+}
