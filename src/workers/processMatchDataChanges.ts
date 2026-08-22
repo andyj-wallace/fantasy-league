@@ -29,6 +29,16 @@ export async function processMatchDataChanges(result: ImportMatchDataResult): Pr
   }
 
   for (const gameweekId of affectedGameweekIds) {
+    // The completion cascade must fire exactly once per gameweek: awardGameweekFreeTransfers is
+    // not idempotent — it increments every team's banked transfers by 2 unconditionally — so a
+    // second run silently gifts every manager two extra transfers. The only guard downstream of
+    // here is importMatchData reporting a match as newly completed solely on a genuine transition,
+    // and live-poll reconciliation now opens a second route into that list
+    // (docs/stuck-live-match-reconciliation-plan.md), so an already-COMPLETED gameweek is checked
+    // explicitly. Same reasoning as the confirmation pass's "never re-open a finalized gameweek".
+    const gameweek = await gameweeksRepository.findById(gameweekId);
+    if (gameweek?.status === "COMPLETED") continue;
+
     const isGameweekFullyScored = await gameweeksRepository.areAllMatchesCompleted(gameweekId);
     if (!isGameweekFullyScored) continue;
 

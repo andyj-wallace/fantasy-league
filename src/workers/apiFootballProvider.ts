@@ -1,5 +1,6 @@
 import { PREMIER_LEAGUE_EXTERNAL_LEAGUE_ID } from "../domain";
 import type { PlayerPosition, PlayerProfile, PlayerSeasonStatistics } from "../domain";
+import { MAX_FIXTURE_IDS_PER_PROVIDER_REQUEST } from "./footballDataProvider";
 import type {
   FootballDataProvider,
   ProviderFixture,
@@ -420,6 +421,27 @@ export class ApiFootballProvider implements FootballDataProvider {
       live: "all",
     });
     return response.map(toProviderFixture);
+  }
+
+  async fetchFixturesByExternalIds(externalFixtureIds: string[]): Promise<ProviderFixture[]> {
+    // `ids` is self-scoping — the fixtures are named outright — so this call takes neither
+    // `league` nor `season`, and an empty list must cost nothing rather than degrade into an
+    // unfiltered fixtures query.
+    const deduplicatedExternalFixtureIds = [...new Set(externalFixtureIds)];
+    const fixtures: ProviderFixture[] = [];
+    for (
+      let batchStartIndex = 0;
+      batchStartIndex < deduplicatedExternalFixtureIds.length;
+      batchStartIndex += MAX_FIXTURE_IDS_PER_PROVIDER_REQUEST
+    ) {
+      const batchedExternalFixtureIds = deduplicatedExternalFixtureIds.slice(
+        batchStartIndex,
+        batchStartIndex + MAX_FIXTURE_IDS_PER_PROVIDER_REQUEST,
+      );
+      const { response } = await this.request<RawFixture[]>("fixtures", { ids: batchedExternalFixtureIds.join("-") });
+      fixtures.push(...response.map(toProviderFixture));
+    }
+    return fixtures;
   }
 
   async fetchFixturePlayerStatsAndGoalEvents(externalFixtureId: string): Promise<ProviderFixtureDetail> {

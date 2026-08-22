@@ -393,3 +393,152 @@ describe("ApiFootballProvider.fetchPlayerSeasonStatistics", () => {
     expect(stats).toBeNull();
   });
 });
+
+/** One entry of the `fixtures?ids=` response, in the shape verified against the live API on
+ * 2026-08-22 — identical to the season fixture list's, which is why a reconciled fixture needs no
+ * import path of its own. */
+function rawFixtureEntry(overrides: {
+  id: number;
+  round?: string;
+  date?: string;
+  statusShort?: string;
+  statusLong?: string;
+  elapsed?: number | null;
+  home?: string;
+  away?: string;
+  homeGoals?: number | null;
+  awayGoals?: number | null;
+}) {
+  return {
+    fixture: {
+      id: overrides.id,
+      date: overrides.date ?? "2026-08-21T19:00:00+00:00",
+      status: {
+        short: overrides.statusShort ?? "FT",
+        long: overrides.statusLong ?? "Match Finished",
+        elapsed: overrides.elapsed === undefined ? 90 : overrides.elapsed,
+      },
+    },
+    league: { round: overrides.round ?? "Regular Season - 1" },
+    teams: { home: { name: overrides.home ?? HOME_CLUB_NAME }, away: { name: overrides.away ?? AWAY_CLUB_NAME } },
+    goals: { home: overrides.homeGoals ?? null, away: overrides.awayGoals ?? null },
+  };
+}
+
+/** Replays `fixtures?ids=` envelopes keyed by the fixture ids each batch asks for, and records
+ * every request — so both halves of the contract (what goes out, what comes back) are pinned
+ * without spending a real call. */
+class InMemoryFixturesByIdsProvider extends ApiFootballProvider {
+  readonly requestedFixtureIdParameters: string[] = [];
+
+  constructor(private readonly rawFixtureEntriesByExternalId: Record<string, unknown> = {}) {
+    super("https://in-memory.invalid", "test-no-key", 2026);
+  }
+
+  protected override async request<T>(path: string, params: Record<string, string | number> = {}): Promise<ApiFootballEnvelope<T>> {
+    if (path !== "fixtures" || params.ids === undefined) throw new Error(`Unexpected request: ${path} ${JSON.stringify(params)}`);
+    const requestedIds = String(params.ids);
+    this.requestedFixtureIdParameters.push(requestedIds);
+    const matchedEntries = requestedIds
+      .split("-")
+      .flatMap((externalId) => this.rawFixtureEntriesByExternalId[externalId] ?? []);
+    return { response: matchedEntries as T, errors: [] };
+  }
+}
+
+describe("ApiFootballProvider.fetchFixturesByExternalIds", () => {
+  it("asks for every id in one dash-joined request", async () => {
+    const provider = new InMemoryFixturesByIdsProvider();
+
+    await provider.fetchFixturesByExternalIds(["1557367", "1557368", "1557369"]);
+
+    expect(provider.requestedFixtureIdParameters).toEqual(["1557367-1557368-1557369"]);
+  });
+
+  it("splits ids into batches of 20, the provider's per-request cap", async () => {
+    const provider = new InMemoryFixturesByIdsProvider();
+    const twentyOneExternalIds = Array.from({ length: 21 }, (_, index) => String(1000 + index));
+
+    await provider.fetchFixturesByExternalIds(twentyOneExternalIds);
+
+    expect(provider.requestedFixtureIdParameters).toHaveLength(2);
+    expect(provider.requestedFixtureIdParameters[0]!.split("-")).toHaveLength(20);
+    expect(provider.requestedFixtureIdParameters[1]).toBe("1020");
+  });
+
+  it("spends no request at all on an empty id list", async () => {
+    const provider = new InMemoryFixturesByIdsProvider();
+
+    const fixtures = await provider.fetchFixturesByExternalIds([]);
+
+    expect(fixtures).toEqual([]);
+    expect(provider.requestedFixtureIdParameters).toEqual([]);
+  });
+
+  it("de-duplicates ids before batching so a repeated id never costs a second slot", async () => {
+    const provider = new InMemoryFixturesByIdsProvider();
+
+    await provider.fetchFixturesByExternalIds(["1557367", "1557368", "1557367"]);
+
+    expect(provider.requestedFixtureIdParameters).toEqual(["1557367-1557368"]);
+  });
+
+  it("maps round label, kickoff, status code and scores off the standard fixtures envelope", async () => {
+    const provider = new InMemoryFixturesByIdsProvider({
+      "1557367": rawFixtureEntry({
+        id: 1557367,
+        round: "Regular Season - 1",
+        date: "2026-08-21T19:00:00+00:00",
+        statusShort: "FT",
+        home: "Arsenal",
+        away: "Coventry",
+        homeGoals: 3,
+        awayGoals: 0,
+      }),
+      "1557368": rawFixtureEntry({
+        id: 1557368,
+        statusShort: "NS",
+        statusLong: "Not Started",
+        elapsed: null,
+        home: "Hull City",
+        away: "Man United",
+      }),
+    });
+
+    const fixtures = await provider.fetchFixturesByExternalIds(["1557367", "1557368"]);
+
+    expect(fixtures).toEqual([
+      {
+        externalId: "1557367",
+        roundLabel: "Regular Season - 1",
+        homeClub: "Arsenal",
+        awayClub: "Coventry",
+        kickoffAt: new Date("2026-08-21T19:00:00Z"),
+        statusShortCode: "FT",
+        finalHomeScore: 3,
+        finalAwayScore: 0,
+      },
+      {
+        externalId: "1557368",
+        roundLabel: "Regular Season - 1",
+        homeClub: "Hull City",
+        awayClub: "Man United",
+        kickoffAt: new Date("2026-08-21T19:00:00Z"),
+        statusShortCode: "NS",
+        finalHomeScore: null,
+        finalAwayScore: null,
+      },
+    ]);
+  });
+
+  it("propagates a failed request rather than swallowing it — degrading is the caller's decision", async () => {
+    class FailingFixturesProvider extends ApiFootballProvider {
+      protected override async request<T>(): Promise<ApiFootballEnvelope<T>> {
+        throw new Error("API-Football request failed: 500 Internal Server Error (fixtures)");
+      }
+    }
+    const provider = new FailingFixturesProvider("https://in-memory.invalid", "test-no-key", 2026);
+
+    await expect(provider.fetchFixturesByExternalIds(["1557367"])).rejects.toThrow("API-Football request failed");
+  });
+});

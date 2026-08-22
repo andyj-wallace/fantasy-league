@@ -96,6 +96,11 @@ export interface ProviderLeagueSeason extends ProviderSeasonInfo {
   isCurrentSeason: boolean;
 }
 
+/** API-Football accepts at most 20 fixture ids in one `ids=a-b-c` request. It lives on the
+ * boundary rather than inside the HTTP implementation because callers budget their request count
+ * against it (see the reconciliation cost in docs/polling-budget.md). */
+export const MAX_FIXTURE_IDS_PER_PROVIDER_REQUEST = 20;
+
 export interface FootballDataProvider {
   /** Push the active season year and coverage flags into the provider after they are resolved from
    * the DB (monthly sync). Methods that are ungated for this season become no-ops. */
@@ -104,6 +109,13 @@ export interface FootballDataProvider {
   fetchSeasonFixtures(): Promise<ProviderFixture[]>;
   /** 1 call: broad status-only list of every fixture currently in play. */
   fetchLiveFixtures(): Promise<ProviderFixture[]>;
+  /** 1 call per MAX_FIXTURE_IDS_PER_PROVIDER_REQUEST ids: current state of explicitly named
+   * fixtures. Unlike the live list this reports terminal statuses (FT/PST/ABD), which is what
+   * makes it the only way to observe a fixture that ended: the final whistle *removes* a fixture
+   * from `live=all` rather than reporting it as FT, so a match still IN_PROGRESS on our side and
+   * absent from that list can only be resolved by asking about it by id. See
+   * docs/stuck-live-match-reconciliation-plan.md. */
+  fetchFixturesByExternalIds(externalFixtureIds: string[]): Promise<ProviderFixture[]>;
   /** 2 calls (events + players) for one fixture. */
   fetchFixturePlayerStatsAndGoalEvents(externalFixtureId: string): Promise<ProviderFixtureDetail>;
   /** ~21 calls (1 /teams + 20 /players/squads): current squads only, no pagination — cheap, but
@@ -166,6 +178,10 @@ export class StubFootballDataProvider implements FootballDataProvider {
   }
 
   async fetchLiveFixtures(): Promise<ProviderFixture[]> {
+    return [];
+  }
+
+  async fetchFixturesByExternalIds(_externalFixtureIds: string[]): Promise<ProviderFixture[]> {
     return [];
   }
 
