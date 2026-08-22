@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { playerScoresRepository, teamScoresRepository, teamsRepository } from "../db/repositories";
-import type { TeamScore } from "../domain";
+import { resolveCaptainBonusPlayerId } from "../domain";
+import type { PlayerGameweekPoints, TeamScore } from "../domain";
 
 /**
  * Turns each Team's roster of PlayerScores into one TeamScore for the gameweek. Bench players
@@ -15,31 +16,35 @@ export async function calculateTeamScores(gameweekId: string): Promise<void> {
     teams.map(async (team) => {
       const rosterSlots = await teamsRepository.findRosterSlots(team.id);
 
+      const gameweekPointsByPlayerId = new Map<string, PlayerGameweekPoints | null>();
+      async function gameweekPointsFor(playerId: string): Promise<PlayerGameweekPoints | null> {
+        if (!gameweekPointsByPlayerId.has(playerId)) {
+          gameweekPointsByPlayerId.set(playerId, await playerScoresRepository.findPlayerGameweekPoints(playerId, gameweekId));
+        }
+        return gameweekPointsByPlayerId.get(playerId) ?? null;
+      }
+
       let totalPoints = 0;
       for (const slot of rosterSlots) {
-        const playerScore = await playerScoresRepository.findByPlayerAndGameweek(slot.playerId, gameweekId);
-        totalPoints += playerScore?.totalPoints ?? 0;
+        const playerGameweekPoints = await gameweekPointsFor(slot.playerId);
+        totalPoints += playerGameweekPoints?.totalPoints ?? 0;
       }
 
       // Captain may be unset (no squad/lineup chosen yet) as well as simply not having played
-      // this gameweek — either way, fall back to the vice-captain.
-      let captainBonusPlayerId: string | null = null;
-      if (team.captainPlayerId) {
-        const captainScore = await playerScoresRepository.findByPlayerAndGameweek(team.captainPlayerId, gameweekId);
-        if (captainScore && captainScore.breakdown.appearancePoints > 0) {
-          totalPoints += captainScore.totalPoints;
-          captainBonusPlayerId = team.captainPlayerId;
-        }
-      }
-      if (!captainBonusPlayerId && team.viceCaptainPlayerId) {
-        const viceCaptainScore = await playerScoresRepository.findByPlayerAndGameweek(
-          team.viceCaptainPlayerId,
-          gameweekId,
-        );
-        if (viceCaptainScore && viceCaptainScore.breakdown.appearancePoints > 0) {
-          totalPoints += viceCaptainScore.totalPoints;
-          captainBonusPlayerId = team.viceCaptainPlayerId;
-        }
+      // this gameweek — either way, fall back to the vice-captain. The rule itself lives in the
+      // domain so the squad builder's gameweek summary can show the same armband holder.
+      const captainBonusPlayerId = resolveCaptainBonusPlayerId(
+        {
+          playerId: team.captainPlayerId,
+          gameweekPoints: team.captainPlayerId ? await gameweekPointsFor(team.captainPlayerId) : null,
+        },
+        {
+          playerId: team.viceCaptainPlayerId,
+          gameweekPoints: team.viceCaptainPlayerId ? await gameweekPointsFor(team.viceCaptainPlayerId) : null,
+        },
+      );
+      if (captainBonusPlayerId) {
+        totalPoints += (await gameweekPointsFor(captainBonusPlayerId))?.totalPoints ?? 0;
       }
 
       return {

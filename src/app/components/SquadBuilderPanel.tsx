@@ -13,6 +13,7 @@ import { FormationPitch } from "@/app/components/FormationPitch";
 import { RecentFormBars } from "@/app/components/RecentFormBars";
 import { StatTile } from "@/app/components/StatTile";
 import { useCurrentGameweekContext } from "@/app/lib/gameweekContext";
+import { SquadGameweekSummary } from "./SquadGameweekSummary";
 import { formatDayAndTime } from "@/app/lib/formatDate";
 import {
   formationRequiredCounts,
@@ -23,9 +24,11 @@ import {
   STARTING_SQUAD_BUDGET_IN_MILLIONS,
   VALID_STARTING_FORMATIONS,
   deriveStartingFormation,
+  summarizeGameweekMatchProgress,
   validateSquadComposition,
   type Match,
   type PlayerPosition,
+  type PlayerGameweekPoints,
   type PlayerWithStats,
   type StartingFormation,
   type Team,
@@ -153,6 +156,8 @@ function clearStoredSquadDraft(teamId: string): void {
  */
 function LineupPlayerRow({
   player,
+  gameweekNumber,
+  gameweekPoints,
   isLocked,
   toggleLabel,
   blockedReason,
@@ -162,6 +167,12 @@ function LineupPlayerRow({
   onToggle,
 }: {
   player: PlayerWithStats;
+  /** The gameweek whose points this row shows, or null when no gameweek is in play yet — in which
+   * case the points cell renders empty rather than a misleading zero. */
+  gameweekNumber: number | null;
+  /** Null when the player has no scored match in that gameweek: no fixture, or theirs hasn't
+   * finished. Deliberately distinct from a present entry worth 0 points. */
+  gameweekPoints: PlayerGameweekPoints | null;
   /** Faded row treatment, for a player whose club has already kicked off. A row can be blocked
    * without being locked (a bench player the formation has no starting slot for), which reads as
    * an ordinary disabled link rather than a fade. */
@@ -185,6 +196,19 @@ function LineupPlayerRow({
       <span className="lineup-position">{player.position}</span>
       <PlayerNameTapTarget playerId={player.id} playerName={player.name} />
       <AvailabilityBadge status={player.availabilityStatus} reason={player.availabilityReason} />
+      <span
+        className="lineup-gameweek-points"
+        role={gameweekNumber === null ? undefined : "img"}
+        aria-label={
+          gameweekNumber === null
+            ? undefined
+            : gameweekPoints
+              ? `Gameweek ${gameweekNumber}: ${gameweekPoints.totalPoints} points`
+              : `Gameweek ${gameweekNumber}: not scored yet`
+        }
+      >
+        {gameweekNumber === null ? "" : gameweekPoints ? gameweekPoints.totalPoints : "—"}
+      </span>
       <button
         type="button"
         className="btn-link lineup-toggle"
@@ -278,6 +302,15 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
   const [isConfirmingSave, setIsConfirmingSave] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const currentGameweek = useCurrentGameweekContext();
+  /** The gameweek the points column and summary report on. Null while the context is loading, or
+   * before any gameweek exists — both render as an empty cell rather than a zero. */
+  const currentGameweekNumber = currentGameweek?.gameweek?.number ?? null;
+  const gameweekMatchProgress = useMemo(
+    () => summarizeGameweekMatchProgress(currentGameweek?.matches ?? []),
+    [currentGameweek],
+  );
+  const gameweekPointsOf = (player: PlayerWithStats): PlayerGameweekPoints | null =>
+    currentGameweekNumber === null ? null : (player.pointsByGameweekNumber[currentGameweekNumber] ?? null);
 
   useEffect(() => {
     if (!teamId) {
@@ -812,6 +845,8 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
                 <LineupPlayerRow
                   key={player.id}
                   player={player}
+                  gameweekNumber={currentGameweekNumber}
+                  gameweekPoints={gameweekPointsOf(player)}
                   isLocked={locked}
                   toggleLabel="Bench"
                   blockedReason={locked ? (lockedSinceLabel(player) ?? "Locked") : null}
@@ -836,6 +871,8 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
                 <LineupPlayerRow
                   key={player.id}
                   player={player}
+                  gameweekNumber={currentGameweekNumber}
+                  gameweekPoints={gameweekPointsOf(player)}
                   isLocked={locked}
                   toggleLabel="Start"
                   blockedReason={locked ? (lockedSinceLabel(player) ?? "Locked") : toggleStartingError(player)}
@@ -849,6 +886,16 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
               );
             })}
           </ul>
+
+          {currentGameweekNumber !== null && (
+            <SquadGameweekSummary
+              gameweekNumber={currentGameweekNumber}
+              squadPlayers={draftSquadPlayers.map(({ player }) => player)}
+              captainPlayerId={captainPlayerId}
+              viceCaptainPlayerId={viceCaptainPlayerId}
+              matchProgress={gameweekMatchProgress}
+            />
+          )}
         </div>
       </div>
 

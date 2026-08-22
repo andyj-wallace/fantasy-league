@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { PlayerScore, TeamScore } from "../domain";
+import type { PlayerGameweekPoints, TeamScore } from "../domain";
 import { buildTeam } from "../testing/fixtures";
 
 /**
@@ -13,30 +13,30 @@ const GAMEWEEK_ID = "gw1";
 const mocks = vi.hoisted(() => ({
   findAllTeams: vi.fn(),
   findRosterSlots: vi.fn(),
-  findPlayerScore: vi.fn(),
+  findPlayerGameweekPoints: vi.fn(),
   replaceForGameweek: vi.fn(),
 }));
 
 vi.mock("../db/repositories", () => ({
   teamsRepository: { findAll: mocks.findAllTeams, findRosterSlots: mocks.findRosterSlots },
-  playerScoresRepository: { findByPlayerAndGameweek: mocks.findPlayerScore },
+  playerScoresRepository: { findPlayerGameweekPoints: mocks.findPlayerGameweekPoints },
   teamScoresRepository: { replaceForGameweek: mocks.replaceForGameweek },
 }));
 
 import { calculateTeamScores } from "./calculateTeamScores";
 
-/** Minimal PlayerScore stub carrying only the fields calculateTeamScores reads. `appearancePoints`
- * defaults to 1 (played); pass 0 to simulate a PlayerScore row for a player who didn't appear
- * (e.g. an unused substitute reported with 0 minutes). */
-function playerScoreOf(totalPoints: number, appearancePoints = 1): PlayerScore {
-  return { totalPoints, breakdown: { appearancePoints } } as PlayerScore;
+/** The collapsed per-gameweek shape calculateTeamScores reads. `didAppear` defaults to true;
+ * pass false to simulate a scored player who didn't take the field (e.g. an unused substitute
+ * reported with 0 minutes), which is ineligible for the captain bonus. */
+function playerGameweekPointsOf(totalPoints: number, didAppear = true): PlayerGameweekPoints {
+  return { totalPoints, didAppear };
 }
 
 /**
  * Sets up a single team whose roster is `rosterPlayerIds` (all starters unless noted) and whose
  * players have the given per-gameweek points, then runs the scorer and returns the one TeamScore.
- * `didNotAppearPlayerIds` marks players whose PlayerScore row exists but has zero appearance
- * points (an unused sub) rather than no row at all.
+ * `didNotAppearPlayerIds` marks players who have a scored row but never took the field (an
+ * unused sub) rather than no row at all.
  */
 async function scoreSingleTeam(options: {
   captainPlayerId?: string | null;
@@ -52,11 +52,10 @@ async function scoreSingleTeam(options: {
   });
   mocks.findAllTeams.mockResolvedValue([team]);
   mocks.findRosterSlots.mockResolvedValue(options.rosterPlayerIds.map((playerId) => ({ playerId, isStarting: true })));
-  mocks.findPlayerScore.mockImplementation(async (playerId: string) => {
+  mocks.findPlayerGameweekPoints.mockImplementation(async (playerId: string) => {
     const points = options.pointsByPlayerId[playerId];
     if (points === undefined) return null;
-    const appearancePoints = options.didNotAppearPlayerIds?.includes(playerId) ? 0 : 1;
-    return playerScoreOf(points, appearancePoints);
+    return playerGameweekPointsOf(points, !options.didNotAppearPlayerIds?.includes(playerId));
   });
 
   await calculateTeamScores(GAMEWEEK_ID);
@@ -172,8 +171,8 @@ describe("calculateTeamScores — multiple teams", () => {
     mocks.findRosterSlots.mockImplementation(async (teamId: string) =>
       teamId === "A" ? [{ playerId: "a1", isStarting: true }] : [{ playerId: "b1", isStarting: true }],
     );
-    mocks.findPlayerScore.mockImplementation(async (playerId: string) =>
-      playerScoreOf(playerId === "a1" ? 5 : 3),
+    mocks.findPlayerGameweekPoints.mockImplementation(async (playerId: string) =>
+      playerGameweekPointsOf(playerId === "a1" ? 5 : 3),
     );
 
     await calculateTeamScores(GAMEWEEK_ID);

@@ -42,6 +42,7 @@ export function AppHeader() {
           </span>
         )}
         <span className="app-header-actions">
+          <Link href="/help">Help</Link>
           {isLoggedIn && <button onClick={handleLogout}>Log out</button>}
         </span>
       </div>
