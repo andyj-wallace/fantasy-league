@@ -60,6 +60,18 @@ conflict-update set.
 
 ## Reports
 
+### `INTEGRATION_TEST_GAPS.md` (added 2026-08-23)
+
+A living register of behaviour **no automated test executes against a real database** — raw SQL,
+schema constraints, migrations, and transaction behaviour, all of which the pure vitest suite
+mocks away by design. Started after the paid-transfer penalty bug survived a 349-test suite
+because every test that could have caught it mocked the repository layer.
+
+Includes a prioritized gap list, what each of the three coverage tiers actually reaches, and a
+5-minute recipe for running an ad-hoc integration check against a throwaway database.
+
+**Add to it whenever a bug is found below the repository barrel.**
+
 ### `SMOKE_TEST_FINDINGS.md` (PRIMARY)
 
 Complete analysis of the critical path smoke test (league creation → squad builder → gameweek progression → scoring). Includes:
