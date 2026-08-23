@@ -1,4 +1,4 @@
-import { and, count, eq, gte, inArray } from "drizzle-orm";
+import { and, count, eq, gte, inArray, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "../client";
 import { transfers } from "../schema";
 import type { Transfer } from "../../domain";
@@ -58,6 +58,28 @@ export async function findTransferVolumeByPlayerIds(
     transfersIn: transfersInByPlayerId.get(playerId) ?? 0,
     transfersOut: transfersOutByPlayerId.get(playerId) ?? 0,
   }));
+}
+
+/**
+ * What each Team's paid transfers cost it in one Gameweek, as a positive magnitude of points to
+ * deduct. Grouped by team so calculateTeamScores can score a whole gameweek on one round trip
+ * here instead of one per team — the scorer already loops every team in the league.
+ *
+ * Teams absent from the result deduct nothing: either they made no transfers, or every one was
+ * covered by a banked free transfer and cost 0. Callers should treat a missing team as 0 rather
+ * than expecting a zero row.
+ */
+export async function sumTransferPointsCostByTeamForGameweek(
+  gameweekId: string,
+): Promise<{ teamId: string; transferPointsCost: number }[]> {
+  return db
+    .select({
+      teamId: transfers.teamId,
+      transferPointsCost: sql<number>`coalesce(sum(${transfers.pointsCost}), 0)::int`,
+    })
+    .from(transfers)
+    .where(eq(transfers.gameweekId, gameweekId))
+    .groupBy(transfers.teamId);
 }
 
 /** A Team's transfers within one Gameweek — what the transfers screen shows as "made this gameweek". */

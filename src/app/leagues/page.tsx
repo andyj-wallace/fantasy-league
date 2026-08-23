@@ -18,6 +18,7 @@ import { TransfersPanel } from "@/app/components/TransfersPanel";
 import { SquadBuilderPanel } from "@/app/components/SquadBuilderPanel";
 import { PlayerDetailPanel } from "@/app/components/PlayerDetailPanel";
 import { PlayerDetailContext } from "@/app/lib/playerDetailContext";
+import { pushSameRouteQueryString, replaceSameRouteQueryString } from "@/app/lib/sameRouteQueryNavigation";
 import { useCurrentGameweekContext } from "@/app/lib/gameweekContext";
 
 /** Landing page for a user who's in exactly one league — home redirects here instead of
@@ -83,23 +84,24 @@ function LeaguePageContent() {
 
   /** Overlay routing lives in the query string so panels are deep-linkable and the browser Back
    * button (and Escape/backdrop) close them: opening pushes a history entry, closing pops it. A
-   * player popup can stack on top of the transfers panel by adding ?playerId= while ?panel= stays. */
+   * player popup can stack on top of the transfers panel by adding ?playerId= while ?panel= stays.
+   * These go through the History API rather than `router.push` — see sameRouteQueryNavigation for
+   * why a query-string-only push is dropped by the static export's router. */
   function openTeamPanel(panel: "transfers" | "squad", teamId: string) {
-    const params = new URLSearchParams({ leagueId, panel, teamId });
-    router.push(`/leagues?${params.toString()}`);
+    pushSameRouteQueryString(new URLSearchParams({ leagueId, panel, teamId }));
   }
 
   function openPlayer(playerId: string) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("playerId", playerId);
-    router.push(`/leagues?${params.toString()}`);
+    pushSameRouteQueryString(params);
   }
 
   function closeTopPanel() {
     if (typeof window !== "undefined" && window.history.length > 1) {
       router.back();
     } else {
-      router.replace(`/leagues?leagueId=${leagueId}`);
+      replaceSameRouteQueryString(new URLSearchParams({ leagueId }));
     }
   }
 

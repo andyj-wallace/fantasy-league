@@ -4,12 +4,19 @@ import { resolveCaptainBonusPlayerId, type GameweekMatchProgress, type PlayerWit
 
 /**
  * The manager-facing reconciliation of a gameweek's scoring: what each of the 16 squad players has
- * banked so far, the armband bonus as its own line, and the running total those two add up to.
+ * banked so far, the armband bonus and any paid-transfer penalty as their own lines, and the
+ * running total those add up to.
  *
  * The captain bonus is shown rather than folded into the total on purpose. A manager checking the
  * arithmetic sums the per-player column, and that sum will never match the team total on its own —
  * calculateTeamScores counts the armband holder's points a second time. An unexplained gap reads as
  * a bug, so the line that closes it is part of the feature, not decoration.
+ *
+ * The transfer penalty is the same gap in the opposite direction: every paid transfer takes 10
+ * points off the team total, and no per-player figure accounts for that either. `transferPointsCost`
+ * arrives as a positive magnitude and is rendered as the deduction it is. The line is omitted
+ * entirely when no transfer was paid for, because a "-0" row raises a question instead of
+ * answering one.
  *
  * Points here come from PlayerScore rows, which are written per match as each one finishes. So this
  * is a running tally of completed matches, not live in-play scoring: a player whose match is still
@@ -21,12 +28,16 @@ export function SquadGameweekSummary({
   captainPlayerId,
   viceCaptainPlayerId,
   matchProgress,
+  transferPointsCost,
+  paidTransferCount,
 }: {
   gameweekNumber: number;
   squadPlayers: PlayerWithStats[];
   captainPlayerId: string;
   viceCaptainPlayerId: string;
   matchProgress: GameweekMatchProgress;
+  transferPointsCost: number;
+  paidTransferCount: number;
 }) {
   const gameweekPointsOf = (playerId: string) =>
     squadPlayers.find((player) => player.id === playerId)?.pointsByGameweekNumber[gameweekNumber] ?? null;
@@ -42,6 +53,9 @@ export function SquadGameweekSummary({
   );
   const captainBonusPlayer = squadPlayers.find((player) => player.id === captainBonusPlayerId) ?? null;
   const captainBonusPoints = captainBonusPlayerId ? (gameweekPointsOf(captainBonusPlayerId)?.totalPoints ?? 0) : 0;
+
+  const anyTransferWasPaidFor = paidTransferCount > 0;
+  const gameweekTotalPoints = squadPointsTotal + captainBonusPoints - transferPointsCost;
 
   const scoredPlayerCount = squadPlayers.filter(
     (player) => player.pointsByGameweekNumber[gameweekNumber] !== undefined,
@@ -76,9 +90,18 @@ export function SquadGameweekSummary({
           </dt>
           <dd>{captainBonusPoints > 0 ? `+${captainBonusPoints}` : captainBonusPoints}</dd>
         </div>
+        {anyTransferWasPaidFor && (
+          <div>
+            <dt>
+              Transfer{paidTransferCount === 1 ? "" : "s"}
+              <span className="gameweek-summary-note"> · {paidTransferCount} paid</span>
+            </dt>
+            <dd>{`-${transferPointsCost}`}</dd>
+          </div>
+        )}
         <div className="gameweek-summary-total">
           <dt>Gameweek total</dt>
-          <dd>{squadPointsTotal + captainBonusPoints}</dd>
+          <dd>{gameweekTotalPoints}</dd>
         </div>
       </dl>
 

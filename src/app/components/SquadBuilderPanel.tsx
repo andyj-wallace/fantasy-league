@@ -273,6 +273,34 @@ interface SaveResult {
   messages: string[];
 }
 
+/** A team as the team endpoints report it: the stored Team plus what this gameweek's transfers
+ * cost, which the gameweek summary needs to explain the difference between the per-player points
+ * column and the team total. `transferPointsCostThisGameweek` is a positive magnitude — 20 means
+ * two paid transfers. Both are optional because the frontend and the API deploy separately, so a
+ * build can meet an API that predates them; absent reads as zero, which is also the honest value
+ * when every transfer this gameweek was free. */
+type TeamWithGameweekTransferCost = Team & {
+  transferPointsCostThisGameweek?: number;
+  paidTransferCountThisGameweek?: number;
+};
+
+/** Applies a save response to the loaded team while keeping the gameweek transfer-cost figures.
+ * Only GET /teams/:teamId reports those two fields; the roster and lineup PUTs answer with the
+ * stored Team alone. Neither save can change what this gameweek's transfers cost — transfers are
+ * made on the transfers screen, and saving a roster records none — so the loaded figures are still
+ * correct afterwards. Without this the summary's transfer line would vanish the moment a manager
+ * saved any other squad change. */
+function savedTeamKeepingGameweekTransferCost(
+  previousTeam: TeamWithGameweekTransferCost | null,
+  savedTeam: TeamWithGameweekTransferCost,
+): TeamWithGameweekTransferCost {
+  return {
+    transferPointsCostThisGameweek: previousTeam?.transferPointsCostThisGameweek,
+    paidTransferCountThisGameweek: previousTeam?.paidTransferCountThisGameweek,
+    ...savedTeam,
+  };
+}
+
 /** The squad-building surface (budget, formation, lineup, captaincy, player discovery, save) as
  * pure content with no page chrome, so it renders inside the league hub's slide-up overlay or as
  * the standalone /teams/squad-builder page. Fetches its own data and owns the whole draft/save
@@ -281,7 +309,7 @@ interface SaveResult {
 export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onChanged?: () => void }) {
   /** Null until the manager opens or closes the player picker themselves; see isPlayerPickerExpanded. */
   const [isPlayerPickerOpen, setIsPlayerPickerOpen] = useState<boolean | null>(null);
-  const [team, setTeam] = useState<Team | null>(null);
+  const [team, setTeam] = useState<TeamWithGameweekTransferCost | null>(null);
   const [allPlayers, setAllPlayers] = useState<PlayerWithStats[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -318,7 +346,7 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
       return;
     }
     Promise.all([
-      getCachedJson<Team>(`${getApiBaseUrl()}/teams/${teamId}`, API_CACHE_TTL_MS.SHORT),
+      getCachedJson<TeamWithGameweekTransferCost>(`${getApiBaseUrl()}/teams/${teamId}`, API_CACHE_TTL_MS.SHORT),
       getCachedJson<PlayerWithStats[]>(`${getApiBaseUrl()}/players`, API_CACHE_TTL_MS.PLAYER_DATA),
     ])
       .then(async ([loadedTeam, players]) => {
@@ -709,7 +737,7 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
       });
       const lineupBody = await lineupResponse.json();
       if (!lineupResponse.ok) {
-        setTeam(rosterBody);
+        setTeam((previousTeam) => savedTeamKeepingGameweekTransferCost(previousTeam, rosterBody));
         setSaveResult({
           kind: "error",
           messages: [`Squad saved, but lineup failed: ${lineupBody.message ?? "unknown error"}`],
@@ -717,7 +745,7 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
         return;
       }
 
-      setTeam(lineupBody);
+      setTeam((previousTeam) => savedTeamKeepingGameweekTransferCost(previousTeam, lineupBody));
       clearStoredSquadDraft(teamId);
       const lockedChangeWarnings: string[] = [
         ...(rosterBody.lockedChangeWarnings ?? []),
@@ -894,6 +922,8 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
               captainPlayerId={captainPlayerId}
               viceCaptainPlayerId={viceCaptainPlayerId}
               matchProgress={gameweekMatchProgress}
+              transferPointsCost={team.transferPointsCostThisGameweek ?? 0}
+              paidTransferCount={team.paidTransferCountThisGameweek ?? 0}
             />
           )}
         </div>

@@ -80,13 +80,79 @@ describe("getLeagueStandings", () => {
     expect(mocks.findGameweekById).toHaveBeenCalledWith("gw3");
   });
 
-  it("returns a null gameweek with empty standings before anything has been scored", async () => {
+  it("returns a null gameweek and no rows when the league has no teams to put in a table", async () => {
     mocks.findLatestForLeague.mockResolvedValue([]);
 
     const { statusCode, body } = await callGetLeagueStandings();
 
     expect(statusCode).toBe(200);
-    expect(body).toEqual({ gameweek: null, standings: [] });
+    expect(body).toEqual({ gameweek: null, isAwaitingFirstScoredGameweek: true, standings: [] });
     expect(mocks.findGameweekById).not.toHaveBeenCalled();
+  });
+
+  it("falls back to a zero-point baseline row per team before anything has been scored", async () => {
+    mocks.findLatestForLeague.mockResolvedValue([]);
+    mocks.findTeamsByLeagueId.mockResolvedValue([
+      buildTeam({ id: "team1", leagueId: LEAGUE_ID, userId: "user1", name: "First Team" }),
+      buildTeam({ id: "team2", leagueId: LEAGUE_ID, userId: "user2", name: "Second Team" }),
+    ]);
+    mocks.findManyUsersByIds.mockResolvedValue([
+      { id: "user1", displayName: "Drew" },
+      { id: "user2", displayName: "Sam" },
+    ]);
+
+    const { statusCode, body } = await callGetLeagueStandings();
+
+    expect(statusCode).toBe(200);
+    expect(body.isAwaitingFirstScoredGameweek).toBe(true);
+    expect(body.gameweek).toBeNull();
+    expect(body.standings).toHaveLength(2);
+    expect(body.standings.map((standing: any) => standing.totalPoints)).toEqual([0, 0]);
+    expect(body.standings.map((standing: any) => standing.teamName).sort()).toEqual(["First Team", "Second Team"]);
+    expect(body.standings.map((standing: any) => standing.managerName).sort()).toEqual(["Drew", "Sam"]);
+    // Identical teams are level on every tiebreaker, so they share top spot rather than being
+    // ordered arbitrarily.
+    expect(body.standings.map((standing: any) => standing.rank)).toEqual([1, 1]);
+    // No stored standings row means no gameweek to look up — the baseline must not cost a read.
+    expect(mocks.findGameweekById).not.toHaveBeenCalled();
+  });
+
+  it("ranks baseline teams by the tiebreakers that already have values", async () => {
+    mocks.findLatestForLeague.mockResolvedValue([]);
+    mocks.findTeamsByLeagueId.mockResolvedValue([
+      // Spent more of the budget, so loses the "least spent" tiebreaker.
+      buildTeam({ id: "spender", leagueId: LEAGUE_ID, userId: "user1", remainingBudgetInMillions: 0 }),
+      buildTeam({ id: "saver", leagueId: LEAGUE_ID, userId: "user2", remainingBudgetInMillions: 10 }),
+    ]);
+    mocks.findManyUsersByIds.mockResolvedValue([
+      { id: "user1", displayName: "Drew" },
+      { id: "user2", displayName: "Sam" },
+    ]);
+
+    const { body } = await callGetLeagueStandings();
+
+    expect(body.standings.map((standing: any) => [standing.teamId, standing.rank])).toEqual([
+      ["saver", 1],
+      ["spender", 2],
+    ]);
+  });
+
+  it("prefers the precomputed table over the baseline once one exists", async () => {
+    mocks.findLatestForLeague.mockResolvedValue([buildStanding({ teamId: "team1", totalPoints: 42 })]);
+    mocks.findTeamsByLeagueId.mockResolvedValue([
+      buildTeam({ id: "team1", leagueId: LEAGUE_ID, userId: "user1", name: "The Team" }),
+      buildTeam({ id: "team2", leagueId: LEAGUE_ID, userId: "user2", name: "Other Team" }),
+    ]);
+    mocks.findManyUsersByIds.mockResolvedValue([
+      { id: "user1", displayName: "Drew" },
+      { id: "user2", displayName: "Sam" },
+    ]);
+    mocks.findGameweekById.mockResolvedValue(buildGameweek({ id: "gw3", number: 3, status: "IN_PROGRESS" }));
+
+    const { body } = await callGetLeagueStandings();
+
+    expect(body.isAwaitingFirstScoredGameweek).toBe(false);
+    expect(body.standings).toHaveLength(1);
+    expect(body.standings[0].totalPoints).toBe(42);
   });
 });

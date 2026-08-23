@@ -10,6 +10,7 @@ function toTeamScore(row: typeof teamScores.$inferSelect): TeamScore {
     gameweekId: row.gameweekId,
     captainBonusPlayerId: row.captainBonusPlayerId,
     totalPoints: row.totalPoints,
+    transferPointsCost: row.transferPointsCost,
     calculatedAt: row.calculatedAt,
   };
 }
@@ -33,12 +34,15 @@ export async function replaceForGameweek(gameweekId: string, scores: TeamScore[]
       gameweekId: score.gameweekId,
       captainBonusPlayerId: score.captainBonusPlayerId,
       totalPoints: score.totalPoints,
+      transferPointsCost: score.transferPointsCost,
       calculatedAt: score.calculatedAt,
     })),
   );
 }
 
 /** Cumulative season total for a Team through a given gameweek number — the basis of the leaderboard.
+ * TeamScore.totalPoints is already net of transferPointsCost, so paid transfers are deducted here
+ * without this query (or the leaderboard behind it) referring to transfers at all.
  * Pass a `tx` to read within a caller-owned transaction (e.g. updateStandings' consistent snapshot). */
 export async function sumTotalPointsThroughGameweek(
   teamId: string,

@@ -267,7 +267,8 @@ export function TransfersPanel({
       </div>
 
       <p>
-        You get 2 free transfers each gameweek. Extra transfers cost 10 pts each.
+        You get 2 free transfers each gameweek. Extra transfers cost 10 pts each, deducted from your
+        gameweek total.
         {available.currentGameweek &&
           ` Unused free transfers carry over when Gameweek ${available.currentGameweek.number} completes.`}
       </p>

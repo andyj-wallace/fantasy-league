@@ -94,7 +94,7 @@ describe("processMatchDataChanges — the gameweek completion cascade", () => {
     expect(mocks.markGameweekCompleted).toHaveBeenCalledTimes(1);
   });
 
-  it("holds the cascade back while the gameweek still has matches to play", async () => {
+  it("holds the completion cascade back while the gameweek still has matches to play", async () => {
     mocks.areAllMatchesCompleted.mockResolvedValue(false);
 
     await processMatchDataChanges({ newlyCompletedMatchIds: [LAST_MATCH_ID], newlyDisruptedMatchIds: [] });
@@ -102,6 +102,17 @@ describe("processMatchDataChanges — the gameweek completion cascade", () => {
     expect(mocks.calculatePlayerScores).toHaveBeenCalledWith(LAST_MATCH_ID);
     expect(mocks.markGameweekCompleted).not.toHaveBeenCalled();
     expect(mocks.incrementBankedFreeTransferCount).not.toHaveBeenCalled();
+  });
+
+  it("still rebuilds team scores and standings mid-gameweek, so the table moves through a matchday", async () => {
+    mocks.areAllMatchesCompleted.mockResolvedValue(false);
+
+    await processMatchDataChanges({ newlyCompletedMatchIds: [LAST_MATCH_ID], newlyDisruptedMatchIds: [] });
+
+    // Both are delete-then-insert rebuilds of the whole gameweek, so running them after every
+    // match is idempotent — unlike the transfer award above, which stays gated on completion.
+    expect(mocks.calculateTeamScores).toHaveBeenCalledWith(GAMEWEEK_ID);
+    expect(mocks.updateStandings).toHaveBeenCalledWith("league-1", GAMEWEEK_ID);
   });
 
   it("awards postponed-match transfers for every newly disrupted match", async () => {

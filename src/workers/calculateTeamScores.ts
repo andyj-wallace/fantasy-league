@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { playerScoresRepository, teamScoresRepository, teamsRepository } from "../db/repositories";
+import {
+  playerScoresRepository,
+  teamScoresRepository,
+  teamsRepository,
+  transfersRepository,
+} from "../db/repositories";
 import { resolveCaptainBonusPlayerId } from "../domain";
 import type { PlayerGameweekPoints, TeamScore } from "../domain";
 
@@ -8,9 +13,21 @@ import type { PlayerGameweekPoints, TeamScore } from "../domain";
  * count directly (no auto-subs in V1) and the captain's points are added a second time to
  * realize the 2x bonus — falling back to the vice-captain if the captain didn't play, which
  * means either no PlayerScore row at all or one with zero appearance points (an unused sub).
+ *
+ * The gameweek's paid transfers are then charged against that total, so the stored totalPoints is
+ * net and the leaderboard needs no knowledge of transfers. Totals may end up negative — red cards
+ * and own goals can do the same, and nothing in the scoring engine clamps at zero.
+ *
+ * Re-running rebuilds the gameweek from scratch (replaceForGameweek deletes first), so scoring a
+ * past gameweek now charges its historic transfers too. That is intended: the deduction applies
+ * retroactively, with no cutoff.
  */
 export async function calculateTeamScores(gameweekId: string): Promise<void> {
   const teams = await teamsRepository.findAll();
+
+  // One grouped read for every team, rather than a per-team query inside the loop below.
+  const transferPointsCostRows = await transfersRepository.sumTransferPointsCostByTeamForGameweek(gameweekId);
+  const transferPointsCostByTeamId = new Map(transferPointsCostRows.map((row) => [row.teamId, row.transferPointsCost]));
 
   const scores: TeamScore[] = await Promise.all(
     teams.map(async (team) => {
@@ -47,12 +64,15 @@ export async function calculateTeamScores(gameweekId: string): Promise<void> {
         totalPoints += (await gameweekPointsFor(captainBonusPlayerId))?.totalPoints ?? 0;
       }
 
+      const transferPointsCost = transferPointsCostByTeamId.get(team.id) ?? 0;
+
       return {
         id: randomUUID(),
         teamId: team.id,
         gameweekId,
         captainBonusPlayerId,
-        totalPoints,
+        totalPoints: totalPoints - transferPointsCost,
+        transferPointsCost,
         calculatedAt: new Date(),
       };
     }),

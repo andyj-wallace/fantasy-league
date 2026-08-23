@@ -294,7 +294,12 @@ export const teamScores = pgTable("team_scores", {
     .notNull()
     .references(() => gameweeks.id),
   captainBonusPlayerId: uuid("captain_bonus_player_id").references(() => players.id),
+  /** Net of transferPointsCost — the deduction is already taken out, so the leaderboard can keep
+   * summing this column without knowing transfers exist. */
   totalPoints: integer("total_points").notNull(),
+  /** Points deducted for paid transfers this gameweek, as a positive magnitude (20 = two paid
+   * transfers). Defaults to 0 so gameweeks scored before transfers were charged read as free. */
+  transferPointsCost: integer("transfer_points_cost").notNull().default(0),
   calculatedAt: timestamp("calculated_at").notNull().defaultNow(),
 });
 

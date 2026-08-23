@@ -10,6 +10,8 @@ export interface StandingEntry extends LeagueStanding {
 
 export interface StandingsResponse {
   gameweek: { number: number; status: GameweekStatus } | null;
+  /** True while the table is the opening-day baseline — every team present, nobody scored yet. */
+  isAwaitingFirstScoredGameweek: boolean;
   standings: StandingEntry[];
 }
 
@@ -18,35 +20,59 @@ const STANDINGS_UPDATE_TOOLTIP =
   "Scores update shortly after each match ends. On busier days with several matches finishing close together, it can take a bit longer for every score to come through.";
 
 /**
- * Why the table is empty, said precisely. Standings are written only once every match in the
- * gameweek is final — not per match as they finish — so mid-gameweek the honest answer includes
- * how many fixtures are still outstanding. Without that count an empty leaderboard during a
- * gameweek reads as breakage rather than as "not yet".
+ * What to say above the opening-day table, where every team sits on zero. The table itself answers
+ * "who is in this league"; this answers "why is everyone on nothing", which mid-gameweek means
+ * naming how many fixtures are still to come.
  */
-function emptyStandingsExplanation(currentGameweek: CurrentGameweekResponse | null): string {
+function unscoredStandingsNote(currentGameweek: CurrentGameweekResponse | null): string {
   const gameweek = currentGameweek?.gameweek;
-  if (!gameweek) return "No standings yet — these appear once a gameweek's matches have been scored.";
+  if (!gameweek) return "Nobody has scored yet — the table fills in once a gameweek's matches are played.";
 
   const progress = summarizeGameweekMatchProgress(currentGameweek?.matches ?? []);
   if (progress.totalMatchCount === 0) {
-    return `No standings yet — Gameweek ${gameweek.number}'s fixtures haven't been published yet.`;
+    return `Everyone starts level — Gameweek ${gameweek.number}'s fixtures haven't been published yet.`;
   }
   if (progress.isGameweekFullyPlayed) {
-    return `No standings yet — Gameweek ${gameweek.number}'s matches have all finished, so scores are being calculated.`;
+    return `Gameweek ${gameweek.number}'s matches have all finished — scores are being calculated.`;
   }
   const outstandingMatchCount = progress.totalMatchCount - progress.finalizedMatchCount;
   return (
-    `No standings yet — Gameweek ${gameweek.number} is ${progress.finalizedMatchCount} of ` +
-    `${progress.totalMatchCount} matches in. Standings appear once the remaining ` +
-    `${outstandingMatchCount === 1 ? "match has" : `${outstandingMatchCount} matches have`} finished. ` +
-    `Your players' points so far are in the Squad Builder.`
+    `Everyone starts level — Gameweek ${gameweek.number} is ${progress.finalizedMatchCount} of ` +
+    `${progress.totalMatchCount} matches in, with ` +
+    `${outstandingMatchCount === 1 ? "1 still to finish" : `${outstandingMatchCount} still to finish`}. ` +
+    `Points land here as matches end.`
   );
+}
+
+/** Which gameweek the table reflects, and how settled it is. The baseline table has no scored
+ * gameweek of its own, so it borrows the current one to say where the season is. */
+function describeStandingsGameweek(
+  standingsGameweek: { number: number; status: GameweekStatus } | null,
+  currentGameweek: CurrentGameweekResponse | null,
+  isAwaitingFirstScoredGameweek: boolean,
+): { headingSuffix: string; note: string | null } {
+  if (isAwaitingFirstScoredGameweek) {
+    const currentNumber = currentGameweek?.gameweek?.number;
+    return {
+      headingSuffix: currentNumber === undefined ? "" : ` — before Gameweek ${currentNumber}`,
+      note: null, // the unscored note below carries the explanation instead
+    };
+  }
+  if (!standingsGameweek) return { headingSuffix: "", note: null };
+
+  return standingsGameweek.status === "COMPLETED"
+    ? { headingSuffix: ` — after Gameweek ${standingsGameweek.number}`, note: "Final for this gameweek." }
+    : {
+        headingSuffix: ` — Gameweek ${standingsGameweek.number} so far`,
+        note: "Provisional — matches still in progress.",
+      };
 }
 
 /** The precomputed leaderboard for a league — heading with the gameweek it reflects, a
  * provisional/final note, the ranked table, and a last-updated timestamp. Handles its own
- * loading and empty states (a null response is still loading; an empty list has no scores yet).
- * `currentGameweek` is only used to word the empty state. */
+ * loading and empty states (a null response is still loading; an empty list means the league has
+ * no teams yet — every league with managers in it has a table, even before a ball is kicked).
+ * `currentGameweek` words the opening-day note and heading. */
 export function LeagueStandingsSection({
   standingsResponse,
   currentGameweek,
@@ -55,29 +81,30 @@ export function LeagueStandingsSection({
   currentGameweek: CurrentGameweekResponse | null;
 }) {
   const standings = standingsResponse?.standings ?? null;
-  const standingsGameweek = standingsResponse?.gameweek ?? null;
+  const isAwaitingFirstScoredGameweek = standingsResponse?.isAwaitingFirstScoredGameweek ?? false;
+  const { headingSuffix, note } = describeStandingsGameweek(
+    standingsResponse?.gameweek ?? null,
+    currentGameweek,
+    isAwaitingFirstScoredGameweek,
+  );
   const lastUpdatedAt =
-    standings && standings.length > 0
+    standings && standings.length > 0 && !isAwaitingFirstScoredGameweek
       ? new Date(Math.max(...standings.map((standing) => new Date(standing.calculatedAt).getTime())))
       : null;
 
   return (
     <>
-      <h2>
-        Standings
-        {standingsGameweek && ` — after Gameweek ${standingsGameweek.number}`}
-      </h2>
-      {standingsGameweek && (
-        <p style={{ marginTop: "-0.35rem" }}>
-          {standingsGameweek.status === "COMPLETED"
-            ? "Final for this gameweek."
-            : "Provisional — matches still in progress."}
-        </p>
-      )}
+      <h2>Standings{headingSuffix}</h2>
+      {note && <p style={{ marginTop: "-0.35rem" }}>{note}</p>}
       {standings === null && <p>Loading…</p>}
-      {standings !== null && standings.length === 0 && <p>{emptyStandingsExplanation(currentGameweek)}</p>}
+      {standings !== null && standings.length === 0 && (
+        <p>No teams in this league yet — share the invite code above and the table fills in as managers join.</p>
+      )}
       {standings !== null && standings.length > 0 && (
         <>
+          {isAwaitingFirstScoredGameweek && (
+            <p style={{ marginTop: "-0.35rem" }}>{unscoredStandingsNote(currentGameweek)}</p>
+          )}
           <div className="table-wrap">
             <table>
               <thead>

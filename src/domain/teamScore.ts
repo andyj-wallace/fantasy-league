@@ -7,7 +7,14 @@ export interface TeamScore {
   gameweekId: string;
   /** Snapshot of who held the captain bonus when this was calculated (captain, or vice-captain on fallback). */
   captainBonusPlayerId: string | null;
+  /** Net of transferPointsCost: the paid-transfer deduction has already been subtracted. Kept net
+   * so the leaderboard stays a flat sum of this column — updateStandings never has to know that
+   * transfers cost anything. */
   totalPoints: number;
+  /** Points this gameweek's paid transfers cost the team, as a positive magnitude (20 means two
+   * paid transfers), matching Transfer.pointsCost's sign convention of 10 rather than -10. Zero
+   * when every transfer was covered by a banked free transfer, and when none were made. */
+  transferPointsCost: number;
   calculatedAt: Date;
 }
 

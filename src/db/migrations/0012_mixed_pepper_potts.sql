@@ -1,0 +1,1 @@
+ALTER TABLE "team_scores" ADD COLUMN "transfer_points_cost" integer DEFAULT 0 NOT NULL;
