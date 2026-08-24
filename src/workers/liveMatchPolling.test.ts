@@ -105,9 +105,13 @@ class ScriptedLivePollProvider extends StubFootballDataProvider {
     return externalFixtureIds.flatMap((externalId) => this.reconciledFixturesByExternalId[externalId] ?? []);
   }
 
-  /** The production plan's daily budget, so pacing assertions read against the real constraint. */
+  /** Defaults to the production plan's daily budget, so pacing assertions read against the real
+   * constraint. Overridable per test: on a roomy quota the round arithmetic always floors to
+   * MIN_POLL_INTERVAL_MS, which hides whether it is computed at all. */
+  quotaStatus: QuotaStatus = { requestsUsedToday: 0, requestsLimitPerDay: 7500 };
+
   override async fetchQuotaStatus(): Promise<QuotaStatus> {
-    return { requestsUsedToday: 0, requestsLimitPerDay: 7500 };
+    return this.quotaStatus;
   }
 }
 
@@ -330,6 +334,98 @@ describe("runLiveMatchPollingTick — what a reconciled fixture resolves to", ()
   });
 });
 
+describe("runLiveMatchPollingTick — an interrupted match is not a dead end", () => {
+  /* INTERRUPTED (the provider's SUSP/INT) is not terminal: the match either resumes or is
+   * abandoned. Until the poller is told which, the row blocks its gameweek's completion —
+   * areAllMatchesCompleted accepts only COMPLETED/VOIDED — so an INTERRUPTED row that the poller
+   * cannot re-examine reproduces the very stall docs/stuck-live-match-reconciliation-plan.md
+   * exists to remove. These pin that it is chased exactly like an IN_PROGRESS one. */
+
+  it("asks the provider about an interrupted match missing from the live list, with no grace period", async () => {
+    // Kickoff is only 5 minutes ago: a SCHEDULED row this fresh would be inside
+    // MISSING_KICKOFF_GRACE_MS and left alone, so the call proves INTERRUPTED is reconciled
+    // unconditionally rather than merely surviving the grace check.
+    givenStoredMatches([
+      buildMatch({ id: "match-suspended", externalId: "1557367", status: "INTERRUPTED", kickoffAt: minutesBeforeTick(5) }),
+    ]);
+    const provider = new ScriptedLivePollProvider([], { "1557367": providerFixture("1557367", "SUSP") });
+
+    await runLiveMatchPollingTick(provider);
+
+    expect(provider.reconciliationRequests).toEqual([["1557367"]]);
+    expect(upsertedMatchStatusByExternalId()).toEqual({ "1557367": "INTERRUPTED" });
+  });
+
+  it("voids an interrupted match the provider now reports as abandoned, releasing its gameweek", async () => {
+    givenStoredMatches([
+      buildMatch({ id: "match-suspended", externalId: "1557367", status: "INTERRUPTED", kickoffAt: minutesBeforeTick(70) }),
+    ]);
+    const provider = new ScriptedLivePollProvider([], { "1557367": providerFixture("1557367", "ABD") });
+
+    const result = await runLiveMatchPollingTick(provider);
+
+    expect(upsertedMatchStatusByExternalId()).toEqual({ "1557367": "VOIDED" });
+    expect(result.newlyDisruptedMatchIds).toEqual(["match-suspended"]);
+    expect(result.newlyCompletedMatchIds).toEqual([]);
+  });
+
+  it("returns a resumed match to in-progress and stays on the live cadence", async () => {
+    givenStoredMatches([
+      buildMatch({ id: "match-suspended", externalId: "1557367", status: "INTERRUPTED", kickoffAt: minutesBeforeTick(70) }),
+    ]);
+    const provider = new ScriptedLivePollProvider([], { "1557367": providerFixture("1557367", "2H") });
+
+    const result = await runLiveMatchPollingTick(provider);
+
+    expect(upsertedMatchStatusByExternalId()).toEqual({ "1557367": "IN_PROGRESS" });
+    expect(result.newlyCompletedMatchIds).toEqual([]);
+    expect(scheduledNextPollDelayMs()).toBe(MIN_POLL_INTERVAL_MS);
+  });
+});
+
+describe("runLiveMatchPollingTick — pacing against a constrained quota", () => {
+  it("spends its remaining daily budget across the rest of the live window", async () => {
+    // The free tier's 100/day, which the pacing constants were designed against — on the
+    // production 7500/day plan the arithmetic always floors to MIN_POLL_INTERVAL_MS and never
+    // shows itself. Three fixtures are reported live and a fourth has left the list at full time.
+    //
+    //   remainingQuota      = 100 - 40                     = 60
+    //   budgetForRounds     = 60 - 2 * 2 confirmations     = 56
+    //   requestsPerRound    = 1 live list + 1 lookup batch + 2 * 3 still live = 8
+    //   rounds              = floor((56 - 2 * 3) / 8)      = 6
+    //   nextDelay           = 110 min / 6                  = 18 min 20 s
+    givenStoredMatches([
+      buildMatch({ id: "match-finished", externalId: "1557367", status: "IN_PROGRESS", kickoffAt: minutesBeforeTick(116) }),
+      buildMatch({ id: "match-live-one", externalId: "1557368", status: "IN_PROGRESS", kickoffAt: minutesBeforeTick(50) }),
+      buildMatch({ id: "match-live-two", externalId: "1557369", status: "IN_PROGRESS", kickoffAt: minutesBeforeTick(50) }),
+      buildMatch({ id: "match-live-three", externalId: "1557370", status: "IN_PROGRESS", kickoffAt: minutesBeforeTick(50) }),
+    ]);
+    const provider = new ScriptedLivePollProvider(
+      [providerFixture("1557368", "2H"), providerFixture("1557369", "2H"), providerFixture("1557370", "2H")],
+      { "1557367": providerFixture("1557367", "FT", { finalHomeScore: 3, finalAwayScore: 0 }) },
+    );
+    provider.quotaStatus = { requestsUsedToday: 40, requestsLimitPerDay: 100 };
+    mocks.countOwedConfirmationPasses.mockResolvedValue(2);
+
+    await runLiveMatchPollingTick(provider);
+
+    expect(scheduledNextPollDelayMs()).toBe(18 * MINUTE_MS + 20 * 1000);
+  });
+
+  it("never polls faster than the provider updates, however much budget is left", async () => {
+    // Same shape on the production plan: the computed interval is far below the 5-minute floor,
+    // so the floor is what ships. This is the case every other pacing test in this file lands on.
+    givenStoredMatches([
+      buildMatch({ id: "match-live-one", externalId: "1557368", status: "IN_PROGRESS", kickoffAt: minutesBeforeTick(50) }),
+    ]);
+    const provider = new ScriptedLivePollProvider([providerFixture("1557368", "2H")]);
+
+    await runLiveMatchPollingTick(provider);
+
+    expect(scheduledNextPollDelayMs()).toBe(MIN_POLL_INTERVAL_MS);
+  });
+});
+
 describe("runLiveMatchPollingTick — degrading safely", () => {
   it("still imports the live list and still schedules the next poll when the reconciliation call fails", async () => {
     givenStoredMatches([
@@ -344,8 +440,28 @@ describe("runLiveMatchPollingTick — degrading safely", () => {
     // The live-list fixture imports as normal; the unresolved one is simply left for the next tick.
     expect(upsertedMatchStatusByExternalId()).toEqual({ "1557368": "IN_PROGRESS" });
     expect(result.newlyCompletedMatchIds).toEqual([]);
-    // A failed repair must never leave nextLivePollDueAt un-advanced — that would hot-loop.
-    expect(scheduledNextPollDelayMs()).toBeGreaterThan(0);
+    // A failed repair must never leave nextLivePollDueAt un-advanced — that would hot-loop — and
+    // the fixture the live list *did* report still holds the tick on its 5-minute live cadence.
+    expect(scheduledNextPollDelayMs()).toBe(MIN_POLL_INTERVAL_MS);
+  });
+
+  it("falls back to the idle cadence when the lookup fails and the live list was empty", async () => {
+    // The unhappy corner of the branch above: with nothing in the live list to pace against,
+    // stillLiveCount is 0 and the tick takes the 30-minute idle interval — so a failed lookup
+    // slows down the very fixture it was trying to repair, the same collapse reconciliation
+    // exists to prevent, for one interval. Pinned as documentation of current behaviour, not as
+    // an endorsement of it (see the note in liveMatchPolling.ts).
+    givenStoredMatches([
+      buildMatch({ id: "match-missing", externalId: "1557367", status: "IN_PROGRESS", kickoffAt: minutesBeforeTick(116) }),
+    ]);
+    const provider = new ScriptedLivePollProvider([]);
+    provider.reconciliationLookupError = new Error("API-Football request failed: 503 Service Unavailable (fixtures)");
+
+    await runLiveMatchPollingTick(provider);
+
+    expect(provider.reconciliationRequests).toEqual([["1557367"]]);
+    expect(mocks.upsertMatch).not.toHaveBeenCalled();
+    expect(scheduledNextPollDelayMs()).toBe(IDLE_POLL_INTERVAL_CAP_MS);
   });
 
   it("makes no provider call whatsoever while the next poll is not yet due", async () => {

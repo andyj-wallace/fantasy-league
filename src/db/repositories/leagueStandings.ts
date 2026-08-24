@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull } from "drizzle-orm";
 import { db, type DbOrTx } from "../client";
 import { gameweeks, leagueStandings, teams } from "../schema";
 import type { LeagueStanding, LeagueStandingTiebreakerStats } from "../../domain";
@@ -61,6 +61,26 @@ export async function findForLeagueAndGameweek(leagueId: string, gameweekId: str
     )
     .orderBy(asc(leagueStandings.rank));
   return rows.map((row) => toLeagueStanding(row.standing));
+}
+
+/**
+ * The gameweeks this league already has a stored table for, numbered above the given one, earliest
+ * first.
+ *
+ * A standings row's totalPoints is cumulative — sumTotalPointsThroughGameweek over every gameweek
+ * up to its own — so rebuilding one gameweek's table silently invalidates every later table the
+ * league has already been given. That happens whenever a gameweek is scored late: a postponed
+ * fixture replayed weeks on, or a confirmation pass correcting a result. Without this, the stale
+ * later row is exactly what findLatestForLeague then serves.
+ */
+export async function findGameweekIdsWithStandingsAfter(leagueId: string, gameweekNumber: number): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ gameweekId: leagueStandings.gameweekId, number: gameweeks.number })
+    .from(leagueStandings)
+    .innerJoin(gameweeks, eq(leagueStandings.gameweekId, gameweeks.id))
+    .where(and(eq(leagueStandings.leagueId, leagueId), gt(gameweeks.number, gameweekNumber)))
+    .orderBy(asc(gameweeks.number));
+  return rows.map((row) => row.gameweekId);
 }
 
 /** The leaderboard as of the most recent gameweek this league has standings for. Empty before any gameweek completes. */

@@ -1,7 +1,7 @@
 import { and, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import { db } from "../client";
 import { matches } from "../schema";
-import type { Match } from "../../domain";
+import { MATCH_STATUSES_UNDER_WAY_BUT_NOT_YET_RESOLVED, type Match } from "../../domain";
 
 function toMatch(row: typeof matches.$inferSelect): Match {
   return {
@@ -33,7 +33,8 @@ export async function findByExternalId(externalId: string): Promise<Match | null
   return row ? toMatch(row) : null;
 }
 
-/** Matches the live-polling tick should consider checking: already in play, or scheduled/delayed
+/** Matches the live-polling tick should consider checking: already under way and unresolved
+ * (in play or interrupted — see MATCH_STATUSES_UNDER_WAY_BUT_NOT_YET_RESOLVED), or scheduled/delayed
  * fixtures whose kickoff has passed but we haven't yet observed a status change for. */
 export async function findPotentiallyLive(now: Date): Promise<Match[]> {
   const rows = await db
@@ -41,7 +42,7 @@ export async function findPotentiallyLive(now: Date): Promise<Match[]> {
     .from(matches)
     .where(
       or(
-        eq(matches.status, "IN_PROGRESS"),
+        inArray(matches.status, MATCH_STATUSES_UNDER_WAY_BUT_NOT_YET_RESOLVED),
         and(inArray(matches.status, ["SCHEDULED", "DELAYED"]), lte(matches.kickoffAt, now)),
       ),
     );

@@ -1,5 +1,5 @@
 import { matchesRepository, pendingConfirmationPassesRepository, providerPollStateRepository } from "../db/repositories";
-import type { Match } from "../domain";
+import { MATCH_STATUSES_UNDER_WAY_BUT_NOT_YET_RESOLVED, type Match } from "../domain";
 import {
   MAX_FIXTURE_IDS_PER_PROVIDER_REQUEST,
   type FootballDataProvider,
@@ -25,9 +25,9 @@ const NO_OP_RESULT: ImportMatchDataResult = { newlyCompletedMatchIds: [], newlyD
  * The fixtures we expected the live list to account for and it did not — the set worth spending a
  * targeted `fixtures?ids=` lookup on.
  *
- * An IN_PROGRESS match that vanished from `live=all` is the core case, and the reason this
- * function exists: the live list carries only fixtures in play, so the final whistle *removes* a
- * fixture from it rather than reporting it as FT. Acting solely on what the live list returns
+ * A match already under way (IN_PROGRESS or INTERRUPTED) that vanished from `live=all` is the core
+ * case, and the reason this function exists: the live list carries only fixtures in play, so the
+ * final whistle *removes* a fixture from it rather than reporting it as FT. Acting solely on what the live list returns
  * therefore makes the IN_PROGRESS -> COMPLETED transition structurally unobservable, stalling the
  * whole scoring pipeline for that fixture until the twice-daily discovery pass heals it
  * (docs/stuck-live-match-reconciliation-plan.md).
@@ -50,7 +50,7 @@ function selectExternalFixtureIdsMissingFromLiveList(
 
     const hasBeenMissingSinceWellAfterKickoff = now.getTime() - match.kickoffAt.getTime() > MISSING_KICKOFF_GRACE_MS;
     const isWorthReconciling =
-      match.status === "IN_PROGRESS" ||
+      MATCH_STATUSES_UNDER_WAY_BUT_NOT_YET_RESOLVED.includes(match.status) ||
       ((match.status === "SCHEDULED" || match.status === "DELAYED") && hasBeenMissingSinceWellAfterKickoff);
     if (isWorthReconciling) externalFixtureIdsToReconcile.push(match.externalId);
   }
@@ -82,12 +82,13 @@ async function fetchReconciliationFixturesOrDegrade(
   }
 }
 
-/** Whether a fixture should hold the tick on its fast live cadence. INTERRUPTED (SUSP/INT) counts
- * alongside IN_PROGRESS because an interrupted match is expected to resume, and dropping to the
- * idle interval would mean missing the restart by up to half an hour. */
+/** Whether a fixture should hold the tick on its fast live cadence — the same "under way, not yet
+ * resolved" rule that decides which fixtures get reconciled, so the tick cannot both pace for a
+ * fixture and refuse to chase it. Dropping an INTERRUPTED fixture to the idle interval would mean
+ * missing its restart by up to half an hour. */
 function countsAsStillLiveForPacing(fixture: ProviderFixture): boolean {
   const status = mapApiFootballStatusToMatchStatus(fixture.statusShortCode);
-  return status === "IN_PROGRESS" || status === "INTERRUPTED";
+  return MATCH_STATUSES_UNDER_WAY_BUT_NOT_YET_RESOLVED.includes(status);
 }
 
 /**
@@ -141,6 +142,10 @@ export async function runLiveMatchPollingTick(provider: FootballDataProvider): P
 
   let nextDelayMs: number;
   if (stillLiveCount === 0) {
+    // Note a live-list-empty tick whose reconciliation lookup *failed* lands here too, degrading
+    // the very fixtures it was trying to repair to the 30-minute idle cadence — the same collapse
+    // reconciliation exists to prevent, just one interval deep and self-correcting on the next
+    // tick. Pinned by liveMatchPolling.test.ts rather than worked around; see the plan doc.
     nextDelayMs = IDLE_POLL_INTERVAL_CAP_MS;
   } else {
     const quota = await provider.fetchQuotaStatus();

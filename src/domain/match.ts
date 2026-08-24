@@ -16,6 +16,25 @@ export interface Match {
 }
 
 /**
+ * Statuses meaning a fixture is under way and its outcome is still unknown to us — the rows the
+ * live poller still owes an answer on.
+ *
+ * INTERRUPTED (the provider's SUSP/INT) sits beside IN_PROGRESS because it is *not* terminal: a
+ * suspended match either resumes or is abandoned, and only a later provider answer can say which.
+ * Leaving it out made an INTERRUPTED row unreachable by the poller forever — the same dead end
+ * docs/stuck-live-match-reconciliation-plan.md was written to remove — and because
+ * summarizeGameweekMatchProgress and gameweeksRepository.areAllMatchesCompleted count only
+ * COMPLETED/VOIDED as final, that one row held its whole gameweek open (no free-transfer award, no
+ * final standings) until the 12-hourly discovery pass healed it.
+ *
+ * Two places must agree on this rule: matchesRepository.findPotentiallyLive, which decides whether
+ * such a row is handed to the live tick at all, and liveMatchPolling's reconciliation/pacing, which
+ * decides whether to chase it. It lives here so they share one definition rather than mirroring a
+ * status list across the db and worker layers.
+ */
+export const MATCH_STATUSES_UNDER_WAY_BUT_NOT_YET_RESOLVED: MatchStatus[] = ["IN_PROGRESS", "INTERRUPTED"];
+
+/**
  * Whether a club's players are locked right now — "Match Locking" in fantasy_league_v1_design.txt:
  * a player locks individually at the exact kickoff of their club's match, regardless of how that
  * match later resolves, and stays locked even after it finishes.

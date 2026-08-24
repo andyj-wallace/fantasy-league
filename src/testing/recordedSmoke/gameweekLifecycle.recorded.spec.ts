@@ -125,7 +125,9 @@ test("a gameweek spread across four days: per-kickoff locks, transfers, a postpo
     // The early GW2 fixture exists but belongs to next gameweek, so it must not be listed here.
     await expect(fixtureRows.filter({ hasText: "Aston Villa v Spurs" })).toHaveCount(0);
 
-    await expect(page.getByText(/No standings yet/)).toBeVisible();
+    // Opening-day baseline: every team is present on zero, headed by the gameweek about to start.
+    await expect(page.getByRole("heading", { name: "Standings — before Gameweek 1" })).toBeVisible();
+    await expect(page.getByText(/Everyone starts level — Gameweek 1 is 0 of 4 matches in/)).toBeVisible();
     await captureCheckpointScreenshot(page, "A-1-league-pre-gameweek.png");
 
     const overlay = await openAlphaTransfersPanel(page, entities);
@@ -178,7 +180,7 @@ test("a gameweek spread across four days: per-kickoff locks, transfers, a postpo
     await captureCheckpointScreenshot(page, "B-3-unlocked-transfer-confirmed.png");
   });
 
-  await test.step("C — Saturday full time: scores visible, no standings until the gameweek completes", async () => {
+  await test.step("C — Saturday full time: scores visible, standings provisional mid-gameweek", async () => {
     await advanceScenarioToCheckpoint("C");
     await openLeaguePage(page, entities);
 
@@ -188,8 +190,11 @@ test("a gameweek spread across four days: per-kickoff locks, transfers, a postpo
     const saturdayFixture = page.locator(".fixture-list li").filter({ hasText: "Liverpool v Man City" });
     await expect(saturdayFixture.getByText("Full time")).toBeVisible();
     await expect(saturdayFixture).toContainText("1–1");
-    // Precompute-on-completion by design: mid-gameweek there is still nothing to rank.
-    await expect(page.getByText(/No standings yet/)).toBeVisible();
+    // Team scores and standings rebuild after every completed match, not only at gameweek end, so
+    // the table is already ranked here — flagged provisional because two fixtures are outstanding.
+    // The final totals are asserted at F, against the hand-computed scenario constants.
+    await expect(page.getByRole("heading", { name: "Standings — Gameweek 1 so far" })).toBeVisible();
+    await expect(page.getByText("Provisional — matches still in progress.")).toBeVisible();
     await captureCheckpointScreenshot(page, "C-1-saturday-full-time.png");
 
     const overlay = await openAlphaTransfersPanel(page, entities);
@@ -245,7 +250,16 @@ test("a gameweek spread across four days: per-kickoff locks, transfers, a postpo
     await expect(page.locator(".fixture-list li").filter({ hasText: "Spurs v Newcastle" }).getByText("Postponed")).toBeVisible();
     // Every playable match is done, yet the gameweek cannot complete around the postponed one.
     await expect(page.locator("main .gameweek-banner")).toContainText("Gameweek 1");
-    await expect(page.getByText(/No standings yet/)).toBeVisible();
+    // The standings heading reads Gameweek 2, not 1: the early Sunday GW2 fixture has been scored,
+    // and findLatestForLeague returns the highest-numbered gameweek that has a table.
+    //
+    // Only the heading and the provisional note are asserted here, deliberately. The GW2 row's
+    // totals are cumulative season-to-date but were last computed when that early fixture landed,
+    // while GW1 was still part-scored — and nothing recomputes a later gameweek's row when an
+    // earlier one finishes. So the numbers on screen at this checkpoint are stale by design-gap,
+    // not by intent; asserting them would pin that gap in place as if it were expected.
+    await expect(page.getByRole("heading", { name: "Standings — Gameweek 2 so far" })).toBeVisible();
+    await expect(page.getByText("Provisional — matches still in progress.")).toBeVisible();
     await captureCheckpointScreenshot(page, "E-1-gameweek-held-open.png");
 
     const overlay = await openAlphaTransfersPanel(page, entities);
