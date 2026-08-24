@@ -567,15 +567,23 @@ see `RELIABILITY_PLAN.md`) or re-seed via `npm run db:tunnel` + `npm run seed:mo
 6. ~~Delete unused Cognito pool `us-east-2_MF6XS4BiK`~~ **Done 2026-07-12** — Drew deleted
    it ("User pool - oehbhj"); verified: us-east-2 has zero pools and the live pool
    `us-east-1_DBETCnAJP` ("User pool - nvl7mo") is intact with its users.
-7. **Match-poll schedule is deployed DISABLED** (`-c matchPollEnabled=true` + deploy to
-   turn on). Live verification showed every cycle failing at the first provider call:
-   the free API-Football plan cannot serve current-season data (remaining-gaps item 6),
-   and `lastRosterImportRanAt` is only stamped on success, so the import re-fails every
-   minute, burning ~1 quota call/tick and blocking all later stages. Nothing is lost —
-   the site reads precomputed DB data. Both EventBridge targets also now set
-   `retryAttempts: 0`: for scheduled jobs the next tick is the retry; Lambda's default
-   async double-retry only tripled the failing calls. Once a paid data plan lands:
-   enable the flag, and the worker resumes with the polling-budget pacing.
+7. ~~**Match-poll schedule is deployed DISABLED**~~ **Resolved 2026-08-24 — the default is now
+   ENABLED.** Original note: the schedule shipped off because the free API-Football plan could
+   not serve current-season data (remaining-gaps item 6), so every cycle failed at its first
+   provider call, and `lastRosterImportRanAt` only stamps on success, so the import re-failed
+   every minute. Both EventBridge targets also set `retryAttempts: 0`: for scheduled jobs the
+   next tick is the retry; Lambda's default async double-retry only tripled the failing calls.
+
+   That blocker is gone (Pro tier, 2026-08-20), but the opt-in default had become a live hazard.
+   The rule's enabled state is CloudFormation-managed, so **any deploy that omitted
+   `--enable-match-poll` actively disabled a running schedule** rather than leaving it alone —
+   and `.github/workflows/deploy.yml` never passed it, so every push to `release` would have
+   silently stopped all imports, scoring and standings while reporting a clean deploy. Inverted
+   2026-08-24: `matchPollEnabled` context now defaults **on** (only an explicit
+   `-c matchPollEnabled=false` disables it), `deploy-infrastructure.sh` defaults on with a new
+   `--disable-match-poll` opt-out, and the workflow passes `--enable-match-poll` explicitly.
+   `--enable-match-poll` is still accepted so older commands and docs keep working. Verified by
+   synth: no context → `State: ENABLED`; `-c matchPollEnabled=false` → `State: DISABLED`.
 8. **Rotating `cloudfront-origin-secret` briefly 403s live traffic** (added 2026-08-03).
    Rotation is `aws ssm put-parameter --overwrite --name /fantasy-league/<env>/cloudfront-origin-secret
    --type String --value "$(openssl rand -hex 32)"` followed by a stack deploy. One

@@ -41,9 +41,12 @@ export interface FantasyLeagueStackProps extends StackProps {
    * Service Quotas increase lands (deploy with `-c reservedConcurrency=true` after). The
    * match-poll worker stays overlap-safe regardless via the DB-persisted nextLivePollDueAt gate. */
   enableReservedLambdaConcurrency: boolean;
-  /** The free API-Football plan cannot serve current-season data (remaining-gaps-todo.md item 6),
-   * so every poll cycle fails at its first provider call — the schedule is disabled until the
-   * data-plan decision lands. Re-enable with `-c matchPollEnabled=true` and a deploy. */
+  /** Drives every import, score and standings rebuild, so it is ON unless explicitly turned off:
+   * the rule's enabled state is CloudFormation-managed, meaning a deploy that leaves this false
+   * DISABLES a running schedule rather than leaving it alone — a silent scoring outage that looks
+   * like a healthy deploy. It shipped off originally because the free API-Football plan could not
+   * serve current-season data; that blocker is gone (Pro tier, 2026-08-20). Turn it off
+   * deliberately with `-c matchPollEnabled=false` / `deploy-infrastructure.sh --disable-match-poll`. */
   enableMatchPollSchedule: boolean;
   /** CloudFront's pricing-plan subscription auto-creates and attaches a WebACL when a
    * distribution is first created, and then refuses to let CloudFormation remove it

@@ -52,8 +52,13 @@ jobs:
       # Deliberately NOT run here: deployment-preflight.sh (human-facing tooling checks
       # irrelevant to a CI runner) and deployment-put-secrets.sh (one-time, sources real
       # secret values from local .env/openssl) — both stay manual/local.
+      # --enable-match-poll is mandatory here, not optional. The match-poll EventBridge rule's
+      # enabled state is CloudFormation-managed, so a deploy without this flag actively DISABLES
+      # a running rule rather than leaving it alone — silently stopping every import, score and
+      # standings rebuild until someone notices. The flag shipped off while the free API-Football
+      # plan couldn't serve the current season; that blocker is gone (Pro tier, 2026-08-20).
       - name: Deploy infrastructure (cdk diff -> cdk deploy)
-        run: scripts/deploy-infrastructure.sh --via cdk --yes
+        run: scripts/deploy-infrastructure.sh --via cdk --yes --enable-match-poll
 
       - name: Apply database migrations (with pre-migration snapshot)
         run: scripts/run-database-migrations.sh

@@ -18,7 +18,9 @@ new FantasyLeagueStack(app, `FantasyLeague-${environmentName[0].toUpperCase()}${
   stackName: `fantasy-league-${environmentName}`,
   environmentName,
   enableReservedLambdaConcurrency: app.node.tryGetContext("reservedConcurrency") === "true",
-  enableMatchPollSchedule: app.node.tryGetContext("matchPollEnabled") === "true",
+  // Defaults ON: an absent context value must not disable a running schedule (see the prop's
+  // doc comment). Only an explicit "false" turns it off.
+  enableMatchPollSchedule: app.node.tryGetContext("matchPollEnabled") !== "false",
   existingWebAclArn: app.node.tryGetContext("webAclArn"),
   terminationProtection: environmentName === "prod",
   env: { account: DEPLOYMENT_ACCOUNT, region: DEPLOYMENT_REGION },

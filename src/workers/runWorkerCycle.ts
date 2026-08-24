@@ -13,13 +13,40 @@ const ROSTER_IMPORT_GATE_MS = 7 * 24 * 60 * 60 * 1000;
 const AVAILABILITY_SYNC_GATE_MS = 24 * 60 * 60 * 1000;
 /** ~1 call/gameweek per polling-budget.md; checking daily costs nothing when not due. */
 const DISCOVERY_GATE_MS = 12 * 60 * 60 * 1000;
-/** /leagues call to resolve the current season year and coverage flags. Monthly is plenty. */
+/** /leagues call to resolve the current season year and coverage flags. Monthly is plenty for the
+ * season *year*, which changes once a season. */
 const SEASON_SYNC_GATE_MS = 30 * 24 * 60 * 60 * 1000;
+/**
+ * ...but monthly is badly wrong for the *coverage flags* that ride along on the same call, which
+ * is why this second, much shorter gate exists.
+ *
+ * Coverage flips false→true exactly once, when the provider starts populating a new season — and
+ * a sync that lands in the hours just before that flip pins us to `false` until the monthly gate
+ * next opens. That is not a degraded mode: coverageFixturePlayerStats gates
+ * fetchFixturePlayerStatsAndGoalEvents, and importMatchData fetches a match's stats *only* on its
+ * transition into COMPLETED, so every match completing inside that window loses its stats
+ * permanently and scores zero for everyone. Exactly that happened on 2026-08-24: a sync 18 hours
+ * before the season's first kickoff read `statistics_players: false`, and all ten Gameweek 1
+ * matches completed unscored (see DEPLOYMENT_RUNBOOK.md and backfillMissingMatchStatsAndScores.ts).
+ *
+ * So while any flag is still false, re-check hourly instead: /leagues is a single call — ~24/day
+ * against a 7,500/day Pro budget — and it stops the moment coverage comes back true.
+ */
+const SEASON_SYNC_GATE_WHILE_COVERAGE_INCOMPLETE_MS = 60 * 60 * 1000;
 /** Roster import costs ~21 calls — skip it when the daily budget is this tight. */
 const MINIMUM_QUOTA_FOR_ROSTER_IMPORT = 25;
 
 function isStale(lastRanAt: Date | null, gateMs: number, now: Date): boolean {
   return !lastRanAt || now.getTime() - lastRanAt.getTime() >= gateMs;
+}
+
+/** Both tracked flags gate real work — fixture player stats drive all scoring, injuries drive
+ * availability — so either one being false means the last sync's answer is worth re-asking soon. */
+function hasProviderConfirmedFullCoverage(pollState: {
+  coverageFixturePlayerStats: boolean;
+  coverageInjuries: boolean;
+}): boolean {
+  return pollState.coverageFixturePlayerStats && pollState.coverageInjuries;
 }
 
 function mergeResults(a: ImportMatchDataResult, b: ImportMatchDataResult): ImportMatchDataResult {
@@ -55,8 +82,12 @@ export async function runWorkerCycle(provider: FootballDataProvider = new StubFo
     });
   }
 
-  // Season sync — resolves the current PL season year + coverage from /leagues. Monthly.
-  if (isStale(pollState.lastSeasonSyncRanAt, SEASON_SYNC_GATE_MS, now)) {
+  // Season sync — resolves the current PL season year + coverage from /leagues. Monthly once the
+  // provider has confirmed full coverage, hourly until then (see the gate constants above).
+  const seasonSyncGateMs = hasProviderConfirmedFullCoverage(pollState)
+    ? SEASON_SYNC_GATE_MS
+    : SEASON_SYNC_GATE_WHILE_COVERAGE_INCOMPLETE_MS;
+  if (isStale(pollState.lastSeasonSyncRanAt, seasonSyncGateMs, now)) {
     console.log("[worker] season sync due — fetching league info");
     const seasonInfo = await provider.fetchLeagueCurrentSeason();
     if (seasonInfo) {

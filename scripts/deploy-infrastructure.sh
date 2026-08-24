@@ -13,23 +13,29 @@
 # Context flags are auto-derived so past deploy failures can't recur:
 #   - reservedConcurrency: enabled only when the account's Lambda quota allows it
 #     (limit ≥ 103); a new account's limit of 10 used to fail the deploy outright.
-#   - matchPollEnabled: off unless --enable-match-poll — the free API-Football plan
-#     cannot serve current-season data, so the poller only burns quota (runbook item 7).
+#   - matchPollEnabled: ON by default. The rule's enabled state is CloudFormation-managed,
+#     so a deploy that omits it does not leave a running schedule alone — it DISABLES it,
+#     silently stopping every import, score and standings rebuild. It defaulted off while the
+#     free API-Football plan couldn't serve the current season (runbook item 7); that blocker
+#     is gone (Pro tier, 2026-08-20), and the old default made every deploy a live outage.
+#     --disable-match-poll opts out deliberately; --enable-match-poll is now the default and
+#     is still accepted so existing commands and docs keep working.
 #
-# Usage: scripts/deploy-infrastructure.sh [--via cdk|cli] [--enable-match-poll] [--yes]
+# Usage: scripts/deploy-infrastructure.sh [--via cdk|cli] [--disable-match-poll] [--yes]
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/deployment-env.sh"
 require_correct_aws_account
 
 deploy_via="cdk"
-enable_match_poll="false"
+enable_match_poll="true"
 skip_confirmation="false"
 while [ $# -gt 0 ]; do
   case "$1" in
     --via) deploy_via="$2"; shift 2 ;;
     --enable-match-poll) enable_match_poll="true"; shift ;;
+    --disable-match-poll) enable_match_poll="false"; shift ;;
     --yes) skip_confirmation="true"; shift ;;
-    *) fail "Unknown argument: $1 (usage: --via cdk|cli, --enable-match-poll, --yes)" ;;
+    *) fail "Unknown argument: $1 (usage: --via cdk|cli, --disable-match-poll, --yes)" ;;
   esac
 done
 [ "${deploy_via}" = "cdk" ] || [ "${deploy_via}" = "cli" ] || fail "--via must be 'cdk' or 'cli'"
@@ -42,10 +48,10 @@ else
   info "Lambda quota too low for reserved concurrency — deploying without (see runbook)"
 fi
 if [ "${enable_match_poll}" = "true" ]; then
-  info "Match-poll schedule will be ENABLED (make sure the API-Football plan supports the current season)"
+  info "Match-poll schedule will be ENABLED (the default — the worker drives all scoring)"
   context_args+=(-c matchPollEnabled=true)
 else
-  info "Match-poll schedule stays disabled (pass --enable-match-poll once the data plan is sorted)"
+  warn "Match-poll schedule will be DISABLED — no imports, scores or standings will be produced until a later deploy re-enables it."
 fi
 
 # CloudFront's pricing-plan subscription attaches a WebACL when the distribution is first created
