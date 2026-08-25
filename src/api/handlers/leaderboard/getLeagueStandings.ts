@@ -4,7 +4,12 @@ import {
   teamsRepository,
   usersRepository,
 } from "../../../db/repositories";
-import { STARTING_SQUAD_BUDGET_IN_MILLIONS, rankTeamStandings, type LeagueStanding } from "../../../domain";
+import {
+  roundToNearestTenthOfMillion,
+  STARTING_SQUAD_BUDGET_IN_MILLIONS,
+  rankTeamStandings,
+  type LeagueStanding,
+} from "../../../domain";
 import { requireAuth } from "../../auth";
 import { jsonResponse } from "../../httpResponse";
 import type { ApiHandler } from "../../types";
@@ -34,7 +39,9 @@ function buildUnscoredBaselineStandings(leagueId: string, teams: TeamBaselineInp
     tiebreakerStats: {
       goalsScoredBySelectedPlayers: 0,
       bankedFreeTransferCount: team.bankedFreeTransferCount,
-      totalSpentInMillions: STARTING_SQUAD_BUDGET_IN_MILLIONS - team.remainingBudgetInMillions,
+      totalSpentInMillions: roundToNearestTenthOfMillion(
+        STARTING_SQUAD_BUDGET_IN_MILLIONS - team.remainingBudgetInMillions,
+      ),
     },
   }));
 

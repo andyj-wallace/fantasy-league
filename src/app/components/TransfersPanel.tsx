@@ -9,6 +9,7 @@ import { LockedBadge } from "@/app/components/LockedBadge";
 import { LoadingState } from "@/app/components/LoadingState";
 import { StatTile } from "@/app/components/StatTile";
 import { formatDayAndTime } from "@/app/lib/formatDate";
+import { roundToNearestTenthOfMillion } from "../../domain";
 import type {
   GameweekStatus,
   MatchStatus,
@@ -209,7 +210,11 @@ export function TransfersPanel({
   function eligibleReplacements(outgoing: RosterEntry): PlayerWithStats[] {
     if (!available) return [];
     const rosterPlayerIds = new Set(available.roster.map((player) => player.id));
-    const budgetAllowance = available.remainingBudgetInMillions + outgoing.priceInMillions;
+    // Grid-snapped: without it a replacement priced at exactly the freed-up budget can fall on
+    // the wrong side of the <= below and vanish from the eligible list.
+    const budgetAllowance = roundToNearestTenthOfMillion(
+      available.remainingBudgetInMillions + outgoing.priceInMillions,
+    );
     return allPlayers.filter(
       (player) =>
         player.position === outgoing.position &&

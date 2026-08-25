@@ -8,6 +8,7 @@ import {
   teamsRepository,
 } from "../db/repositories";
 import {
+  roundToNearestTenthOfMillion,
   STARTING_SQUAD_BUDGET_IN_MILLIONS,
   rankTeamStandings,
   type LeagueStanding,
@@ -45,7 +46,11 @@ export async function updateStandings(leagueId: string, gameweekId: string): Pro
             tiebreakerStats: {
               goalsScoredBySelectedPlayers,
               bankedFreeTransferCount: team.bankedFreeTransferCount,
-              totalSpentInMillions: STARTING_SQUAD_BUDGET_IN_MILLIONS - team.remainingBudgetInMillions,
+              // Fresh subtraction, so it leaves the grid even though the budget arrived on it —
+              // and this value is both compared for exact equality and persisted into jsonb.
+              totalSpentInMillions: roundToNearestTenthOfMillion(
+                STARTING_SQUAD_BUDGET_IN_MILLIONS - team.remainingBudgetInMillions,
+              ),
             },
           };
         }),

@@ -1,7 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { db } from "../../../db/client";
 import { gameweeksRepository, matchesRepository, playersRepository, teamsRepository, transfersRepository } from "../../../db/repositories";
-import { deriveStartingFormation, isClubLocked, POINTS_COST_PER_PAID_TRANSFER, validateSquadComposition, type Transfer } from "../../../domain";
+import {
+  deriveStartingFormation,
+  isClubLocked,
+  POINTS_COST_PER_PAID_TRANSFER,
+  roundToNearestTenthOfMillion,
+  validateSquadComposition,
+  type Transfer,
+} from "../../../domain";
 import { requireAuth } from "../../auth";
 import { badRequestResponse, forbiddenResponse, jsonResponse, notFoundResponse } from "../../httpResponse";
 import type { ApiHandler } from "../../types";
@@ -67,8 +74,11 @@ export const makeTransfer: ApiHandler = requireAuth(async (event, session) => {
     if (!lockedTeam) return notFoundResponse("Team not found");
 
     const pointsCost = lockedTeam.bankedFreeTransferCount > 0 ? 0 : POINTS_COST_PER_PAID_TRANSFER;
-    const remainingBudgetInMillions =
-      lockedTeam.remainingBudgetInMillions + playerOut.priceInMillions - playerIn.priceInMillions;
+    // Snapped back to the £0.1M grid so a long chain of transfers cannot accumulate drift that
+    // would split this team from one that reached the same spend via a single squad save.
+    const remainingBudgetInMillions = roundToNearestTenthOfMillion(
+      lockedTeam.remainingBudgetInMillions + playerOut.priceInMillions - playerIn.priceInMillions,
+    );
     const bankedFreeTransferCount =
       pointsCost === 0 ? lockedTeam.bankedFreeTransferCount - 1 : lockedTeam.bankedFreeTransferCount;
 

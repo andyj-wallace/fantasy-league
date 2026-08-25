@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { rankTeamStandings, type RankableTeamStanding } from "./leagueStanding";
+import { roundToNearestTenthOfMillion } from "./money";
+import { STARTING_SQUAD_BUDGET_IN_MILLIONS } from "./constants";
 
 function buildRankable(teamId: string, overrides: Partial<RankableTeamStanding> = {}): RankableTeamStanding {
   return {
@@ -84,5 +86,73 @@ describe("rankTeamStandings", () => {
     rankTeamStandings(teams);
 
     expect(teams.map((row) => row.teamId)).toEqual(["low", "high"]);
+  });
+});
+
+/**
+ * Spend reaches the tiebreaker as a derived value — the cap minus a stored budget — and the two
+ * handlers that derive it run different float arithmetic to get there. Without grid-snapping, two
+ * teams on the same spend differ by ~1e-6 and are handed separate ranks instead of sharing one.
+ */
+describe("rankTeamStandings with float-derived spend", () => {
+  function spendFromStoredBudget(remainingBudgetInMillions: number): number {
+    return roundToNearestTenthOfMillion(STARTING_SQUAD_BUDGET_IN_MILLIONS - remainingBudgetInMillions);
+  }
+
+  it("shares a rank between teams whose equal spend was reached by different arithmetic paths", () => {
+    // Both teams have spent exactly £99.5M. The squad-save path stores the budget as one
+    // subtraction; the transfer path arrives at the same budget through a chain of swaps.
+    const budgetViaSquadSave = roundToNearestTenthOfMillion(STARTING_SQUAD_BUDGET_IN_MILLIONS - 99.5);
+    let budgetViaTransfers = STARTING_SQUAD_BUDGET_IN_MILLIONS;
+    for (const price of [64.1, 12.3, 8.7, 6.2, 5.4, 2.8]) {
+      budgetViaTransfers = roundToNearestTenthOfMillion(budgetViaTransfers - price);
+    }
+
+    expect(spendFromStoredBudget(budgetViaTransfers)).toBe(spendFromStoredBudget(budgetViaSquadSave));
+
+    const ranked = rankTeamStandings([
+      buildRankable("saver", {
+        totalPoints: 50,
+        tiebreakerStats: {
+          goalsScoredBySelectedPlayers: 4,
+          bankedFreeTransferCount: 1,
+          totalSpentInMillions: spendFromStoredBudget(budgetViaSquadSave),
+        },
+      }),
+      buildRankable("transferrer", {
+        totalPoints: 50,
+        tiebreakerStats: {
+          goalsScoredBySelectedPlayers: 4,
+          bankedFreeTransferCount: 1,
+          totalSpentInMillions: spendFromStoredBudget(budgetViaTransfers),
+        },
+      }),
+    ]);
+
+    expect(ranked.map((row) => row.rank)).toEqual([1, 1]);
+  });
+
+  it("still separates teams that genuinely spent different amounts", () => {
+    const ranked = rankTeamStandings([
+      buildRankable("spent-more", {
+        tiebreakerStats: {
+          goalsScoredBySelectedPlayers: 0,
+          bankedFreeTransferCount: 0,
+          totalSpentInMillions: spendFromStoredBudget(10.4),
+        },
+      }),
+      buildRankable("spent-less", {
+        tiebreakerStats: {
+          goalsScoredBySelectedPlayers: 0,
+          bankedFreeTransferCount: 0,
+          totalSpentInMillions: spendFromStoredBudget(10.5),
+        },
+      }),
+    ]);
+
+    expect(ranked.map((row) => [row.teamId, row.rank])).toEqual([
+      ["spent-less", 1],
+      ["spent-more", 2],
+    ]);
   });
 });

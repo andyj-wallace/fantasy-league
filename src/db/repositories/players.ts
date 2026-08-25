@@ -4,6 +4,7 @@ import { db } from "../client";
 import { players } from "../schema";
 import {
   DEFAULT_INITIAL_PRICE_IN_MILLIONS_BY_POSITION,
+  roundToNearestTenthOfMillion,
   type Player,
   type PlayerAvailabilityStatus,
   type PlayerPosition,
@@ -16,7 +17,7 @@ function toPlayer(row: typeof players.$inferSelect): Player {
     name: row.name,
     club: row.club,
     position: row.position,
-    priceInMillions: row.priceInMillions,
+    priceInMillions: roundToNearestTenthOfMillion(row.priceInMillions),
     availabilityStatus: row.availabilityStatus,
     availabilityReason: row.availabilityReason,
     isInCurrentSeasonSquad: row.isInCurrentSeasonSquad,

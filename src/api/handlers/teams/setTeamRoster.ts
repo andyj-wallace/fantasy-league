@@ -2,6 +2,7 @@ import { gameweeksRepository, matchesRepository, playersRepository, teamsReposit
 import {
   deriveStartingFormation,
   isClubLocked,
+  roundToNearestTenthOfMillion,
   STARTING_SQUAD_BUDGET_IN_MILLIONS,
   validateSquadComposition,
   type TeamRosterSlot,
@@ -94,8 +95,15 @@ export const setTeamRoster: ApiHandler = requireAuth(async (event, session) => {
     );
   }
 
-  const totalSpentInMillions = effectivePlayers.reduce((sum, player) => sum + player.priceInMillions, 0);
-  const remainingBudgetInMillions = STARTING_SQUAD_BUDGET_IN_MILLIONS - totalSpentInMillions;
+  // Summing 16 prices and subtracting drifts off the £0.1M grid; snapping back keeps this budget
+  // bit-identical to the one a chain of transfers would produce for the same squad, which the
+  // standings tiebreaker compares for exact equality.
+  const totalSpentInMillions = roundToNearestTenthOfMillion(
+    effectivePlayers.reduce((sum, player) => sum + player.priceInMillions, 0),
+  );
+  const remainingBudgetInMillions = roundToNearestTenthOfMillion(
+    STARTING_SQUAD_BUDGET_IN_MILLIONS - totalSpentInMillions,
+  );
 
   // A roster save can bench or drop whoever currently wears the armband, and nothing else revisits
   // captaincy — so without this the stored captain could outlive their place in the XI and still

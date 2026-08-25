@@ -1,7 +1,14 @@
 import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "../client";
 import { leagues, players, teamRosterSlots, teams } from "../schema";
-import { MAX_BANKED_FREE_TRANSFER_COUNT, type League, type StartingFormation, type Team, type TeamRosterSlot } from "../../domain";
+import {
+  MAX_BANKED_FREE_TRANSFER_COUNT,
+  roundToNearestTenthOfMillion,
+  type League,
+  type StartingFormation,
+  type Team,
+  type TeamRosterSlot,
+} from "../../domain";
 
 /**
  * Scalar Team columns only — deliberately not the full `Team` domain type, which embeds
@@ -39,7 +46,7 @@ function toTeamRow(row: typeof teams.$inferSelect): TeamRow {
     formation: row.formation,
     captainPlayerId: row.captainPlayerId,
     viceCaptainPlayerId: row.viceCaptainPlayerId,
-    remainingBudgetInMillions: row.remainingBudgetInMillions,
+    remainingBudgetInMillions: roundToNearestTenthOfMillion(row.remainingBudgetInMillions),
     bankedFreeTransferCount: row.bankedFreeTransferCount,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -117,7 +124,7 @@ function toTeam(row: TeamRow, rosterSlots: TeamRosterSlot[]): Team {
     rosterSlots,
     captainPlayerId: row.captainPlayerId,
     viceCaptainPlayerId: row.viceCaptainPlayerId,
-    remainingBudgetInMillions: row.remainingBudgetInMillions,
+    remainingBudgetInMillions: roundToNearestTenthOfMillion(row.remainingBudgetInMillions),
     bankedFreeTransferCount: row.bankedFreeTransferCount,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

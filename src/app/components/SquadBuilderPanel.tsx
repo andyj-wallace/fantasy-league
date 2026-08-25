@@ -25,6 +25,7 @@ import {
   VALID_STARTING_FORMATIONS,
   deriveStartingFormation,
   summarizeGameweekMatchProgress,
+  roundToNearestTenthOfMillion,
   validateSquadComposition,
   type Match,
   type PlayerPosition,
@@ -409,8 +410,14 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
     [draftRosterSlots, playersById],
   );
 
-  const totalSpentInMillions = draftSquadPlayers.reduce((sum, { player }) => sum + player.priceInMillions, 0);
-  const remainingBudgetInMillions = STARTING_SQUAD_BUDGET_IN_MILLIONS - totalSpentInMillions;
+  // Snapped back to the £0.1M grid so the live counter matches the budget the server will store,
+  // and so a player priced at exactly the remaining budget is not rejected as unaffordable.
+  const totalSpentInMillions = roundToNearestTenthOfMillion(
+    draftSquadPlayers.reduce((sum, { player }) => sum + player.priceInMillions, 0),
+  );
+  const remainingBudgetInMillions = roundToNearestTenthOfMillion(
+    STARTING_SQUAD_BUDGET_IN_MILLIONS - totalSpentInMillions,
+  );
   const goalkeeperCount = draftSquadPlayers.filter(({ player }) => player.position === "GK").length;
 
   /** The fewest outfield players of each position any valid formation can field, derived from the
