@@ -1123,6 +1123,18 @@ tbody tr:hover {
   color: var(--color-ink);
 }
 
+/* ── Rival squad view: armband marker ───────────────────────
+ * The read-only lineup list has no captaincy dropdown to convey who holds the armband, so the
+ * list row names it directly — the pitch dot's "· C"/"· V" convention, in the same ink-contrast
+ * pink already reused for the gameweek summary's captain bonus line. */
+.lineup-armband {
+  flex: 0 0 auto;
+  font-family: var(--font-data-stack);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--color-armband-ink);
+}
+
 /* ── Gameweek summary: the team sheet's totals block ───────────
  * Sits under the bench and closes the arithmetic — per-player points, the armband bonus, and the
  * total they sum to. Styled as the foot of a printed sheet: a rule above, figures in the data

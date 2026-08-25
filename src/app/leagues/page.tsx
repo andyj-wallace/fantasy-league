@@ -16,6 +16,7 @@ import { LoadingState } from "@/app/components/LoadingState";
 import { Overlay } from "@/app/components/Overlay";
 import { TransfersPanel } from "@/app/components/TransfersPanel";
 import { SquadBuilderPanel } from "@/app/components/SquadBuilderPanel";
+import { RivalSquadPanel } from "@/app/components/RivalSquadPanel";
 import { PlayerDetailPanel } from "@/app/components/PlayerDetailPanel";
 import { PlayerDetailContext } from "@/app/lib/playerDetailContext";
 import { pushSameRouteQueryString, replaceSameRouteQueryString } from "@/app/lib/sameRouteQueryNavigation";
@@ -87,7 +88,7 @@ function LeaguePageContent() {
    * player popup can stack on top of the transfers panel by adding ?playerId= while ?panel= stays.
    * These go through the History API rather than `router.push` — see sameRouteQueryNavigation for
    * why a query-string-only push is dropped by the static export's router. */
-  function openTeamPanel(panel: "transfers" | "squad", teamId: string) {
+  function openTeamPanel(panel: "transfers" | "squad" | "rival", teamId: string) {
     pushSameRouteQueryString(new URLSearchParams({ leagueId, panel, teamId }));
   }
 
@@ -137,7 +138,13 @@ function LeaguePageContent() {
         </div>
       )}
 
-      <LeagueStandingsSection standingsResponse={standingsResponse} currentGameweek={currentGameweek} />
+      <LeagueStandingsSection
+        standingsResponse={standingsResponse}
+        currentGameweek={currentGameweek}
+        onOpenTeam={(teamId) =>
+          teamId === teamWithLeague?.team.id ? openTeamPanel("squad", teamId) : openTeamPanel("rival", teamId)
+        }
+      />
 
       <GameweekFixtures current={currentGameweek} />
 
@@ -158,6 +165,18 @@ function LeaguePageContent() {
       <Overlay title="Squad Builder" variant="panel" onClose={closeTopPanel}>
         <PlayerDetailContext.Provider value={{ openPlayer }}>
           <SquadBuilderPanel teamId={panelTeamId} onChanged={loadLeague} />
+        </PlayerDetailContext.Provider>
+      </Overlay>
+    )}
+
+    {openPanel === "rival" && panelTeamId && (
+      <Overlay
+        title={standingsResponse?.standings.find((standing) => standing.teamId === panelTeamId)?.teamName ?? "Squad"}
+        variant="panel"
+        onClose={closeTopPanel}
+      >
+        <PlayerDetailContext.Provider value={{ openPlayer }}>
+          <RivalSquadPanel leagueId={leagueId} teamId={panelTeamId} />
         </PlayerDetailContext.Provider>
       </Overlay>
     )}

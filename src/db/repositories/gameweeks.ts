@@ -1,4 +1,4 @@
-import { asc, eq, ne, sql } from "drizzle-orm";
+import { asc, desc, eq, ne, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { db, type DbOrTx } from "../client";
 import { gameweeks, matches } from "../schema";
@@ -39,6 +39,19 @@ export async function findCurrent(): Promise<Gameweek | null> {
     .from(gameweeks)
     .where(ne(gameweeks.status, "COMPLETED"))
     .orderBy(asc(gameweeks.number))
+    .limit(1);
+  return row ? toGameweek(row) : null;
+}
+
+/** The highest-numbered COMPLETED gameweek, or null if none has finished. Lets a caller tell
+ * "the season is over" (no current gameweek, but gameweeks have been played) apart from
+ * "no fixtures have been imported yet". */
+export async function findLatestCompleted(): Promise<Gameweek | null> {
+  const [row] = await db
+    .select()
+    .from(gameweeks)
+    .where(eq(gameweeks.status, "COMPLETED"))
+    .orderBy(desc(gameweeks.number))
     .limit(1);
   return row ? toGameweek(row) : null;
 }

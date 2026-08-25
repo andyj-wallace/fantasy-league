@@ -76,9 +76,15 @@ function describeStandingsGameweek(
 export function LeagueStandingsSection({
   standingsResponse,
   currentGameweek,
+  onOpenTeam,
 }: {
   standingsResponse: StandingsResponse | null;
   currentGameweek: CurrentGameweekResponse | null;
+  /** When provided, each row's team name becomes a tap target that opens that team's squad —
+   * the caller decides whether that means the editable Squad Builder (the viewer's own team) or
+   * the read-only rival squad panel. Omitted where no handler makes sense (e.g. a read-only
+   * standings embed), in which case the team name stays plain text. */
+  onOpenTeam?: (teamId: string) => void;
 }) {
   const standings = standingsResponse?.standings ?? null;
   const isAwaitingFirstScoredGameweek = standingsResponse?.isAwaitingFirstScoredGameweek ?? false;
@@ -122,7 +128,15 @@ export function LeagueStandingsSection({
                 {standings.map((standing) => (
                   <tr key={standing.id}>
                     <td>{standing.rank}</td>
-                    <td>{standing.teamName}</td>
+                    <td>
+                      {onOpenTeam ? (
+                        <button type="button" className="btn-link" onClick={() => onOpenTeam(standing.teamId)}>
+                          {standing.teamName}
+                        </button>
+                      ) : (
+                        standing.teamName
+                      )}
+                    </td>
                     <td>{standing.managerName}</td>
                     <td style={{ fontWeight: 700 }}>{standing.totalPoints}</td>
                     <td>{standing.tiebreakerStats.goalsScoredBySelectedPlayers}</td>
@@ -133,6 +147,7 @@ export function LeagueStandingsSection({
               </tbody>
             </table>
           </div>
+          {onOpenTeam && <p style={{ marginTop: "0.5rem", fontSize: "0.8rem" }}>Tap a team to see their squad.</p>}
           {lastUpdatedAt && (
             <p style={{ marginTop: "0.5rem", fontSize: "0.8rem" }}>
               Updated automatically — busy match days may take a little longer.{" "}

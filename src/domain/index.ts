@@ -4,6 +4,7 @@ export * from "./money";
 export * from "./user";
 export * from "./league";
 export * from "./team";
+export * from "./rivalSquadVisibility";
 export * from "./squadComposition";
 export * from "./player";
 export * from "./playerProfile";

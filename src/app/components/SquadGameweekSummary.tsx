@@ -30,6 +30,7 @@ export function SquadGameweekSummary({
   matchProgress,
   transferPointsCost,
   paidTransferCount,
+  squadPossessiveLabel = "your",
 }: {
   gameweekNumber: number;
   squadPlayers: PlayerWithStats[];
@@ -38,6 +39,9 @@ export function SquadGameweekSummary({
   matchProgress: GameweekMatchProgress;
   transferPointsCost: number;
   paidTransferCount: number;
+  /** Possessive used in the progress line — "your" for the manager's own squad, a manager's name
+   * (e.g. "Bob's") when the summary is showing someone else's team. */
+  squadPossessiveLabel?: string;
 }) {
   const gameweekPointsOf = (playerId: string) =>
     squadPlayers.find((player) => player.id === playerId)?.pointsByGameweekNumber[gameweekNumber] ?? null;
@@ -69,7 +73,7 @@ export function SquadGameweekSummary({
           ? "Fixtures for this gameweek haven't been published yet."
           : matchProgress.isGameweekFullyPlayed
             ? `All ${matchProgress.totalMatchCount} matches played — final once standings update.`
-            : `${matchProgress.finalizedMatchCount} of ${matchProgress.totalMatchCount} matches played · ${scoredPlayerCount} of ${squadPlayers.length} of your players have scored so far.`}
+            : `${matchProgress.finalizedMatchCount} of ${matchProgress.totalMatchCount} matches played · ${scoredPlayerCount} of ${squadPlayers.length} of ${squadPossessiveLabel} players have scored so far.`}
       </p>
 
       <dl className="gameweek-summary-lines">
