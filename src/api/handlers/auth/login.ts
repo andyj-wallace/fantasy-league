@@ -3,6 +3,7 @@ import { authProvider } from "../../auth";
 import { validateDisplayName, validateEmail } from "../../auth/credentialValidation";
 import { registerLoginAttempt } from "../../auth/loginRateLimiter";
 import { badRequestResponse, jsonResponse, tooManyRequestsResponse } from "../../httpResponse";
+import { parseJsonRequestBody } from "../../parseJsonRequestBody";
 import type { ApiHandler, ApiHandlerEvent } from "../../types";
 
 interface LoginRequestBody {
@@ -23,7 +24,7 @@ function callerIp(event: ApiHandlerEvent): string {
  * a new implementation, not a rewrite of this handler.
  */
 export const login: ApiHandler = async (event) => {
-  const body = JSON.parse(event.body ?? "{}") as LoginRequestBody;
+  const body = parseJsonRequestBody<LoginRequestBody>(event.body);
 
   const emailError = validateEmail(body.email);
   if (emailError) return badRequestResponse(emailError);

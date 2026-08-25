@@ -1,6 +1,7 @@
 import { leaguesRepository } from "../../../db/repositories";
 import { requireAuth } from "../../auth";
 import { conflictResponse, forbiddenResponse, jsonResponse, notFoundResponse } from "../../httpResponse";
+import { parseJsonRequestBody } from "../../parseJsonRequestBody";
 import type { ApiHandler } from "../../types";
 
 interface UpdateLeagueRequestBody {
@@ -10,7 +11,7 @@ interface UpdateLeagueRequestBody {
 
 export const updateLeague: ApiHandler = requireAuth(async (event, session) => {
   const leagueId = event.pathParameters?.leagueId ?? "";
-  const body = JSON.parse(event.body ?? "{}") as UpdateLeagueRequestBody;
+  const body = parseJsonRequestBody<UpdateLeagueRequestBody>(event.body);
 
   const existingLeague = await leaguesRepository.findById(leagueId);
   if (!existingLeague) return notFoundResponse();

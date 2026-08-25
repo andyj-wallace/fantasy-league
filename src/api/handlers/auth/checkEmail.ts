@@ -1,6 +1,7 @@
 import { usersRepository } from "../../../db/repositories";
 import { validateEmail } from "../../auth/credentialValidation";
 import { badRequestResponse, jsonResponse } from "../../httpResponse";
+import { parseJsonRequestBody } from "../../parseJsonRequestBody";
 import type { ApiHandler } from "../../types";
 
 interface CheckEmailRequestBody {
@@ -13,7 +14,7 @@ interface CheckEmailRequestBody {
  * (that stays in StubAuthProvider.login, the single place sign-up happens).
  */
 export const checkEmail: ApiHandler = async (event) => {
-  const body = JSON.parse(event.body ?? "{}") as CheckEmailRequestBody;
+  const body = parseJsonRequestBody<CheckEmailRequestBody>(event.body);
   const emailError = validateEmail(body.email);
   if (emailError) return badRequestResponse(emailError);
 

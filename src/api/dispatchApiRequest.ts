@@ -1,3 +1,5 @@
+import { badRequestResponse } from "./httpResponse";
+import { MalformedJsonRequestBodyError } from "./parseJsonRequestBody";
 import type { ApiHandlerEvent, ApiHandlerResult } from "./types";
 import { routes, type RouteDefinition } from "./routes";
 
@@ -32,7 +34,8 @@ export function matchRoute(method: string, pathname: string): MatchedRoute | nul
 export type ApiRequest = Omit<ApiHandlerEvent, "pathParameters">;
 
 /** Matches the request against the route table and invokes the handler, translating
- * "no route" and "handler threw" into the 404/500 responses every transport shares. */
+ * "no route", "unparseable body" and "handler threw" into the 404/400/500 responses every
+ * transport shares. */
 export async function dispatchApiRequest(request: ApiRequest): Promise<ApiHandlerResult> {
   const matched = matchRoute(request.httpMethod, request.path);
   if (!matched) {
@@ -43,6 +46,8 @@ export async function dispatchApiRequest(request: ApiRequest): Promise<ApiHandle
   try {
     return await matched.route.handler(event);
   } catch (error) {
+    // A body the client got wrong is their fault, not a server fault — no 500, and nothing logged.
+    if (error instanceof MalformedJsonRequestBodyError) return badRequestResponse(error.message);
     console.error(error);
     return { statusCode: 500, headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "Internal server error" }) };
   }

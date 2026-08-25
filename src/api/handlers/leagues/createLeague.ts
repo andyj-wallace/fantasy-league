@@ -4,6 +4,7 @@ import { STARTING_SQUAD_BUDGET_IN_MILLIONS } from "../../../domain";
 import { requireAuth } from "../../auth";
 import { generateInviteCode } from "../../inviteCode";
 import { badRequestResponse, jsonResponse } from "../../httpResponse";
+import { parseJsonRequestBody } from "../../parseJsonRequestBody";
 import type { ApiHandler } from "../../types";
 
 interface CreateLeagueRequestBody {
@@ -15,7 +16,7 @@ interface CreateLeagueRequestBody {
  * its creator was an awkward extra step (you'd otherwise have to immediately call /leagues/join
  * with your own invite code just to get a team). */
 export const createLeague: ApiHandler = requireAuth(async (event, session) => {
-  const body = JSON.parse(event.body ?? "{}") as CreateLeagueRequestBody;
+  const body = parseJsonRequestBody<CreateLeagueRequestBody>(event.body);
   if (!body.name) return badRequestResponse("name is required");
 
   const league = await leaguesRepository.insert({

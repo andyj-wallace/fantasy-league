@@ -2,6 +2,7 @@ import { gameweeksRepository, matchesRepository, playersRepository, teamsReposit
 import { deriveStartingFormation, isClubLocked, type StartingFormation } from "../../../domain";
 import { requireAuth } from "../../auth";
 import { badRequestResponse, forbiddenResponse, jsonResponse, notFoundResponse } from "../../httpResponse";
+import { parseJsonRequestBody } from "../../parseJsonRequestBody";
 import type { ApiHandler } from "../../types";
 
 interface SetTeamLineupRequestBody {
@@ -25,7 +26,7 @@ interface SetTeamLineupRequestBody {
  */
 export const setTeamLineup: ApiHandler = requireAuth(async (event, session) => {
   const teamId = event.pathParameters?.teamId ?? "";
-  const body = JSON.parse(event.body ?? "{}") as SetTeamLineupRequestBody;
+  const body = parseJsonRequestBody<SetTeamLineupRequestBody>(event.body);
   if (!body.formation || !body.captainPlayerId || !body.viceCaptainPlayerId) {
     return badRequestResponse("formation, captainPlayerId and viceCaptainPlayerId are required");
   }

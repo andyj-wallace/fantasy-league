@@ -9,6 +9,7 @@ import {
 } from "../../../domain";
 import { requireAuth } from "../../auth";
 import { badRequestResponse, forbiddenResponse, jsonResponse, notFoundResponse } from "../../httpResponse";
+import { parseJsonRequestBody } from "../../parseJsonRequestBody";
 import type { ApiHandler } from "../../types";
 
 interface SetTeamRosterRequestBody {
@@ -25,7 +26,7 @@ interface SetTeamRosterRequestBody {
  */
 export const setTeamRoster: ApiHandler = requireAuth(async (event, session) => {
   const teamId = event.pathParameters?.teamId ?? "";
-  const body = JSON.parse(event.body ?? "{}") as SetTeamRosterRequestBody;
+  const body = parseJsonRequestBody<SetTeamRosterRequestBody>(event.body);
   if (!body.rosterSlots) return badRequestResponse("rosterSlots is required");
 
   const team = await teamsRepository.findById(teamId);

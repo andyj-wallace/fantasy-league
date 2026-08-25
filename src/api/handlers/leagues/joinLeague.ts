@@ -3,6 +3,7 @@ import { gameweeksRepository, leaguesRepository, teamsRepository } from "../../.
 import { GAMEWEEK_JOIN_CUTOFF_NUMBER, MAX_MANAGERS_PER_LEAGUE, STARTING_SQUAD_BUDGET_IN_MILLIONS } from "../../../domain";
 import { requireAuth } from "../../auth";
 import { badRequestResponse, conflictResponse, jsonResponse, notFoundResponse } from "../../httpResponse";
+import { parseJsonRequestBody } from "../../parseJsonRequestBody";
 import type { ApiHandler } from "../../types";
 
 interface JoinLeagueRequestBody {
@@ -11,7 +12,7 @@ interface JoinLeagueRequestBody {
 }
 
 export const joinLeague: ApiHandler = requireAuth(async (event, session) => {
-  const body = JSON.parse(event.body ?? "{}") as JoinLeagueRequestBody;
+  const body = parseJsonRequestBody<JoinLeagueRequestBody>(event.body);
   if (!body.inviteCode) return badRequestResponse("inviteCode is required");
 
   const league = await leaguesRepository.findByInviteCode(body.inviteCode);

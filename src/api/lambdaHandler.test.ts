@@ -75,6 +75,19 @@ describe("dispatchApiRequest", () => {
     expect(result.statusCode).toBe(404);
     expect(JSON.parse(result.body)).toEqual({ message: "Not found" });
   });
+
+  it("returns a 400, not a 500, when a matched route is sent an unparseable body", async () => {
+    const result = await dispatchApiRequest({
+      httpMethod: "POST",
+      path: "/auth/check-email",
+      queryStringParameters: null,
+      headers: { "content-type": "application/json" },
+      body: "{not json",
+    });
+
+    expect(result.statusCode).toBe(400);
+    expect(JSON.parse(result.body)).toEqual({ message: "Request body is not valid JSON" });
+  });
 });
 
 describe("lambda handler", () => {

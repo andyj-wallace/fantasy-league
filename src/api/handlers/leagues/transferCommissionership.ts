@@ -2,6 +2,7 @@ import { leaguesRepository, teamsRepository } from "../../../db/repositories";
 import { IS_COMMISSIONERSHIP_TRANSFER_ENABLED } from "../../../domain";
 import { requireAuth } from "../../auth";
 import { badRequestResponse, forbiddenResponse, jsonResponse, notFoundResponse } from "../../httpResponse";
+import { parseJsonRequestBody } from "../../parseJsonRequestBody";
 import type { ApiHandler } from "../../types";
 
 interface TransferCommissionershipRequestBody {
@@ -14,7 +15,7 @@ export const transferCommissionership: ApiHandler = requireAuth(async (event, se
   }
 
   const leagueId = event.pathParameters?.leagueId ?? "";
-  const body = JSON.parse(event.body ?? "{}") as TransferCommissionershipRequestBody;
+  const body = parseJsonRequestBody<TransferCommissionershipRequestBody>(event.body);
 
   const league = await leaguesRepository.findById(leagueId);
   if (!league) return notFoundResponse();

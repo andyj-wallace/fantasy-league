@@ -11,6 +11,7 @@ import {
 } from "../../../domain";
 import { requireAuth } from "../../auth";
 import { badRequestResponse, forbiddenResponse, jsonResponse, notFoundResponse } from "../../httpResponse";
+import { parseJsonRequestBody } from "../../parseJsonRequestBody";
 import type { ApiHandler } from "../../types";
 
 interface MakeTransferRequestBody {
@@ -20,7 +21,7 @@ interface MakeTransferRequestBody {
 
 export const makeTransfer: ApiHandler = requireAuth(async (event, session) => {
   const teamId = event.pathParameters?.teamId ?? "";
-  const body = JSON.parse(event.body ?? "{}") as MakeTransferRequestBody;
+  const body = parseJsonRequestBody<MakeTransferRequestBody>(event.body);
   if (!body.playerOutId || !body.playerInId) {
     return badRequestResponse("playerOutId and playerInId are required");
   }
