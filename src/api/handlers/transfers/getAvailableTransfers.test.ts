@@ -105,4 +105,13 @@ describe("getAvailableTransfers", () => {
     expect(body.currentGameweek).toBeNull();
     expect(body.roster).toEqual([]);
   });
+
+  it("403s for another manager's team without looking up its roster", async () => {
+    mocks.findTeamById.mockResolvedValue(buildTeam({ id: TEAM_ID, userId: "another-manager" }));
+
+    const { statusCode } = await callGetAvailableTransfers();
+
+    expect(statusCode).toBe(403);
+    expect(mocks.findRosterSlots).not.toHaveBeenCalled();
+  });
 });

@@ -113,4 +113,13 @@ describe("getTeam — this gameweek's transfer cost", () => {
     expect(statusCode).toBe(404);
     expect(mocks.findTransfersByTeamAndGameweek).not.toHaveBeenCalled();
   });
+
+  it("403s for another manager's team without looking up its transfers", async () => {
+    mocks.findFullTeamById.mockResolvedValue(buildTeam({ id: TEAM_ID, userId: "another-manager" }));
+
+    const { statusCode } = await callGetTeam();
+
+    expect(statusCode).toBe(403);
+    expect(mocks.findTransfersByTeamAndGameweek).not.toHaveBeenCalled();
+  });
 });

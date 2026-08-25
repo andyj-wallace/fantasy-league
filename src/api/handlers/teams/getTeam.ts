@@ -1,6 +1,6 @@
 import { gameweeksRepository, teamsRepository, transfersRepository } from "../../../db/repositories";
 import { requireAuth } from "../../auth";
-import { jsonResponse, notFoundResponse } from "../../httpResponse";
+import { forbiddenResponse, jsonResponse, notFoundResponse } from "../../httpResponse";
 import type { ApiHandler } from "../../types";
 
 /**
@@ -12,10 +12,11 @@ import type { ApiHandler } from "../../types";
  * can show the pending deduction while the gameweek is still being edited — the alternative is a
  * manager first meeting the charge as an unexplained gap in the standings.
  */
-export const getTeam: ApiHandler = requireAuth(async (event, _session) => {
+export const getTeam: ApiHandler = requireAuth(async (event, session) => {
   const teamId = event.pathParameters?.teamId ?? "";
   const team = await teamsRepository.findFullTeamById(teamId);
   if (!team) return notFoundResponse();
+  if (team.userId !== session.userId) return forbiddenResponse();
 
   const currentGameweek = await gameweeksRepository.findCurrent();
   const transfersThisGameweek = currentGameweek
