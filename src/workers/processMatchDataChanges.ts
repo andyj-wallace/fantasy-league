@@ -1,10 +1,9 @@
-import { gameweeksRepository, leagueStandingsRepository, leaguesRepository, matchesRepository } from "../db/repositories";
+import { gameweeksRepository, matchesRepository } from "../db/repositories";
 import { awardGameweekFreeTransfers } from "./awardGameweekFreeTransfers";
 import { awardPostponedMatchTransfers } from "./awardPostponedMatchTransfers";
 import { calculatePlayerScores } from "./calculatePlayerScores";
-import { calculateTeamScores } from "./calculateTeamScores";
 import type { ImportMatchDataResult } from "./importMatchData";
-import { updateStandings } from "./updateStandings";
+import { rebuildGameweekScoresAndStandings } from "./rebuildGameweekScoresAndStandings";
 
 /**
  * The downstream half of a worker cycle: awards postponed-match transfers for any match that
@@ -23,9 +22,10 @@ import { updateStandings } from "./updateStandings";
  *
  * The score/standings rebuild deliberately runs after *every* completed match rather than only at
  * gameweek end, so the leaderboard moves through a matchday instead of sitting empty until the last
- * fixture is final. Both calculateTeamScores and updateStandings are delete-then-insert rebuilds of
- * the whole gameweek, so re-running them mid-gameweek is idempotent — see the note below for the
- * one step that isn't.
+ * fixture is final. The rebuild itself is delegated to rebuildGameweekScoresAndStandings, an
+ * idempotent delete-then-insert operation shared with confirmationPasses (late corrections landing
+ * after gameweek close) and backfillMissingMatchStatsAndScores (manual recovery) — see the note
+ * below for the one step here that isn't idempotent.
  */
 export async function processMatchDataChanges(result: ImportMatchDataResult): Promise<void> {
   const { newlyCompletedMatchIds, newlyDisruptedMatchIds } = result;
@@ -57,10 +57,12 @@ export async function processMatchDataChanges(result: ImportMatchDataResult): Pr
   }
 
   for (const gameweekId of gameweekIdsNeedingCompletionRecheck) {
-    // Never re-open a finalized gameweek: its scores and standings are already final, and the
-    // completion cascade below must not run twice. Same reasoning as the confirmation pass.
-    // The null case cannot happen — gameweekId came off a Match row, whose gameweek_id is a foreign
-    // key — but narrowing it here lets the later-table refresh below read gameweek.number directly.
+    // Never re-run the one-shot completion actions below (markCompleted, awardGameweekFreeTransfers)
+    // for a finalized gameweek — awardGameweekFreeTransfers is not idempotent, so a second run would
+    // gift every manager two extra transfers. The score/standings rebuild further down has no such
+    // restriction (see rebuildGameweekScoresAndStandings) and is safe to re-run for a COMPLETED
+    // gameweek — that path is confirmationPasses's job, not this one. The null case cannot happen —
+    // gameweekId came off a Match row, whose gameweek_id is a foreign key.
     const gameweek = await gameweeksRepository.findById(gameweekId);
     if (!gameweek || gameweek.status === "COMPLETED") continue;
 
@@ -91,27 +93,6 @@ export async function processMatchDataChanges(result: ImportMatchDataResult): Pr
       hasEveryMatchReachedAFinalState || gameweekIdsWithNewlyScoredMatches.has(gameweekId);
     if (!isGameweekTableStale) continue;
 
-    await calculateTeamScores(gameweekId);
-
-    const leagues = await leaguesRepository.findAll();
-    for (const league of leagues) {
-      await updateStandings(league.id, gameweekId);
-
-      // A standings row's totalPoints is cumulative through its own gameweek, so rebuilding this
-      // one has just invalidated every later table the league already holds. Nothing else ever
-      // revisits them, and findLatestForLeague serves the highest-numbered one — so without this
-      // refresh a gameweek scored late leaves the leaderboard permanently showing a total that
-      // stopped counting partway through it.
-      //
-      // Only gameweeks that already have a table are touched: this must not create rows for a
-      // gameweek that has never been scored.
-      const laterGameweekIds = await leagueStandingsRepository.findGameweekIdsWithStandingsAfter(
-        league.id,
-        gameweek.number,
-      );
-      for (const laterGameweekId of laterGameweekIds) {
-        await updateStandings(league.id, laterGameweekId);
-      }
-    }
+    await rebuildGameweekScoresAndStandings(gameweekId);
   }
 }

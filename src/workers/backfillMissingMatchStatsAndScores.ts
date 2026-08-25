@@ -1,17 +1,15 @@
 import "dotenv/config";
 import {
   gameweeksRepository,
-  leaguesRepository,
   matchesRepository,
   matchGoalEventsRepository,
   playerMatchStatsRepository,
   providerPollStateRepository,
 } from "../db/repositories";
 import { calculatePlayerScores } from "./calculatePlayerScores";
-import { calculateTeamScores } from "./calculateTeamScores";
 import { createFootballDataProviderFromEnv } from "./createFootballDataProviderFromEnv";
 import { resolveMatchGoalEvents, resolvePlayerMatchStats } from "./importMatchData";
-import { updateStandings } from "./updateStandings";
+import { rebuildGameweekScoresAndStandings } from "./rebuildGameweekScoresAndStandings";
 
 /**
  * One-off recovery for matches that reached COMPLETED without their raw per-player stats ever
@@ -38,8 +36,12 @@ import { updateStandings } from "./updateStandings";
  * be reused for a repair: it would skip the score rebuild along with the award.
  *
  * Everything it does write is an idempotent rebuild — replaceForMatch on both raw tables, and the
- * same delete-then-insert calculateTeamScores/updateStandings the worker runs after every
- * completed match — so re-running it is safe.
+ * same rebuildGameweekScoresAndStandings the worker runs after every completed match — so
+ * re-running it is safe. Sharing that helper (rather than calling calculateTeamScores/
+ * updateStandings directly, as this script used to) also fixed a latent gap here: this script used
+ * to rebuild only the target gameweek's own standings row, silently leaving any later gameweek's
+ * cumulative totalPoints stale if it were ever run against a gameweek that already had later
+ * gameweeks scored. It now refreshes those too, the same way processMatchDataChanges always has.
  *
  * Dry run by default: it performs the provider reads and reports exactly what it would write,
  * touching nothing. Pass --execute to commit.
@@ -128,15 +130,12 @@ async function backfillMissingMatchStatsAndScores(): Promise<void> {
     return;
   }
 
-  // Same two rebuilds processMatchDataChanges runs after a completed match, and for the same
-  // reason: PlayerScore rows just changed, so this gameweek's team totals and every league's
-  // table are stale. Both delete-then-insert, so this corrects the zero-point rows in place.
-  await calculateTeamScores(gameweek.id);
-  const leagues = await leaguesRepository.findAll();
-  for (const league of leagues) {
-    await updateStandings(league.id, gameweek.id);
-  }
-  console.log(`[backfill] rebuilt team scores and ${leagues.length} league standings for gameweek ${gameweekNumber}`);
+  // Same rebuild processMatchDataChanges runs after a completed match, and for the same reason:
+  // PlayerScore rows just changed, so this gameweek's team totals and every league's table (plus
+  // every later gameweek's cumulative table) are stale. Idempotent, so this corrects the
+  // zero-point rows in place.
+  await rebuildGameweekScoresAndStandings(gameweek.id);
+  console.log(`[backfill] rebuilt team scores and every league's standings for gameweek ${gameweekNumber}`);
 
   // Correct the flag that caused this, and clear the sync stamp so the next worker tick re-reads
   // coverage rather than waiting out the remainder of the 30-day season-sync gate.
