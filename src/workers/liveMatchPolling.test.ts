@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Match } from "../domain";
+import { MATCH_STATUSES_UNDER_WAY_BUT_NOT_YET_RESOLVED, type Match } from "../domain";
 import { buildGameweek, buildMatch } from "../testing/fixtures";
 
 /**
@@ -63,6 +63,10 @@ function minutesBeforeTick(minutes: number): Date {
   return new Date(POLL_TICK_NOW.getTime() - minutes * MINUTE_MS);
 }
 
+function hoursBeforeTick(hours: number): Date {
+  return minutesBeforeTick(hours * 60);
+}
+
 function providerFixture(externalId: string, statusShortCode: string, overrides: Partial<ProviderFixture> = {}): ProviderFixture {
   return {
     externalId,
@@ -119,6 +123,28 @@ class ScriptedLivePollProvider extends StubFootballDataProvider {
  * stored rows, the way the two repository reads see one database. */
 function givenStoredMatches(storedMatches: Match[]): void {
   mocks.findPotentiallyLiveMatches.mockResolvedValue(storedMatches);
+  mocks.findMatchByExternalId.mockImplementation(
+    async (externalId: string) => storedMatches.find((match) => match.externalId === externalId) ?? null,
+  );
+}
+
+/**
+ * Feeds "the database" instead of hand-feeding the tick an answer: applies findPotentiallyLive's
+ * *real* predicate — a non-terminal status, and for the SCHEDULED/DELAYED arm a kickoff already
+ * past — to a set of stored rows, and serves the survivors.
+ *
+ * It carries no abandonment-window bound because the repository carries none, and that is exactly
+ * the point of the tests that use it. The window is enforced only in the worker, so a stale row must
+ * genuinely survive the query and reach runLiveMatchPollingTick in order to be reported before it is
+ * dropped. Filtering it upstream would leave a permanently stuck fixture with no signal at all.
+ */
+function givenDatabaseMatches(storedMatches: Match[]): void {
+  const rowsFindPotentiallyLiveWouldReturn = storedMatches.filter((match) =>
+    MATCH_STATUSES_UNDER_WAY_BUT_NOT_YET_RESOLVED.includes(match.status)
+      ? true
+      : (match.status === "SCHEDULED" || match.status === "DELAYED") && match.kickoffAt <= POLL_TICK_NOW,
+  );
+  mocks.findPotentiallyLiveMatches.mockResolvedValue(rowsFindPotentiallyLiveWouldReturn);
   mocks.findMatchByExternalId.mockImplementation(
     async (externalId: string) => storedMatches.find((match) => match.externalId === externalId) ?? null,
   );
@@ -337,9 +363,10 @@ describe("runLiveMatchPollingTick — what a reconciled fixture resolves to", ()
 describe("runLiveMatchPollingTick — an interrupted match is not a dead end", () => {
   /* INTERRUPTED (the provider's SUSP/INT) is not terminal: the match either resumes or is
    * abandoned. Until the poller is told which, the row blocks its gameweek's completion —
-   * areAllMatchesCompleted accepts only COMPLETED/VOIDED — so an INTERRUPTED row that the poller
-   * cannot re-examine reproduces the very stall docs/stuck-live-match-reconciliation-plan.md
-   * exists to remove. These pin that it is chased exactly like an IN_PROGRESS one. */
+   * INTERRUPTED is one of MATCH_STATUSES_STILL_BLOCKING_GAMEWEEK_COMPLETION — so an INTERRUPTED row
+   * the poller cannot re-examine reproduces the very stall
+   * docs/stuck-live-match-reconciliation-plan.md exists to remove. These pin that it is chased
+   * exactly like an IN_PROGRESS one. */
 
   it("asks the provider about an interrupted match missing from the live list, with no grace period", async () => {
     // Kickoff is only 5 minutes ago: a SCHEDULED row this fresh would be inside
@@ -380,6 +407,175 @@ describe("runLiveMatchPollingTick — an interrupted match is not a dead end", (
     expect(upsertedMatchStatusByExternalId()).toEqual({ "1557367": "IN_PROGRESS" });
     expect(result.newlyCompletedMatchIds).toEqual([]);
     expect(scheduledNextPollDelayMs()).toBe(MIN_POLL_INTERVAL_MS);
+  });
+});
+
+describe("runLiveMatchPollingTick — letting go of a match long past its kickoff", () => {
+  /* The tick is armed by findPotentiallyLive returning anything at all. Before
+   * MATCH_POLLING_ABANDONMENT_WINDOW_MS existed that query had no lower time bound, so one stale
+   * non-terminal row — a seed, a previous season, a fixture the provider quietly dropped,
+   * rescheduleGameweekIntoFuture drift — armed it forever: a fetchLiveFixtures every idle interval
+   * (~48/day), plus a reconciliation lookup every tick once the row cleared the 15-minute grace,
+   * right through the off-season. And if the provider no longer recognises the id, reconciliation
+   * returns nothing, the row is never cleared, and the spend never stops. These pin the poller
+   * letting go and handing the row to the twice-daily discovery pass, which — unlike `live=all` —
+   * carries terminal statuses and can actually resolve it. */
+
+  it("makes no provider call at all for a scheduled match three days past its kickoff", async () => {
+    givenDatabaseMatches([
+      buildMatch({ id: "match-stale-seed", externalId: "1557367", status: "SCHEDULED", kickoffAt: hoursBeforeTick(72) }),
+    ]);
+    const provider = new ScriptedLivePollProvider([], { "1557367": providerFixture("1557367", "FT") });
+
+    const result = await runLiveMatchPollingTick(provider);
+
+    expect(provider.liveListRequestCount).toBe(0);
+    expect(provider.reconciliationRequests).toEqual([]);
+    expect(result).toEqual({ newlyCompletedMatchIds: [], newlyDisruptedMatchIds: [] });
+    // Still rescheduled, and on the idle cadence — abandoning a row must not stall the tick.
+    expect(scheduledNextPollDelayMs()).toBe(IDLE_POLL_INTERVAL_CAP_MS);
+  });
+
+  it("makes no provider call at all for an in-progress match three days past its kickoff", async () => {
+    // The closed loop in its worst form: IN_PROGRESS never clears itself, and the live list can
+    // never report a finished fixture, so this row would have been chased on every tick forever.
+    givenDatabaseMatches([
+      buildMatch({ id: "match-stuck-forever", externalId: "1557367", status: "IN_PROGRESS", kickoffAt: hoursBeforeTick(72) }),
+    ]);
+    const provider = new ScriptedLivePollProvider([], { "1557367": providerFixture("1557367", "FT") });
+
+    const result = await runLiveMatchPollingTick(provider);
+
+    expect(provider.liveListRequestCount).toBe(0);
+    expect(provider.reconciliationRequests).toEqual([]);
+    expect(result).toEqual({ newlyCompletedMatchIds: [], newlyDisruptedMatchIds: [] });
+    expect(scheduledNextPollDelayMs()).toBe(IDLE_POLL_INTERVAL_CAP_MS);
+  });
+
+  it("still polls a match 23 hours past kickoff — one hour inside the window", async () => {
+    givenDatabaseMatches([
+      buildMatch({ id: "match-just-inside", externalId: "1557367", status: "IN_PROGRESS", kickoffAt: hoursBeforeTick(23) }),
+    ]);
+    const provider = new ScriptedLivePollProvider([], {
+      "1557367": providerFixture("1557367", "FT", { finalHomeScore: 1, finalAwayScore: 1 }),
+    });
+
+    const result = await runLiveMatchPollingTick(provider);
+
+    expect(provider.liveListRequestCount).toBe(1);
+    expect(provider.reconciliationRequests).toEqual([["1557367"]]);
+    expect(result.newlyCompletedMatchIds).toEqual(["match-just-inside"]);
+  });
+
+  it("stops polling a match 25 hours past kickoff — one hour outside the window", async () => {
+    givenDatabaseMatches([
+      buildMatch({ id: "match-just-outside", externalId: "1557367", status: "IN_PROGRESS", kickoffAt: hoursBeforeTick(25) }),
+    ]);
+    const provider = new ScriptedLivePollProvider([], {
+      "1557367": providerFixture("1557367", "FT", { finalHomeScore: 1, finalAwayScore: 1 }),
+    });
+
+    const result = await runLiveMatchPollingTick(provider);
+
+    expect(provider.liveListRequestCount).toBe(0);
+    expect(provider.reconciliationRequests).toEqual([]);
+    expect(result.newlyCompletedMatchIds).toEqual([]);
+  });
+
+  it("leaves the real reconciliation case untouched — 20 minutes past kickoff still polls and reconciles", async () => {
+    // The window must not swallow the case reconciliation was built for: a fixture that has left
+    // (or never appeared in) the live list minutes after its kickoff.
+    givenDatabaseMatches([
+      buildMatch({ id: "match-just-finished", externalId: "1557367", status: "SCHEDULED", kickoffAt: minutesBeforeTick(20) }),
+    ]);
+    const provider = new ScriptedLivePollProvider([], {
+      "1557367": providerFixture("1557367", "FT", { finalHomeScore: 2, finalAwayScore: 0 }),
+    });
+
+    const result = await runLiveMatchPollingTick(provider);
+
+    expect(provider.liveListRequestCount).toBe(1);
+    expect(provider.reconciliationRequests).toEqual([["1557367"]]);
+    expect(result.newlyCompletedMatchIds).toEqual(["match-just-finished"]);
+  });
+
+  it("polls for the matches still inside the window while abandoning the one that is not", async () => {
+    givenDatabaseMatches([
+      buildMatch({ id: "match-stale-seed", externalId: "1557367", status: "SCHEDULED", kickoffAt: hoursBeforeTick(72) }),
+      buildMatch({ id: "match-live-now", externalId: "1557368", status: "IN_PROGRESS", kickoffAt: minutesBeforeTick(50) }),
+    ]);
+    const provider = new ScriptedLivePollProvider([providerFixture("1557368", "2H")]);
+
+    await runLiveMatchPollingTick(provider);
+
+    expect(provider.liveListRequestCount).toBe(1);
+    // The stale row must not be smuggled into the reconciliation batch alongside the live one.
+    expect(provider.reconciliationRequests).toEqual([]);
+    expect(scheduledNextPollDelayMs()).toBe(MIN_POLL_INTERVAL_MS);
+  });
+
+  it("logs the abandoned match once so it surfaces in CloudWatch instead of rotting silently", async () => {
+    // The log is the feature's only remaining signal, and it has to fire on the path production
+    // actually takes. givenDatabaseMatches serves this row through findPotentiallyLive's real
+    // predicate — which carries no window bound — so the row genuinely reaches the tick rather than
+    // being hand-fed to it. That the warning names the row is itself the proof it survived the
+    // query: the worker can only report what the repository handed it.
+    const abandonmentWarnings = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const staleRow = buildMatch({
+      id: "match-stale-seed",
+      externalId: "1557367",
+      status: "IN_PROGRESS",
+      kickoffAt: hoursBeforeTick(72),
+    });
+    givenDatabaseMatches([staleRow]);
+    await expect(mocks.findPotentiallyLiveMatches(POLL_TICK_NOW)).resolves.toEqual([staleRow]);
+    mocks.findPotentiallyLiveMatches.mockClear();
+
+    await runLiveMatchPollingTick(new ScriptedLivePollProvider([]));
+
+    expect(mocks.findPotentiallyLiveMatches).toHaveBeenCalledTimes(1);
+    expect(abandonmentWarnings).toHaveBeenCalledTimes(1);
+    const [warning] = abandonmentWarnings.mock.calls[0] as [string];
+    expect(warning).toContain("[liveMatchPolling]");
+    expect(warning).toContain("match-stale-seed");
+    expect(warning).toContain("IN_PROGRESS");
+    expect(warning).toContain(staleRow.kickoffAt.toISOString());
+    abandonmentWarnings.mockRestore();
+  });
+
+  it("reports the row the repository handed it, then drops it — the query never filters it out", async () => {
+    // States the division of labour directly, because it is the whole design decision: a stale row
+    // must reach the worker (so it can be reported) and must not reach the provider (so it costs
+    // nothing). Both halves in one tick.
+    const abandonmentWarnings = vi.spyOn(console, "warn").mockImplementation(() => {});
+    givenDatabaseMatches([
+      buildMatch({ id: "match-dropped-by-provider", externalId: "1557367", status: "SCHEDULED", kickoffAt: hoursBeforeTick(72) }),
+    ]);
+    const provider = new ScriptedLivePollProvider([], { "1557367": providerFixture("1557367", "FT") });
+
+    await runLiveMatchPollingTick(provider);
+
+    // Seen and reported by the worker...
+    expect(abandonmentWarnings).toHaveBeenCalledTimes(1);
+    expect((abandonmentWarnings.mock.calls[0] as [string])[0]).toContain("match-dropped-by-provider");
+    // ...and not chased by it. The provider "knows" this fixture, so a tick that still polled would
+    // have completed it — the silence is the abandonment, not a missing stub.
+    expect(provider.liveListRequestCount).toBe(0);
+    expect(provider.reconciliationRequests).toEqual([]);
+    expect(mocks.upsertMatch).not.toHaveBeenCalled();
+    abandonmentWarnings.mockRestore();
+  });
+
+  it("says nothing when every match is inside the window", async () => {
+    const abandonmentWarnings = vi.spyOn(console, "warn").mockImplementation(() => {});
+    givenDatabaseMatches([
+      buildMatch({ id: "match-live-now", externalId: "1557368", status: "IN_PROGRESS", kickoffAt: minutesBeforeTick(50) }),
+    ]);
+
+    await runLiveMatchPollingTick(new ScriptedLivePollProvider([providerFixture("1557368", "2H")]));
+
+    expect(abandonmentWarnings).not.toHaveBeenCalled();
+    abandonmentWarnings.mockRestore();
   });
 });
 

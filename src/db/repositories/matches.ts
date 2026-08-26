@@ -35,7 +35,18 @@ export async function findByExternalId(externalId: string): Promise<Match | null
 
 /** Matches the live-polling tick should consider checking: already under way and unresolved
  * (in play or interrupted — see MATCH_STATUSES_UNDER_WAY_BUT_NOT_YET_RESOLVED), or scheduled/delayed
- * fixtures whose kickoff has passed but we haven't yet observed a status change for. */
+ * fixtures whose kickoff has passed but we haven't yet observed a status change for.
+ *
+ * Deliberately unbounded below: a row far past its kickoff is returned here, and it is
+ * liveMatchPolling that applies MATCH_POLLING_ABANDONMENT_WINDOW_MS and stops spending provider
+ * calls on it. Adding that cutoff as a predicate here would save nothing worth having — the cost
+ * being avoided is provider calls, not a local indexed read over a few hundred fixtures a season —
+ * and it would cost the thing that matters: an abandoned row would vanish from the poller's sight
+ * silently, while still blocking its gameweek forever (its status is still one of
+ * MATCH_STATUSES_STILL_BLOCKING_GAMEWEEK_COMPLETION). The poller has to see what it is giving up on
+ * in order to log it. Note also
+ * that findEarliestUpcomingKickoff below *is* bounded — that asymmetry is intentional, not an
+ * oversight: it answers "when should we next wake up", which only future kickoffs can inform. */
 export async function findPotentiallyLive(now: Date): Promise<Match[]> {
   const rows = await db
     .select()

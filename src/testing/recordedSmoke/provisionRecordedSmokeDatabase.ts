@@ -2,8 +2,9 @@ import { Client } from "pg";
 
 /**
  * Drops and recreates the throwaway recorded-smoke database, so every run starts from nothing —
- * several workers in the completion cascade (awardGameweekFreeTransfers, the transfer awards) are
- * deliberately not idempotent, and a fresh database is the simple way to keep re-runs honest.
+ * several workers in the completion cascade (awardGameweekFreeTransfers, the transfer awards) keep
+ * no ledger of what they have already paid out, relying instead on the state transitions that
+ * trigger them, and a fresh database is the simple way to keep re-runs honest.
  *
  * Refuses to touch any database whose name doesn't end in "_smoke", so a misconfigured URL can
  * never drop the real dev database.

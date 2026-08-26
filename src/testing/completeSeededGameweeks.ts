@@ -36,7 +36,7 @@ async function completeSeededGameweeks() {
     for (const league of allLeagues) {
       await updateStandings(league.id, gameweek.id);
     }
-    await gameweeksRepository.markCompleted(gameweek.id);
+    await gameweeksRepository.markCompletedIfNotAlready(gameweek.id);
     console.log(
       `Gameweek ${gameweekNumber}: scored ${gameweekMatches.length} matches, standings updated, marked COMPLETED`,
     );

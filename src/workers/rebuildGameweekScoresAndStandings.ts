@@ -10,11 +10,12 @@ import { updateStandings } from "./updateStandings";
  *
  * calculateTeamScores and updateStandings are both delete-then-insert rebuilds, so calling this is
  * always safe to repeat, including for a gameweek whose Gameweek.status is already COMPLETED —
- * this function deliberately never touches gameweeksRepository.markCompleted or
- * awardGameweekFreeTransfers. Those are one-shot completion actions (awardGameweekFreeTransfers
- * unconditionally adds +2 to every team's banked transfers, with nothing to detect a repeat run)
- * that belong solely to processMatchDataChanges's completion cascade — reopening them here would
- * double-award transfers on the second correction a gameweek ever gets.
+ * this function deliberately never touches gameweeksRepository.markCompletedIfNotAlready or
+ * awardGameweekFreeTransfers. Those are the completion cascade's one-shot half and belong solely to
+ * processMatchDataChanges: awardGameweekFreeTransfers adds +2 to every team's banked transfers with
+ * no ledger of having done so, and what keeps it to once per round is markCompletedIfNotAlready's
+ * conditional UPDATE reporting that *it* was the statement that closed the round. Calling either
+ * from here would put a second, unguarded route to the award behind every score correction.
  *
  * Shared by three callers: processMatchDataChanges (after a match completes or a gameweek closes,
  * gated on isGameweekTableStale), confirmationPasses (after a late provider correction lands —

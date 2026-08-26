@@ -1,5 +1,10 @@
 import { matchesRepository, pendingConfirmationPassesRepository, providerPollStateRepository } from "../db/repositories";
-import { MATCH_STATUSES_UNDER_WAY_BUT_NOT_YET_RESOLVED, type Match } from "../domain";
+import {
+  MATCH_POLLING_ABANDONMENT_WINDOW_MS,
+  MATCH_STATUSES_UNDER_WAY_BUT_NOT_YET_RESOLVED,
+  partitionMatchesByPollingAbandonmentWindow,
+  type Match,
+} from "../domain";
 import {
   MAX_FIXTURE_IDS_PER_PROVIDER_REQUEST,
   type FootballDataProvider,
@@ -22,6 +27,31 @@ const MISSING_KICKOFF_GRACE_MS = 15 * 60 * 1000;
 const NO_OP_RESULT: ImportMatchDataResult = { newlyCompletedMatchIds: [], newlyDisruptedMatchIds: [] };
 
 /**
+ * Says out loud which fixtures the poller has stopped chasing, so an abandoned row shows up in
+ * CloudWatch rather than rotting silently — it still blocks its gameweek from completing
+ * (its status is still one of MATCH_STATUSES_STILL_BLOCKING_GAMEWEEK_COMPLETION), it is just no
+ * longer the poller's problem.
+ *
+ * This is the whole reason findPotentiallyLive does not apply the window itself: a row it filtered
+ * out in SQL could never be reported, and a permanently stuck fixture would go from loud (burning
+ * ~96 provider calls a day) to entirely silent — while still blocking its gameweek. Discovery is the
+ * safety net, but discovery only heals a row the provider still returns in its season list, and the
+ * case that motivated the window is precisely a fixture the provider has dropped. So this line is
+ * the last signal that such a row exists.
+ */
+function warnAboutMatchesAbandonedLongAfterKickoff(abandonedMatches: Match[]): void {
+  if (abandonedMatches.length === 0) return;
+  const abandonmentWindowHours = MATCH_POLLING_ABANDONMENT_WINDOW_MS / (60 * 60 * 1000);
+  const describedMatches = abandonedMatches
+    .map((match) => `${match.id} (${match.status}, kickoff ${match.kickoffAt.toISOString()})`)
+    .join(", ");
+  console.warn(
+    `[liveMatchPolling] no longer polling ${abandonedMatches.length} non-terminal match(es) more than ` +
+      `${abandonmentWindowHours}h past kickoff — the twice-daily discovery pass owns them now: ${describedMatches}`,
+  );
+}
+
+/**
  * The fixtures we expected the live list to account for and it did not — the set worth spending a
  * targeted `fixtures?ids=` lookup on.
  *
@@ -35,6 +65,12 @@ const NO_OP_RESULT: ImportMatchDataResult = { newlyCompletedMatchIds: [], newlyD
  * A SCHEDULED/DELAYED match whose kickoff is well past is the same question from the other side:
  * either it was postponed and our kickoff time is stale, or it kicked off and we never caught it
  * live. Matches with no externalId (mock/seed rows) are skipped — there is nothing to ask about.
+ *
+ * MISSING_KICKOFF_GRACE_MS is only the near bound on "well past". The far bound is
+ * MATCH_POLLING_ABANDONMENT_WINDOW_MS, already applied by the caller: this function never sees a row
+ * older than that, so it cannot re-ask about a fixture the poller has given up on. Re-applying the
+ * window here would be a branch no caller can reach and no test can distinguish — it is enforced
+ * once, up front, where it also spares the live-list call.
  */
 function selectExternalFixtureIdsMissingFromLiveList(
   potentiallyLiveMatches: Match[],
@@ -110,8 +146,19 @@ export async function runLiveMatchPollingTick(provider: FootballDataProvider): P
     return NO_OP_RESULT;
   }
 
+  // The abandonment window is enforced here and only here — findPotentiallyLive deliberately hands
+  // back stale rows so they can be reported before being dropped. It has to sit above the length
+  // check, because that check is what arms the tick: a row past the window reaching it would stop
+  // the zero-call early return below from ever firing, and the tick would pay for a live list every
+  // idle interval forever.
   const potentiallyLive = await matchesRepository.findPotentiallyLive(now);
-  if (potentiallyLive.length === 0) {
+  const { stillWithinPollingWindow, abandonedLongAfterKickoff } = partitionMatchesByPollingAbandonmentWindow(
+    potentiallyLive,
+    now,
+  );
+  warnAboutMatchesAbandonedLongAfterKickoff(abandonedLongAfterKickoff);
+
+  if (stillWithinPollingWindow.length === 0) {
     const nextKickoff = await matchesRepository.findEarliestUpcomingKickoff(now);
     const idleDelayMs = nextKickoff
       ? Math.min(nextKickoff.getTime() - now.getTime(), IDLE_POLL_INTERVAL_CAP_MS)
@@ -123,7 +170,11 @@ export async function runLiveMatchPollingTick(provider: FootballDataProvider): P
   }
 
   const liveFixtures = await provider.fetchLiveFixtures();
-  const externalFixtureIdsToReconcile = selectExternalFixtureIdsMissingFromLiveList(potentiallyLive, liveFixtures, now);
+  const externalFixtureIdsToReconcile = selectExternalFixtureIdsMissingFromLiveList(
+    stillWithinPollingWindow,
+    liveFixtures,
+    now,
+  );
   const reconciledFixtures = await fetchReconciliationFixturesOrDegrade(provider, externalFixtureIdsToReconcile);
   if (externalFixtureIdsToReconcile.length > 0) {
     console.log(

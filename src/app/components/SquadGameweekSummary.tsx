@@ -71,8 +71,10 @@ export function SquadGameweekSummary({
       <p className="gameweek-summary-progress">
         {matchProgress.totalMatchCount === 0
           ? "Fixtures for this gameweek haven't been published yet."
-          : matchProgress.isGameweekFullyPlayed
-            ? `All ${matchProgress.totalMatchCount} matches played — final once standings update.`
+          : matchProgress.isGameweekReadyToClose
+            ? // Not always "all N": a postponed fixture stops holding the round open but has still
+              // not been played, so the played count is the honest number to show here.
+              `${matchProgress.finalizedMatchCount} of ${matchProgress.totalMatchCount} matches played — final once standings update.`
             : `${matchProgress.finalizedMatchCount} of ${matchProgress.totalMatchCount} matches played · ${scoredPlayerCount} of ${squadPlayers.length} of ${squadPossessiveLabel} players have scored so far.`}
       </p>
 
@@ -109,7 +111,7 @@ export function SquadGameweekSummary({
         </div>
       </dl>
 
-      {!matchProgress.isGameweekFullyPlayed && (
+      {!matchProgress.isGameweekReadyToClose && (
         <p className="gameweek-summary-footnote">
           Standings update once every match in the gameweek has finished.
         </p>

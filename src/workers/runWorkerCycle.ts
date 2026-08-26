@@ -142,7 +142,19 @@ export async function runWorkerCycle(provider: FootballDataProvider = new StubFo
     console.log("[worker] discovery skipped (not stale)");
   }
 
-  await runDueConfirmationPasses(provider);
+  // Defence in depth. runDueConfirmationPasses contains its own per-pass failures, so reaching
+  // this catch means something unanticipated went wrong — and letting it out would cost the cycle
+  // the two stages below, which is out of all proportion to a missed stat correction:
+  //   - runLiveMatchPollingTick would not run, so nextLivePollDueAt would never advance. Live
+  //     polling stops entirely and the gate reopens every cycle to repeat the same failure.
+  //   - processMatchDataChanges would not run, *permanently* discarding this cycle's discovery
+  //     completions: lastDiscoveryRanAt was already written above, so those fixtures are never
+  //     newly-completed again and nothing re-derives them. That is data loss, not delay.
+  try {
+    await runDueConfirmationPasses(provider);
+  } catch (error) {
+    console.warn("[worker] confirmation passes failed — continuing with live polling and change processing", error);
+  }
 
   result = mergeResults(result, await runLiveMatchPollingTick(provider));
 

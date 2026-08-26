@@ -36,6 +36,13 @@ Findings the suite documented but did not fix, at the time (all observed 2026-07
   trigger (renamed `newlyDisruptedMatchIds`) now also fires on a transition into VOIDED, so those
   clubs get the same free-transfer award as a normal postponement. New migration
   `0008_worried_sleepwalker.sql` adds the enum value (additive, not yet applied to any database).
+  **Superseded 2026-08-26:** the "a genuine PST still holds the gameweek open" half was itself the
+  remaining bug — one postponement froze its round's free-transfer award, its final standings and
+  (via `findCurrent`) the whole season-awareness UI. POSTPONED no longer blocks: the rule now lives
+  in `MATCH_STATUSES_STILL_BLOCKING_GAMEWEEK_COMPLETION` (`src/domain/match.ts`) and
+  `areAllMatchesCompleted` is renamed `hasEveryMatchStoppedBlockingGameweekCompletion`. The replay
+  scores back into its original gameweek and `rebuildGameweekScoresAndStandings` cascades the
+  correction forward.
 - Once a postponed match's *original* kickoff time passes (before the fixture is rescheduled),
   `isClubLocked` reads its clubs as locked again, with a "kicked off" label for a match that
   never kicked off — checkpoint E asserts this as-is. **Not fixed** — a VOIDED match's original

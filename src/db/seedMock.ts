@@ -512,7 +512,7 @@ async function rebuildSeason(
       }
     }
 
-    if (isCompleted) await gameweeksRepository.markCompleted(gameweek.id);
+    if (isCompleted) await gameweeksRepository.markCompletedIfNotAlready(gameweek.id);
     seededGameweeks.push({
       id: gameweek.id,
       number: gameweekNumber,

@@ -151,6 +151,10 @@ export const providerPollState = pgTable("provider_poll_state", {
  * A "confirmation pass" owed ~45-60 min after a Match reaches COMPLETED, to catch late VAR
  * corrections per the Live-Match Polling Strategy in Fantasy League Architecture.txt. Persisted
  * (not in-memory) so it survives both Lambda's stateless invocations and local process restarts.
+ *
+ * The three attempt columns were added 2026-08-26. Without them a pass carried no state beyond
+ * "when is it due", so a pass that could not succeed re-failed on every worker cycle for the rest
+ * of the season with nothing recording that it had ever been tried.
  */
 export const pendingConfirmationPasses = pgTable("pending_confirmation_passes", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -158,7 +162,17 @@ export const pendingConfirmationPasses = pgTable("pending_confirmation_passes", 
     .notNull()
     .references(() => matches.id),
   externalFixtureId: text("external_fixture_id").notNull(),
+  /** Pushed forward on each failure by runDueConfirmationPasses's backoff, so a failing pass
+   * yields the cycle instead of re-running immediately. */
   dueAt: timestamp("due_at").notNull(),
+  /** Failed attempts so far. runDueConfirmationPasses checks its MAX_CONFIRMATION_PASS_ATTEMPTS
+   * cap before writing the attempt, so the pass is abandoned rather than ever stored at the cap —
+   * which is why countOwed can count every row it finds. */
+  attemptCount: integer("attempt_count").notNull().default(0),
+  lastAttemptedAt: timestamp("last_attempted_at"),
+  /** The most recent failure's message — the only breadcrumb a dead-lettered pass leaves behind
+   * in the database, and what the abandonment log quotes. */
+  lastError: text("last_error"),
 });
 
 export const teams = pgTable(

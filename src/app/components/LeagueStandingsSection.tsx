@@ -32,8 +32,10 @@ function unscoredStandingsNote(currentGameweek: CurrentGameweekResponse | null):
   if (progress.totalMatchCount === 0) {
     return `Everyone starts level — Gameweek ${gameweek.number}'s fixtures haven't been published yet.`;
   }
-  if (progress.isGameweekFullyPlayed) {
-    return `Gameweek ${gameweek.number}'s matches have all finished — scores are being calculated.`;
+  if (progress.isGameweekReadyToClose) {
+    // Deliberately about the gameweek rather than "all its matches": a round can be finished with a
+    // postponed fixture still owed, which is replayed and scored back into this round later.
+    return `Gameweek ${gameweek.number} is finished — scores are being calculated.`;
   }
   const outstandingMatchCount = progress.totalMatchCount - progress.finalizedMatchCount;
   return (

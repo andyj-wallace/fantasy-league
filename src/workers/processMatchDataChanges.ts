@@ -9,16 +9,22 @@ import { rebuildGameweekScoresAndStandings } from "./rebuildGameweekScoresAndSta
  * The downstream half of a worker cycle: awards postponed-match transfers for any match that
  * just became disrupted (POSTPONED or VOIDED); scores any match that just completed; and rebuilds
  * that gameweek's team scores and every league's standings. Any gameweek touched by either kind of
- * change is then re-checked, and once every one of its matches has reached a final state
- * (COMPLETED or VOIDED) it is additionally marked COMPLETED and every team is awarded its 2 free
- * transfers for the next one. Shared by both the discovery and live-polling import paths so this
- * logic isn't duplicated per call site.
+ * change is then re-checked, and once nothing is still holding it open it is additionally closed
+ * and every team awarded its 2 free transfers for the next one. Shared by both the discovery and
+ * live-polling import paths so this logic isn't duplicated per call site.
  *
- * Disruptions feed that re-check as well as completions because VOIDED is a final state: when the
- * round's last unresolved fixture is abandoned or awarded rather than played, the gameweek is
- * finished and no later completion will ever arrive to say so. Deriving the re-check set from
- * completions alone left such a gameweek open forever — its managers never receiving their free
- * transfers, its final standings never written.
+ * Disruptions feed that re-check as well as completions because neither VOIDED nor POSTPONED
+ * blocks a round from closing: when the round's last outstanding fixture is abandoned, awarded or
+ * put off to a later date rather than played, the round is finished and no later completion will
+ * ever arrive to say so. Deriving the re-check set from completions alone left such a gameweek open
+ * forever — its managers never receiving their free transfers, its final standings never written.
+ *
+ * Two rounds closing in one batch is a correct outcome, not something to suppress. A Gameweek 10
+ * fixture replayed on the Gameweek 12 weekend closes Gameweek 10 (long overdue) alongside Gameweek
+ * 12, and fantasy_league_v1_design.txt grants 2 free transfers *per gameweek*, so every manager
+ * banking 2 + 2 is two rounds' correct settlement — one of them merely paid late. What must never
+ * happen is one round paying twice, and that is guarded by markCompletedIfNotAlready rather than by
+ * any per-batch cap.
  *
  * The score/standings rebuild deliberately runs after *every* completed match rather than only at
  * gameweek end, so the leaderboard moves through a matchday instead of sitting empty until the last
@@ -40,10 +46,10 @@ export async function processMatchDataChanges(result: ImportMatchDataResult): Pr
   for (const matchId of newlyDisruptedMatchIds) {
     await awardPostponedMatchTransfers(matchId);
 
-    // POSTPONED and VOIDED are not distinguished here on purpose. A POSTPONED match is still
-    // pending as far as areAllMatchesCompleted is concerned, so adding its gameweek cannot
-    // complete anything — it buys one harmless re-check that returns false — while a VOIDED one
-    // genuinely can be the fixture that finishes the round.
+    // POSTPONED and VOIDED are not distinguished here on purpose: either can be the fixture whose
+    // resolution finishes the round. A postponement landing on a round weeks away still finds that
+    // round's other fixtures SCHEDULED and so completes nothing — one harmless re-check — while a
+    // postponement of a round's last outstanding fixture closes it, which is the point.
     const match = await matchesRepository.findById(matchId);
     if (match) gameweekIdsNeedingCompletionRecheck.add(match.gameweekId);
   }
@@ -57,40 +63,40 @@ export async function processMatchDataChanges(result: ImportMatchDataResult): Pr
   }
 
   for (const gameweekId of gameweekIdsNeedingCompletionRecheck) {
-    // Never re-run the one-shot completion actions below (markCompleted, awardGameweekFreeTransfers)
-    // for a finalized gameweek — awardGameweekFreeTransfers is not idempotent, so a second run would
-    // gift every manager two extra transfers. The score/standings rebuild further down has no such
-    // restriction (see rebuildGameweekScoresAndStandings) and is safe to re-run for a COMPLETED
-    // gameweek — that path is confirmationPasses's job, not this one. The null case cannot happen —
-    // gameweekId came off a Match row, whose gameweek_id is a foreign key.
-    const gameweek = await gameweeksRepository.findById(gameweekId);
-    if (!gameweek || gameweek.status === "COMPLETED") continue;
+    const hasEveryMatchStoppedBlockingCompletion =
+      await gameweeksRepository.hasEveryMatchStoppedBlockingGameweekCompletion(gameweekId);
 
-    const hasEveryMatchReachedAFinalState = await gameweeksRepository.areAllMatchesCompleted(gameweekId);
-
-    // The completion cascade must fire exactly once per gameweek: awardGameweekFreeTransfers is
-    // not idempotent — it increments every team's banked transfers by 2 unconditionally — so a
-    // second run silently gifts every manager two extra transfers. The only guard downstream of
-    // here is importMatchData reporting a match as newly completed or newly disrupted solely on a
-    // genuine transition, and live-poll reconciliation now opens a second route into those lists
-    // (docs/stuck-live-match-reconciliation-plan.md), so it stays gated on the gameweek actually
-    // being finished, and on the already-COMPLETED check above.
-    if (hasEveryMatchReachedAFinalState) {
-      await gameweeksRepository.markCompleted(gameweekId);
-      await awardGameweekFreeTransfers();
+    // The one-shot half of the cascade, and the only part of this function that is not safe to
+    // repeat: awardGameweekFreeTransfers adds +2 to every team in the game and keeps no ledger of
+    // having done so. What makes it once-per-round is markCompletedIfNotAlready — a single
+    // conditional UPDATE that flips the status and reports whether this call was the one that
+    // flipped it — so the award is bound to a state transition rather than to a read of the status
+    // taken moments earlier. That matters because importMatchData is no longer the only route into
+    // these lists (live-poll reconciliation opened a second one, see
+    // docs/stuck-live-match-reconciliation-plan.md) and because a round can now close while a
+    // postponed fixture is still to be played, which means a *later* completion for an
+    // already-closed round is expected traffic rather than a bug.
+    if (hasEveryMatchStoppedBlockingCompletion) {
+      const didThisCallCloseTheGameweek = await gameweeksRepository.markCompletedIfNotAlready(gameweekId);
+      if (didThisCallCloseTheGameweek) await awardGameweekFreeTransfers(gameweekId);
     }
 
     // Idempotent rebuilds, so these run on every pass that has something to say — a provisional
     // table after each completed match, and the same code path producing the final one once the
-    // gameweek closes. A gameweek closed by a VOID gets one too even though the void itself scored
-    // nothing: the standings it needs are its *final* ones, and the free-transfer award just above
-    // moves bankedFreeTransferCount, which is one of the standings tiebreakers.
+    // gameweek closes. Deliberately *not* gated on the gameweek being open: when the postponed
+    // fixture of an already-closed round is finally replayed, correcting that round's scores and
+    // cascading the correction into every later round is exactly what it needs, and the old
+    // `if (status === "COMPLETED") continue` above skipped this rebuild along with the award,
+    // leaving it to the confirmation pass ~50 minutes later. A gameweek closed by a VOID gets a
+    // rebuild too even though the void itself scored nothing: the standings it needs are its
+    // *final* ones, and the free-transfer award just above moves bankedFreeTransferCount, which is
+    // one of the standings tiebreakers.
     //
-    // A gameweek that is neither finished nor newly scored — a lone postponement, which can land
-    // on a round weeks away — is deliberately left alone, so a future gameweek doesn't get a
-    // premature standings row written against it.
+    // A gameweek that is neither finished nor newly scored — a lone postponement landing on a round
+    // weeks away — is still left alone, so a future gameweek doesn't get a premature standings row
+    // written against it.
     const isGameweekTableStale =
-      hasEveryMatchReachedAFinalState || gameweekIdsWithNewlyScoredMatches.has(gameweekId);
+      hasEveryMatchStoppedBlockingCompletion || gameweekIdsWithNewlyScoredMatches.has(gameweekId);
     if (!isGameweekTableStale) continue;
 
     await rebuildGameweekScoresAndStandings(gameweekId);

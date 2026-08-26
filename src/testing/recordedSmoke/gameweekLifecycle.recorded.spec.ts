@@ -240,6 +240,23 @@ test("a gameweek spread across four days: per-kickoff locks, transfers, a postpo
     await captureCheckpointScreenshot(page, "D-2-postponement-award-spent.png");
   });
 
+  // SUPERSEDED 2026-08-26 — this checkpoint and the next encode the behaviour the postponed-round
+  // fix removed, and will fail until they are re-recorded against a live run.
+  //
+  // A POSTPONED fixture no longer holds its round open (MATCH_STATUSES_STILL_BLOCKING_GAMEWEEK_
+  // COMPLETION in src/domain/match.ts). Gameweek 1 therefore closes here at E, not at F: at E the
+  // banner and header should read Gameweek 2, Gameweek 1's standings should be final rather than
+  // provisional, Alpha's banked transfers should read 4 rather than 2 (D's remaining 2 plus the
+  // round's award, landing a checkpoint earlier), and the "postponed club re-locked" quirk asserted
+  // below changes shape because locks now derive from Gameweek 2. At F the replay completes into an
+  // already-closed Gameweek 1: it rebuilds that round's scores and cascades into Gameweek 2's
+  // cumulative row — which incidentally closes the "stale by design-gap" totals this step's comment
+  // describes — and awards nothing further, so EXPECTED_BANKED_TRANSFERS.alphaAtF / .bravoAtF are
+  // unchanged at 4 and 6.
+  //
+  // Deliberately not rewritten blind: the checkpoints are hand-computed against a recorded provider
+  // run, and guessing at the intermediate standings numbers would pin in expectations nobody had
+  // verified. Re-run the recorder and re-derive E and F together.
   await test.step("E — Monday done, but the postponed match holds Gameweek 1 open", async () => {
     await advanceScenarioToCheckpoint("E");
     await openLeaguePage(page, entities);

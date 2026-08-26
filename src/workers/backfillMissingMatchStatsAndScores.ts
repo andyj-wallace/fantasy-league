@@ -29,11 +29,14 @@ import { rebuildGameweekScoresAndStandings } from "./rebuildGameweekScoresAndSta
  *
  * What this deliberately does NOT do: mark the gameweek completed, or award gameweek free
  * transfers. Both already fired when the gameweek closed the first time (that cascade is why the
- * zero-point TeamScore rows exist at all), and awardGameweekFreeTransfers is not idempotent — it
- * increments every team's banked count by 2 unconditionally, with no per-gameweek ledger to
- * detect or unwind a second run. processMatchDataChanges guards that with an
- * `if (gameweek.status === "COMPLETED") continue`, which is exactly why the normal cascade cannot
- * be reused for a repair: it would skip the score rebuild along with the award.
+ * zero-point TeamScore rows exist at all), and awardGameweekFreeTransfers has no ledger of its own
+ * — it increments every team's banked count by 2 unconditionally. What keeps it to once per round
+ * is processMatchDataChanges awarding only when gameweeksRepository.markCompletedIfNotAlready
+ * reports that its conditional UPDATE was the statement that closed the round; a repair script
+ * running that cascade would find the round already closed and correctly award nothing. This script
+ * still stays out of it, because closing rounds is not a repair script's job — and it no longer has
+ * to: since 2026-08-26 the cascade's score rebuild is not gated on the gameweek being open, so an
+ * automated late completion repairs a closed round's numbers on its own.
  *
  * Everything it does write is an idempotent rebuild — replaceForMatch on both raw tables, and the
  * same rebuildGameweekScoresAndStandings the worker runs after every completed match — so
