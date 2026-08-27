@@ -169,7 +169,7 @@
 
 <header class="page-header">
   <h1>Fantasy League — Codebase Overview</h1>
-  <div class="sub">Generated 2026-06-25 as a snapshot of the <strong>skeleton stage</strong> · Updated <strong>2026-07-09</strong> to the current implementation · Branch <code>main</code> · Skeleton-first build, per <code>CLAUDE.md</code> / <code>Fantasy League Build Approach.txt</code>. Skeleton-era mock/stub descriptions are deliberately kept (marked with green update notes) — they document the interface seams the real implementations later plugged into.</div>
+  <div class="sub">Generated 2026-06-25 as a snapshot of the <strong>skeleton stage</strong> · Updated <strong>2026-08-26</strong> to the current implementation · Branch <code>release</code> · Skeleton-first build, per <code>CLAUDE.md</code> / <code>Fantasy League Build Approach.txt</code>. Skeleton-era mock/stub descriptions are deliberately kept (marked with green update notes) — they document the interface seams the real implementations later plugged into.</div>
 </header>
 
 <div class="layout">
@@ -194,15 +194,25 @@
 <section id="dashboard">
   <h2>Dashboard</h2>
   <div class="dash-grid">
-    <div class="stat-card flag-green"><div class="num">12</div><div class="label">DB tables — all wired to code via <code>db/repositories</code> (was: 0 wired)</div></div>
-    <div class="stat-card flag-green"><div class="num">18 / 18</div><div class="label">API endpoints, DB-backed behind <code>requireAuth</code> (was: 14, all mock-data)</div></div>
+    <div class="stat-card flag-green"><div class="num">15</div><div class="label">DB tables — all wired to code via <code>db/repositories</code> (was: 0 wired, then 12)</div></div>
+    <div class="stat-card flag-green"><div class="num">22 / 22</div><div class="label">API endpoints, DB-backed behind <code>requireAuth</code> (was: 14 all-mock, then 18)</div></div>
     <div class="stat-card flag-green"><div class="num">100%</div><div class="label">Worker pipeline wired: poll → import → scores → standings (was: mostly orphaned stubs)</div></div>
-    <div class="stat-card flag-green"><div class="num">17</div><div class="label">Domain modules (was 12 types) — added squad validation, pricing, form, profile</div></div>
-    <div class="stat-card flag-green"><div class="num">8</div><div class="label">Frontend routes on a bespoke design system with a hub view (was: raw-JSON dumps)</div></div>
-    <div class="stat-card flag-yellow"><div class="num">16 / 0</div><div class="label">Test files (vitest) / CI workflows — tests landed, CI arrives with the AWS deploy</div></div>
+    <div class="stat-card flag-green"><div class="num">25</div><div class="label">Domain modules (was 12 types, then 17) — squad validation, pricing, form, profile, game-state bonus, rival-squad visibility</div></div>
+    <div class="stat-card flag-green"><div class="num">10</div><div class="label">Frontend routes on a bespoke design system with a hub view (was: raw-JSON dumps)</div></div>
+    <div class="stat-card flag-green"><div class="num">52 / 2</div><div class="label">Test files (vitest, 453 tests) / CI workflows — <code>ci.yml</code> + <code>deploy.yml</code>, both live</div></div>
   </div>
   <div class="note">At the June 25 snapshot this repo was intentionally at the <strong>skeleton stage</strong> (build order: skeleton → database → APIs → workers → football data integration, see <code>CLAUDE.md</code>). Everything being "mock" or "stub" was expected — this document existed to make the exact boundary between "wired" and "not yet wired" visible.</div>
   <div class="note update"><strong>Update (2026-07-09):</strong> the skeleton has been filled in. Database, APIs, workers, and the football-data integration are implemented (Milestones 0–2 complete), the frontend has a design system and a hub view with overlay panels, and the AWS deployment is fully spec'd (<code>docs/deployment/</code>, visualized in <code>docs/aws-deployment-roadmap.html</code>). The only deliberate mocks left are test/dev-side: the recorded-fixture <code>offlineFootballDataProvider</code>, repository mocks in unit tests, and the optional <code>StubAuthProvider</code>.</div>
+  <div class="note update"><strong>Update (2026-08-26): shipped, deployed, and live with real users.</strong>
+    Counts above refreshed to the current tree. Since the 2026-07-09 note:
+    <ul>
+      <li><b>Prod is live and carries real data.</b> Redeployed 2026-08-17; the <b>GW1 beta launched 2026-08-21</b>. Real users, leagues and teams, plus 674 hydrated players from API-Football's Pro tier.</li>
+      <li><b>Scoring is real.</b> The provider flipped its 2026 coverage flags <em>during</em> GW1, so the pipeline took live traffic with no prod soak — which surfaced five worker-pipeline defects (stuck <code>IN_PROGRESS</code> matches, a poller armed on a stale fixture, a deadline serialised with the writer's local UTC offset, a failing confirmation pass taking down the whole cycle, and a postponed fixture withholding free transfers). All closed in the tree; see <code>docs/remaining-gaps-todo.md</code> &sect;&sect;16&ndash;20.</li>
+      <li><b>Milestone 5 (game-state goal bonus)</b> landed 2026-08-17, adding the <code>MatchGoalEvent</code> entity — the one entity not in the original MVP list.</li>
+      <li><b>Rival squad view</b> (2026-08-25): a read-only pitch + team sheet for another manager's team, gated behind the gameweek deadline. It also closed a real authorization gap — <code>GET /teams/:teamId</code> had no ownership check at all.</li>
+      <li><b>Late stat corrections now cascade</b> into team scores and standings (2026-08-25), reversing a 2026-07-02 decision that a correction after gameweek close "is not a real scenario." A production incident disproved it.</li>
+    </ul>
+    <b>The one thing to know before trusting anything here:</b> prod runs <em>older code than this document describes</em>. The &sect;&sect;16&ndash;20 fixes and migration <code>0013</code> are committed but undeployed.</div>
 </section>
 
 <section id="architecture">
@@ -538,7 +548,7 @@
 </main>
 </div>
 
-<footer>Originally generated 2026-06-25 from a read-only review of the skeleton-stage working tree · Updated 2026-07-09 to reflect the current implementation (Milestones 0–2 complete). Source: <code>fantasy-league</code> repo, branch <code>main</code>.</footer>
+<footer>Originally generated 2026-06-25 from a read-only review of the skeleton-stage working tree · Updated 2026-07-09 (Milestones 0–2 complete), then 2026-08-26 (Milestone 5, prod live with real users since the 2026-08-21 GW1 beta, rival squad view, worker-pipeline fixes pending deploy). Source: <code>fantasy-league</code> repo, branch <code>release</code>.</footer>
 
 </body>
 </html>
