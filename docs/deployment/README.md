@@ -32,7 +32,23 @@ cancelled from the GitHub UI partway through — CloudFormation kept building re
 smoke) never ran as a result. Those three were finished manually with `npm run
 deploy:migrate`, `deploy:frontend`, `deploy:smoke` — all passed. The account-level
 `FantasyLeagueGitHubDeploy` stack (GitHub OIDC provider + deploy role) is also live,
-and `release` has branch protection requiring `integration-smoke`. **Still open:** the
-`production` environment's required-reviewer rule — see DEPLOYMENT_RUNBOOK.md's
-Release process section — and the pre-existing follow-ups (reserved concurrency quota,
-match-poll schedule pending the API-Football plan decision).
+and `release` has branch protection requiring `integration-smoke`.
+
+**Since then (as of 2026-08-26):**
+- **Prod carries real user data.** The GW1 beta launched 2026-08-21 — see
+  [`../beta-launch-runbook.md`](../beta-launch-runbook.md) for the as-run record. Prod holds
+  real users, leagues and teams plus 674 hydrated players. Treat every prod write as touching
+  real people, and **snapshot before migrating** — the launch-night "prod is empty" shortcut
+  no longer applies.
+- **Match-poll schedule is ENABLED**, and the CDK default was inverted to on 2026-08-24 —
+  previously any deploy omitting `--enable-match-poll` would silently disable a *running*
+  schedule. See DEPLOYMENT_RUNBOOK.md follow-up 7.
+- **The `production` required-reviewer rule is ON** (confirmed 2026-08-20), so prod deploys
+  pause for approval. One approval releases the whole job — infra, migrations, frontend, smoke.
+- **Prod runs pre-fix worker code.** Five worker-pipeline defects found in live use
+  (remaining-gaps items 16-20) are closed in the tree but **not yet deployed**; that deploy also
+  carries the unapplied migration `0013_glorious_lady_mastermind.sql`.
+
+**Still open:** reserved concurrency quota, an undrilled restore (higher stakes now that prod
+holds real data), and the rest of the ops hardening in
+[`../remaining-gaps-todo.md`](../remaining-gaps-todo.md) item 13.

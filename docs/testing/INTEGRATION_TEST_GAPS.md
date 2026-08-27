@@ -31,7 +31,7 @@ This doc tracks what falls into that hole. It is not an argument for changing th
 
 | Tier | Command | Reaches | Does **not** reach |
 |---|---|---|---|
-| Unit (pure) | `npm run test` | Domain logic, workers, handlers — 349 tests / 41 files | Any SQL, any schema constraint, any migration |
+| Unit (pure) | `npm run test` | Domain logic, workers, handlers — 453 tests / 52 files (2026-08-26) | Any SQL, any schema constraint, any migration — **except** `src/db/repositories/gameweeks.test.ts`, which asserts generated SQL via Drizzle's `.toSQL()` |
 | Seed scripts | `npm run seed:mock`, `npm run seed:match-stats` | Real DB writes; `seedMatchStats` asserts hand-computed totals | Only the paths its fixed scenario happens to touch |
 | Recorded smoke | `npm run smoke:recorded` | Full pipeline on a throwaway `<dev>_smoke` DB, real workers, real browser, 6 checkpoints | Only the one scripted gameweek scenario |
 

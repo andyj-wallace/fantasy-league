@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fantasy League — AWS Deployment Roadmap</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface2: #263347;
+    --border: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --green: #22c55e;
+    --blue: #3b82f6;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --purple: #a855f7;
+    --teal: #14b8a6;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --mono: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", monospace;
+  }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; line-height: 1.65; padding: 2rem 1.5rem 4rem; }
+  .page { max-width: 1100px; margin: 0 auto; }
+
+  h1 { font-size: 1.7rem; font-weight: 700; color: #fff; line-height: 1.3; }
+  h2 { font-size: 1.05rem; font-weight: 600; color: #fff; margin-bottom: 1.25rem; letter-spacing: .04em; text-transform: uppercase; }
+  h3 { font-size: 0.95rem; font-weight: 600; color: #fff; margin-bottom: .5rem; }
+  p  { color: var(--muted); margin-bottom: .75rem; }
+  strong { color: var(--text); font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.82em; background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; color: #c7d2fe; white-space: nowrap; }
+
+  /* ---------- Header ---------- */
+  .header { margin-bottom: 3rem; border-bottom: 1px solid var(--border); padding-bottom: 1.75rem; }
+  .header-sub { color: var(--muted); font-size: 0.95rem; margin-top: .6rem; max-width: 780px; }
+  .header-chips { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: 1.25rem; }
+  .chip { display: inline-flex; align-items: center; gap: .45rem; background: var(--surface); border: 1px solid var(--border); border-radius: 99px; padding: .35rem .9rem; font-size: 0.78rem; color: var(--muted); }
+  .chip b { color: #fff; font-weight: 600; }
+  .chip .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  .section { margin-bottom: 4rem; }
+  .section-intro { max-width: 820px; margin-bottom: 1.75rem; }
+
+  /* ---------- Architecture diagram ---------- */
+  .diagram-scroll { overflow-x: auto; padding-bottom: .5rem; }
+  .arch { min-width: 860px; display: flex; flex-direction: column; align-items: stretch; gap: 0; }
+  .arch-row { display: flex; gap: 1.25rem; justify-content: center; align-items: stretch; }
+  .node { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: .85rem 1.1rem; text-align: center; min-width: 150px; }
+  .node .n-title { font-weight: 600; color: #fff; font-size: 0.85rem; margin-bottom: .15rem; }
+  .node .n-sub { font-size: 0.72rem; color: var(--muted); line-height: 1.45; }
+  .node.edge   { border-color: #7e5b16; }
+  .node.web    { border-color: #1d4ed8; }
+  .node.api    { border-color: #0f766e; }
+  .node.data   { border-color: #7f1d1d; }
+  .node.auth   { border-color: #6b21a8; }
+  .node.sched  { border-color: #92400e; }
+  .node.nat    { border-color: #4d7c0f; }
+  .arrow-down { display: flex; flex-direction: column; align-items: center; padding: .35rem 0; }
+  .arrow-down .stem { width: 2px; height: 16px; background: var(--border); }
+  .arrow-down .head { color: var(--muted); font-size: .8rem; line-height: .7; margin-top: -2px; }
+  .arrow-down .alabel { font-size: 0.7rem; color: var(--muted); margin-top: .25rem; font-family: var(--mono); }
+  .split-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; align-items: stretch; }
+  .lane { display: flex; flex-direction: column; align-items: center; }
+  .vpc-box { border: 2px dashed #4d7c0f; border-radius: 14px; padding: 1.5rem; margin-top: .5rem; position: relative; background: rgba(77,124,15,0.04); }
+  .vpc-label { position: absolute; top: -0.8rem; left: 1.25rem; background: var(--bg); color: #a3e635; font-size: 0.72rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 0 .6rem; }
+  .subnet { border: 1px dashed var(--border); border-radius: 10px; padding: 1.1rem 1.25rem 1.25rem; position: relative; margin-top: 1.1rem; }
+  .subnet:first-child { margin-top: 0; }
+  .subnet-label { position: absolute; top: -0.75rem; left: 1rem; background: var(--bg); font-size: 0.7rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; padding: 0 .5rem; }
+  .subnet.public  { border-color: #4d7c0f; } .subnet.public  .subnet-label { color: #a3e635; }
+  .subnet.private { border-color: #1d4ed8; } .subnet.private .subnet-label { color: #93c5fd; }
+  .subnet-nodes { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: center; margin-top: .4rem; }
+  .side-row { display: flex; gap: 1.25rem; justify-content: center; margin-top: 1.5rem; flex-wrap: wrap; }
+  .legend { display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+  .legend-item { display: flex; align-items: center; gap: .5rem; font-size: 0.75rem; color: var(--muted); }
+  .legend-swatch { width: 14px; height: 14px; border-radius: 4px; border: 2px solid; flex-shrink: 0; }
+
+  /* ---------- Step timeline ---------- */
+  .steps { position: relative; padding-left: 3.25rem; }
+  .steps::before { content: ""; position: absolute; left: 1.05rem; top: .6rem; bottom: 2rem; width: 2px; background: var(--border); }
+  .step { position: relative; margin-bottom: 2rem; }
+  .step:last-child { margin-bottom: 0; }
+  .step-num { position: absolute; left: -3.25rem; top: 0; width: 2.2rem; height: 2.2rem; border-radius: 50%; background: var(--surface2); border: 2px solid var(--blue); color: #fff; font-weight: 700; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; }
+  .step-num.pre { border-color: var(--muted); color: var(--muted); font-size: 1rem; }
+  .step-num.verify { border-color: var(--green); }
+  .step-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem 1.5rem; }
+  .step-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: .35rem; }
+  .step-head h3 { margin-bottom: 0; }
+  .step-freq { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 2px 10px; border-radius: 99px; white-space: nowrap; }
+  .freq-once  { background: #1e3a5f; color: #93c5fd; }
+  .freq-env   { background: #312e81; color: #a5b4fc; }
+  .freq-every { background: #14532d; color: var(--green); }
+  .step-cmd { font-family: var(--mono); font-size: 0.76rem; color: #c7d2fe; background: #0b1120; border: 1px solid var(--border); border-radius: 6px; padding: .55rem .8rem; margin: .75rem 0; overflow-x: auto; white-space: pre; }
+  .step-detail { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: .85rem; }
+  .step-why, .step-cost { border-radius: 8px; padding: .75rem .9rem; font-size: 0.8rem; color: var(--muted); }
+  .step-why  { background: rgba(59,130,246,0.07); border: 1px solid #1e3a5f; }
+  .step-cost { background: rgba(34,197,94,0.06); border: 1px solid #14532d; }
+  .step-why  .k { display: block; font-size: 0.68rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: #93c5fd; margin-bottom: .3rem; }
+  .step-cost .k { display: block; font-size: 0.68rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--green); margin-bottom: .3rem; }
+
+  /* ---------- Decision table ---------- */
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  thead th { color: var(--muted); text-align: left; padding: .55rem .85rem; border-bottom: 1px solid var(--border); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; font-size: 0.72rem; }
+  tbody td { padding: .6rem .85rem; border-bottom: 1px solid var(--surface2); vertical-align: top; color: var(--muted); }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody td:first-child { color: #fff; font-weight: 600; white-space: nowrap; }
+  .table-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: .5rem .5rem; overflow-x: auto; }
+  .save { color: var(--green); font-weight: 600; white-space: nowrap; }
+  .cost-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* ---------- Principles ---------- */
+  .principle-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; }
+  .principle { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.1rem 1.25rem; }
+  .principle h3 { font-size: 0.85rem; }
+  .principle p { font-size: 0.8rem; margin-bottom: 0; }
+  .principle .p-ico { font-size: 1.1rem; margin-bottom: .5rem; display: block; }
+
+  /* ---------- Scaling roadmap ---------- */
+  .stage { position: relative; margin-bottom: 2.25rem; }
+  .stage:last-child { margin-bottom: 0; }
+  .stages { position: relative; padding-left: 3.25rem; }
+  .stages::before { content: ""; position: absolute; left: 1.05rem; top: .6rem; bottom: 2rem; width: 2px; background: linear-gradient(#334155, #7e5b16, #7f1d1d); }
+  .stage-num { position: absolute; left: -3.25rem; top: 0; width: 2.2rem; height: 2.2rem; border-radius: 50%; background: var(--surface2); color: #fff; font-weight: 700; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; border: 2px solid var(--border); }
+  .stage.s0 .stage-num { border-color: var(--green); }
+  .stage.s1 .stage-num { border-color: var(--blue); }
+  .stage.s2 .stage-num { border-color: var(--amber); }
+  .stage.s3 .stage-num { border-color: var(--red); }
+  .stage-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem 1.5rem; }
+  .stage-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: .75rem; }
+  .stage-head h3 { margin-bottom: 0; }
+  .stage-cost { font-size: 0.78rem; color: var(--muted); font-family: var(--mono); white-space: nowrap; }
+  .trigger { display: flex; gap: .6rem; align-items: baseline; background: rgba(245,158,11,0.07); border: 1px solid #78350f; border-radius: 8px; padding: .65rem .9rem; font-size: 0.8rem; color: var(--muted); margin-bottom: 1rem; }
+  .trigger .t-label { font-size: 0.68rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--amber); white-space: nowrap; }
+  .change-list { list-style: none; }
+  .change-list li { font-size: 0.82rem; color: var(--muted); padding: .45rem 0; border-bottom: 1px solid var(--surface2); display: flex; gap: .6rem; align-items: baseline; }
+  .change-list li:last-child { border-bottom: none; }
+  .change-list li::before { content: "→"; color: var(--blue); flex-shrink: 0; font-weight: 700; }
+  .change-list li b { color: var(--text); }
+
+  .note { background: rgba(168,85,247,0.06); border: 1px solid #4c1d95; border-radius: 10px; padding: 1rem 1.25rem; font-size: 0.85rem; color: var(--muted); margin-top: 1.5rem; }
+  .note b { color: #d8b4fe; }
+
+  .footer { border-top: 1px solid var(--border); padding-top: 1.25rem; font-size: 0.78rem; color: var(--muted); }
+  .footer code { white-space: normal; }
+
+  @media (max-width: 760px) {
+    .step-detail, .principle-grid, .split-row { grid-template-columns: 1fr; }
+    body { padding: 1.25rem .9rem 3rem; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ============================================================ -->
+  <!-- HEADER                                                       -->
+  <!-- ============================================================ -->
+  <div class="header">
+    <h1>AWS Deployment Roadmap</h1>
+    <p class="header-sub">
+      A visual, step-by-step guide to deploying Fantasy League to AWS — what each step does, why it is
+      necessary, and why this particular shape is both a best practice and the cheapest sensible way to
+      run the app. A second roadmap at the bottom shows how to migrate to a more scalable
+      infrastructure when growth demands it.
+    </p>
+    <div class="header-chips">
+      <span class="chip"><span class="dot" style="background:var(--green)"></span>Year-1 cost <b>~$0–2 / month</b></span>
+      <span class="chip"><span class="dot" style="background:var(--amber)"></span>After free tier <b>~$17–18 / month</b></span>
+      <span class="chip"><span class="dot" style="background:var(--blue)"></span>Region <b>us-east-1</b></span>
+      <span class="chip"><span class="dot" style="background:var(--purple)"></span>IaC <b>AWS CDK (TypeScript)</b></span>
+      <span class="chip"><span class="dot" style="background:var(--teal)"></span>Source <b>docs/deployment/DEPLOYMENT_PLAN.md</b></span>
+    </div>
+    <div class="note">
+      <b>Update 2026-07-11 — this roadmap is now DEPLOYED.</b> The <code>infra/</code> CDK app was built and
+      <code>fantasy-league-prod</code> went live: 64 resources, schema migrated (8 migrations, 14 tables),
+      mock data seeded, site serving at <code>https://d2dhnsmye25s6d.cloudfront.net</code>. The exact
+      as-run commands, outputs, and lessons learned (tunnel TLS, Lambda concurrency quota, match-poll
+      schedule deployed disabled pending the API-Football plan decision) live in
+      <code>docs/deployment/DEPLOYMENT_RUNBOOK.md</code> — the page below remains the conceptual guide.
+    </div>
+    <div class="note">
+      <b>Update 2026-07-13 — prod torn down.</b> <code>fantasy-league-prod</code> was fully destroyed
+      (stack, VPC, database, final snapshot, bucket, SSM params) — no live deployment currently exists.
+      The teardown surfaced an ordering bug (the RDS instance was deleted after the CDK stack instead of
+      before, so its still-live ENI blocked dependent resources and the stack landed in
+      <code>DELETE_FAILED</code>) — fixed in <code>scripts/destroy-environment.sh</code>. See
+      <code>docs/deployment/README.md</code> for current status and
+      <code>docs/deployment/DEPLOYMENT_RUNBOOK.md</code>'s Teardown section for the full as-run record.
+      Redeploying is unchanged: <code>npm run deploy:all</code>.
+    </div>
+    <div class="note">
+      <b>Update 2026-08-26 — prod is LIVE again, and carries real users.</b> The 2026-07-13 teardown note
+      above is superseded. <code>fantasy-league-prod</code> was redeployed <b>2026-08-17</b> through the
+      <code>main</code>&rarr;<code>release</code> GitHub Actions pipeline (its first successful end-to-end
+      run) and now serves at <code>https://d3ktr55dnycetc.cloudfront.net</code> — <em>not</em> the
+      <code>d2dhnsmye25s6d</code> URL in the 2026-07-11 note, which belonged to the torn-down distribution.
+      The <b>GW1 beta launched 2026-08-21</b>, so prod holds real users, leagues and teams plus 674
+      hydrated players. Three consequences for anyone using this page as a guide:
+      <ul>
+        <li><b>Snapshot before migrating.</b> The earlier "prod is empty, nothing to lose" shortcut is void.</li>
+        <li><b>The match-poll schedule is ENABLED</b>, and its CDK default was inverted to on 2026-08-24.
+        The 2026-07-11 note's "deployed disabled pending the API-Football plan decision" no longer holds —
+        the account is on API-Football's Pro tier (7,500 req/day) as of 2026-08-20.</li>
+        <li><b>CloudFront Free plan constraints apply to the prod distribution:</b> a WebACL is mandatory,
+        <code>PriceClass</code> is forbidden, and the distribution cannot be deleted until the plan is
+        cancelled in the console — so <b>teardown is two-phase</b>.</li>
+      </ul>
+      <code>docs/deployment/README.md</code> is the current-status source of truth;
+      <code>docs/deployment/DEPLOYMENT_RUNBOOK.md</code> is the ops source of truth.
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- TARGET ARCHITECTURE                                          -->
+  <!-- ============================================================ -->
+  <div class="section">
+    <h2>1 · The target architecture (what you are building)</h2>
+    <p class="section-intro">
+      Everything below is created by <strong>one CDK stack</strong> from a single command. The design has two
+      halves: a <strong>public edge</strong> (CloudFront serving the static site and proxying the API) and a
+      <strong>private VPC</strong> where every Lambda and the database live with no path in from the internet.
+      The only bridge between the private world and the outside is a tiny NAT instance for
+      <em>outbound</em> calls (football API, Cognito key fetch, SSM).
+    </p>
+
+    <div class="diagram-scroll">
+      <div class="arch">
+
+        <div class="arch-row">
+          <div class="node" style="min-width: 220px;">
+            <div class="n-title">🌍 Users / Internet</div>
+            <div class="n-sub">Browser — HTTPS only</div>
+          </div>
+        </div>
+
+        <div class="arrow-down"><div class="stem"></div><div class="head">▼</div></div>
+
+        <div class="arch-row">
+          <div class="node edge" style="min-width: 560px;">
+            <div class="n-title">CloudFront distribution <span style="font-weight:400;color:var(--muted)">(*.cloudfront.net · PriceClass_100)</span></div>
+            <div class="n-sub">One distribution, two behaviors — same origin for site and API, so <strong>no CORS</strong><br>
+            + CloudFront Function: rewrites <code>/login</code> → <code>/login.html</code> (extensionless URLs)</div>
+          </div>
+        </div>
+
+        <div class="split-row" style="margin-top:0;">
+          <div class="lane">
+            <div class="arrow-down"><div class="stem"></div><div class="head">▼</div><div class="alabel">default behavior</div></div>
+            <div class="node web" style="width:100%; max-width:360px;">
+              <div class="n-title">S3 bucket (private)</div>
+              <div class="n-sub">Static Next.js export (<code>./out</code>)<br>Block Public Access ON · read via OAC only</div>
+            </div>
+          </div>
+          <div class="lane">
+            <div class="arrow-down"><div class="stem"></div><div class="head">▼</div><div class="alabel">/api/*</div></div>
+            <div class="node api" style="width:100%; max-width:360px;">
+              <div class="n-title">API Gateway — HTTP API</div>
+              <div class="n-sub"><code>/{proxy+}</code> catch-all → single router Lambda<br>~70% cheaper than REST API Gateway</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="side-row">
+          <div class="node auth">
+            <div class="n-title">Cognito user pool</div>
+            <div class="n-sub">Imported, already live<br>JWTs verified in-Lambda via JWKS<br>Free ≤ 50k monthly users</div>
+          </div>
+          <div class="node sched">
+            <div class="n-title">EventBridge schedules</div>
+            <div class="n-sub">match poll: rate(1–5 min)<br>price update: monthly cron<br>→ invoke worker Lambdas</div>
+          </div>
+          <div class="node auth" style="border-color:#0e7490;">
+            <div class="n-title">SSM Parameter Store</div>
+            <div class="n-sub">SecureString secrets (KMS)<br><code>/fantasy-league/&lt;env&gt;/*</code><br>$0 — vs Secrets Manager $0.40/secret</div>
+          </div>
+        </div>
+
+        <div class="arrow-down"><div class="stem"></div><div class="head">▼</div></div>
+
+        <div class="vpc-box">
+          <div class="vpc-label">Dedicated VPC · fantasy-league-&lt;env&gt;-vpc · 2 AZs</div>
+
+          <div class="subnet public">
+            <div class="subnet-label">Public subnet (AZ-a)</div>
+            <div class="subnet-nodes">
+              <div class="node nat" style="min-width: 420px;">
+                <div class="n-title">fck-nat NAT instance — t4g.nano (ASG size 1, static ENI)</div>
+                <div class="n-sub">The <em>only</em> outbound door: football API · Cognito JWKS · SSM<br>~$3/mo vs ~$32/mo managed NAT Gateway · self-heals in ~2–4 min</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="subnet private">
+            <div class="subnet-label">Private subnets (AZ-a + AZ-b) — no internet route in</div>
+            <div class="subnet-nodes">
+              <div class="node api">
+                <div class="n-title">API Lambda</div>
+                <div class="n-sub">ARM64 · one router<br>reuses <code>routes.ts</code></div>
+              </div>
+              <div class="node api">
+                <div class="n-title">Worker Lambda</div>
+                <div class="n-sub">match polling<br>reserved concurrency 1</div>
+              </div>
+              <div class="node api">
+                <div class="n-title">Price Lambda</div>
+                <div class="n-sub">monthly price<br>update</div>
+              </div>
+              <div class="node api">
+                <div class="n-title">Migration Lambda</div>
+                <div class="n-sub">Drizzle migrate<br>invoked by CI only</div>
+              </div>
+              <div class="node data" style="min-width: 220px;">
+                <div class="n-title">RDS PostgreSQL — db.t4g.micro</div>
+                <div class="n-sub">publiclyAccessible: false · encrypted (KMS)<br>TLS forced · port 5432 open to Lambda SG <em>only</em></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="legend">
+          <span class="legend-item"><span class="legend-swatch" style="border-color:#7e5b16"></span>Edge / CDN</span>
+          <span class="legend-item"><span class="legend-swatch" style="border-color:#1d4ed8"></span>Static frontend</span>
+          <span class="legend-item"><span class="legend-swatch" style="border-color:#0f766e"></span>Compute (Lambda / API)</span>
+          <span class="legend-item"><span class="legend-swatch" style="border-color:#7f1d1d"></span>Database</span>
+          <span class="legend-item"><span class="legend-swatch" style="border-color:#6b21a8"></span>Managed services (outside VPC)</span>
+          <span class="legend-item"><span class="legend-swatch" style="border-color:#4d7c0f"></span>NAT / public subnet</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- WHY THIS SHAPE                                               -->
+  <!-- ============================================================ -->
+  <div class="section">
+    <h2>2 · Why this shape — best practice and lowest cost at the same time</h2>
+    <p class="section-intro">
+      Every choice below was made by asking two questions: <strong>“is this the secure, reproducible way?”</strong>
+      and <strong>“is there a cheaper option that doesn't compromise the first answer?”</strong>. The result is that
+      the security-critical decisions (private DB, no long-lived keys, encrypted everything) cost nothing extra,
+      and the savings come from picking the right <em>tier</em> of each service for MVP scale.
+    </p>
+
+    <div class="principle-grid" style="margin-bottom:1.75rem;">
+      <div class="principle">
+        <span class="p-ico">🔒</span>
+        <h3>Security is structural, not bolted on</h3>
+        <p>The database has <strong>no public endpoint at all</strong> — not a firewall rule, no route. User PII sits behind
+        two layers (private subnet + security group), and passwords never touch it because Cognito owns auth.
+        A leaked connection string alone cannot reach the DB from the internet.</p>
+      </div>
+      <div class="principle">
+        <span class="p-ico">📜</span>
+        <h3>Everything is code (no ClickOps)</h3>
+        <p>One CDK stack defines every resource. <code>cdk deploy</code> is idempotent — rerunning it can never
+        duplicate resources — and <code>cdk diff</code> shows exactly what will change before it does.
+        A fresh AWS account can rebuild the whole environment from one command.</p>
+      </div>
+      <div class="principle">
+        <span class="p-ico">💸</span>
+        <h3>Pay for requests, not for idle</h3>
+        <p>Lambda, HTTP API, EventBridge, S3, CloudFront, Cognito, and SSM all bill per use and round to
+        <strong>$0 at MVP traffic</strong>. The only always-on costs are the database and a $3/month NAT instance.
+        Nothing is pre-provisioned for load that doesn't exist yet.</p>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <table>
+        <thead>
+          <tr><th>Decision</th><th>Chosen</th><th>Rejected alternative</th><th>Why chosen / saving</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Frontend hosting</td>
+            <td>S3 (private) + CloudFront</td>
+            <td>Running a Next.js server (EC2 / ECS / Amplify SSR)</td>
+            <td>The app is a static export — a server would be pure idle cost. CloudFront's free tier covers 1 TB/mo. <span class="save">Saves ~$15–30/mo</span></td>
+          </tr>
+          <tr>
+            <td>URL rewriting</td>
+            <td>CloudFront Function</td>
+            <td>Lambda@Edge</td>
+            <td>Rewrites <code>/login</code> → <code>/login.html</code> at the edge. <span class="save">~10× cheaper</span> than Lambda@Edge and lower latency.</td>
+          </tr>
+          <tr>
+            <td>API layer</td>
+            <td>HTTP API → one router Lambda (ARM64)</td>
+            <td>REST API Gateway; one Lambda per route</td>
+            <td>HTTP API is <span class="save">~70% cheaper</span> per request. A single router Lambda means one artifact and fewer cold starts; ARM64 (Graviton) is ~20% cheaper per ms.</td>
+          </tr>
+          <tr>
+            <td>VPC internet egress</td>
+            <td>fck-nat instance (t4g.nano, ASG 1)</td>
+            <td>Managed NAT Gateway</td>
+            <td>NAT Gateway is ~$32/mo before data. The NAT instance is <span class="save">~$3/mo</span>; if it dies the ASG relaunches it in ~2–4 min — invisible to users because only <em>background</em> jobs need egress, and a missed poll just retries.</td>
+          </tr>
+          <tr>
+            <td>Database</td>
+            <td>RDS Postgres db.t4g.micro, single-AZ, gp3</td>
+            <td>Aurora / Multi-AZ / self-managed on EC2</td>
+            <td>Free tier year 1, then ~$14/mo. Multi-AZ doubles cost for HA an MVP doesn't need; self-managing Postgres trades $ for ops risk on the data you least want to lose.</td>
+          </tr>
+          <tr>
+            <td>Secrets</td>
+            <td>SSM Parameter Store (SecureString)</td>
+            <td>Secrets Manager</td>
+            <td>Same KMS encryption, <span class="save">$0 vs $0.40/secret/mo</span>. Secrets Manager only earns its fee when you need managed rotation — noted as the upgrade path.</td>
+          </tr>
+          <tr>
+            <td>Auth</td>
+            <td>Existing Cognito pool (imported)</td>
+            <td>Building auth into the API + storing password hashes</td>
+            <td>Free ≤ 50k MAU, and keeps credentials out of the database entirely — shrinking the blast radius of any DB compromise.</td>
+          </tr>
+          <tr>
+            <td>CI credentials</td>
+            <td>GitHub OIDC → deploy role</td>
+            <td>Long-lived AWS access keys in repo secrets</td>
+            <td>Short-lived, scoped credentials minted per run. Nothing to leak, nothing to rotate. Standard best practice — and free.</td>
+          </tr>
+          <tr>
+            <td>Edge locations</td>
+            <td>CloudFront PriceClass_100</td>
+            <td>All edge locations</td>
+            <td>Serves from NA/EU only — matches the audience and cuts egress pricing.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- STEP-BY-STEP FLOW                                            -->
+  <!-- ============================================================ -->
+  <div class="section">
+    <h2>3 · Step-by-step deployment flow</h2>
+    <p class="section-intro">
+      Follow the steps top to bottom. Steps 0–2 are one-time setup; steps 3–6 are the actual deployment
+      (and later become the automated pipeline in step 7); step 8 proves it all works. Each card says
+      <strong>what</strong> the step does, <strong>why it must exist</strong>, and the
+      <strong>best-practice / cost reasoning</strong> behind it.
+    </p>
+
+    <div class="steps">
+
+      <!-- Step 0 -->
+      <div class="step">
+        <div class="step-num pre">0</div>
+        <div class="step-card">
+          <div class="step-head">
+            <h3>Prerequisites</h3>
+            <span class="step-freq freq-once">once ever</span>
+          </div>
+          <p>An AWS account, the AWS CLI configured with admin credentials for the initial setup, and Node.js.
+          All work targets <code>us-east-1</code> (where the live Cognito pool already exists).</p>
+          <div class="step-detail">
+            <div class="step-why"><span class="k">Why necessary</span>
+              Everything after this step is executed <em>as code</em> against this account — there is no console clicking anywhere in the flow.</div>
+            <div class="step-cost"><span class="k">Best practice</span>
+              Admin credentials are used only for this bootstrap. Day-to-day deploys will use a scoped, short-lived OIDC role (step 7) — humans and CI never hold long-lived keys.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 1 -->
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-card">
+          <div class="step-head">
+            <h3>Bootstrap CDK in the account</h3>
+            <span class="step-freq freq-once">once per account/region</span>
+          </div>
+          <div class="step-cmd">npx cdk bootstrap aws://&lt;account-id&gt;/us-east-1</div>
+          <p>Creates the small set of support resources CDK needs (an S3 staging bucket and IAM roles for
+          CloudFormation) so it can upload Lambda bundles and execute deployments.</p>
+          <div class="step-detail">
+            <div class="step-why"><span class="k">Why necessary</span>
+              CDK compiles your TypeScript into CloudFormation templates + asset bundles. Without the bootstrap bucket/roles there is nowhere to stage those assets — every later <code>cdk deploy</code> depends on this.</div>
+            <div class="step-cost"><span class="k">Best practice / cost</span>
+              CDK was chosen over raw CloudFormation/Terraform because it's the <strong>same language as the repo</strong> and <code>NodejsFunction</code> auto-bundles Lambdas with esbuild — no separate build tooling to maintain. Bootstrap resources themselves cost ~$0.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-card">
+          <div class="step-head">
+            <h3>Put secrets into SSM Parameter Store</h3>
+            <span class="step-freq freq-env">once per environment</span>
+          </div>
+          <div class="step-cmd">aws ssm put-parameter --type SecureString \
+  --name /fantasy-league/prod/auth-token-secret --value '…'
+# repeat for: football-data-api-key, cognito-user-pool-id,
+#             cognito-app-client-id  (database-url is composed by the stack)</div>
+          <p>Real secret values are written <strong>out-of-band</strong>, before the stack exists. The CDK stack only
+          <em>reads</em> them and grants each Lambda access to exactly the parameters it needs.</p>
+          <div class="step-detail">
+            <div class="step-why"><span class="k">Why necessary</span>
+              Secrets must never live in the repo, in <code>.env</code> files on a server, or as plaintext in the CloudFormation template. Creating them outside the stack also means a redeploy can never accidentally overwrite or rotate them.</div>
+            <div class="step-cost"><span class="k">Best practice / cost</span>
+              SecureString parameters are KMS-encrypted at rest, access is IAM-audited, and they cost <strong>$0</strong> — Secrets Manager's $0.40/secret/mo only buys managed rotation, which can be added later if wanted.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-card">
+          <div class="step-head">
+            <h3>Deploy the stack — <code>cdk diff</code> then <code>cdk deploy</code></h3>
+            <span class="step-freq freq-every">every deploy</span>
+          </div>
+          <div class="step-cmd">npx cdk diff    # review: added / changed / REPLACED / destroyed
+npx cdk deploy  # VPC → NAT → RDS → Lambdas → HTTP API → CloudFront</div>
+          <p>One command builds the entire diagram from section 1: the dedicated VPC with public/private subnets,
+          the fck-nat instance, the private RDS instance, all four Lambdas, the HTTP API, and the
+          CloudFront + S3 frontend shell. Resources follow the <code>fantasy-league-&lt;env&gt;-*</code> naming
+          convention and are tagged for cost allocation.</p>
+          <div class="step-detail">
+            <div class="step-why"><span class="k">Why necessary</span>
+              This is the whole infrastructure. Ordering inside the stack matters — the VPC must exist before anything placed in it — and CDK resolves that dependency graph for you. <code>cdk diff</code> first is the review gate that catches an accidental resource <em>replacement</em> (e.g. from renaming a construct) before it destroys something stateful.</div>
+            <div class="step-cost"><span class="k">Best practice / cost</span>
+              Declarative + idempotent: rerunning deploy with no changes is a no-op and can never create duplicates. Prod gets termination protection and the DB a <code>RETAIN</code> policy, so even deleting the stack cannot silently drop the database.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 4 -->
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-card">
+          <div class="step-head">
+            <h3>Invoke the migration Lambda — create the schema</h3>
+            <span class="step-freq freq-every">every deploy with schema changes</span>
+          </div>
+          <div class="step-cmd">aws lambda invoke --function-name fantasy-league-prod-migrate out.json
+# fails the pipeline on a non-zero migration result</div>
+          <p>A dedicated Lambda inside the VPC runs Drizzle's migrator against RDS, creating/updating all tables.
+          It is never scheduled — only invoked deliberately, by CI or by hand.</p>
+          <div class="step-detail">
+            <div class="step-why"><span class="k">Why necessary</span>
+              The database is private, so <strong>CI cannot reach it</strong> to run <code>npm run db:migrate</code> directly — and that's the point. The migration Lambda is the only sanctioned write-path for schema changes, running <em>inside</em> the network boundary.</div>
+            <div class="step-cost"><span class="k">Best practice / cost</span>
+              This preserves the "no public DB path" guarantee instead of punching a hole in it for CI (the common shortcut that undermines the whole design). Cost: fractions of a cent per invocation.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 5 -->
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-card">
+          <div class="step-head">
+            <h3>Load player data</h3>
+            <span class="step-freq freq-env">once per environment</span>
+          </div>
+          <p>Run the roster hydration path (<code>hydrate:roster</code>) or the existing seed to populate the
+          ~&lt;1,000 real-footballer <code>Player</code> records. Subject to the API-Football plan tier —
+          tracked separately in <code>remaining-gaps-todo.md</code>.</p>
+          <div class="step-detail">
+            <div class="step-why"><span class="k">Why necessary</span>
+              The squad builder and scoring engine are useless without the player universe. This is app data, not infrastructure — which is exactly why it's a separate step from <code>cdk deploy</code> and from schema migration.</div>
+            <div class="step-cost"><span class="k">Best practice / cost</span>
+              Keeping data loading out of the infrastructure stack means redeploys never re-import or clobber data, and the same stack can be stood up empty for staging.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 6 -->
+      <div class="step">
+        <div class="step-num">6</div>
+        <div class="step-card">
+          <div class="step-head">
+            <h3>Publish the frontend</h3>
+            <span class="step-freq freq-every">every deploy</span>
+          </div>
+          <div class="step-cmd">NEXT_PUBLIC_COGNITO_…=…  npx next build   # static export → ./out
+aws s3 sync ./out s3://fantasy-league-prod-web-&lt;account-id&gt; --delete
+aws cloudfront create-invalidation --paths "/*"</div>
+          <p>Build the static export with the public build-time env (Cognito IDs; API base is same-origin
+          <code>/api</code>), sync it to the private bucket, and invalidate CloudFront so users get the new
+          version immediately.</p>
+          <div class="step-detail">
+            <div class="step-why"><span class="k">Why necessary</span>
+              The bucket is empty until this runs. <code>--delete</code> removes stale pages from previous builds; the invalidation flushes CloudFront's edge caches, otherwise users could see the old site for hours.</div>
+            <div class="step-cost"><span class="k">Best practice / cost</span>
+              Same-origin <code>/api/*</code> routing through CloudFront eliminates CORS entirely — a whole class of production bugs gone by architecture. S3 + CloudFront serve this for pennies; the first 1,000 invalidation paths/month are free.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 7 -->
+      <div class="step">
+        <div class="step-num">7</div>
+        <div class="step-card">
+          <div class="step-head">
+            <h3>Automate it — GitHub Actions CI/CD</h3>
+            <span class="step-freq freq-once">once, then runs itself</span>
+          </div>
+          <p><strong>CI on every PR:</strong> <code>npm ci</code> → <code>typecheck</code> → <code>vitest</code>, blocking merge.
+          <strong>Deploy on push to main</strong> (with manual approval): steps 3 → 4 → 6 in order, authenticated via
+          <strong>GitHub OIDC</strong> assuming <code>fantasy-league-prod-deploy-role</code>. A failed migration fails the
+          whole deploy.</p>
+          <div class="step-detail">
+            <div class="step-why"><span class="k">Why necessary</span>
+              Manual deploys drift and get skipped steps. Codifying 3→4→6 makes every deploy identical and reviewable — and this also closes the repo's standing "no CI" gap by putting typecheck + tests in front of every merge.</div>
+            <div class="step-cost"><span class="k">Best practice / cost</span>
+              OIDC means <strong>zero long-lived AWS keys</strong> stored in GitHub — credentials are minted per-run and expire in minutes. GitHub Actions is free at this repo's volume.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 8 -->
+      <div class="step">
+        <div class="step-num verify">✓</div>
+        <div class="step-card">
+          <div class="step-head">
+            <h3>Verify — the smoke test gate</h3>
+            <span class="step-freq freq-every">every deploy</span>
+          </div>
+          <ul class="change-list">
+            <li><code>curl https://&lt;dist&gt;.cloudfront.net/api/gameweeks/current</code> → <b>200, no CORS error</b> (proves API-through-CloudFront routing).</li>
+            <li>Hard-refresh <code>/login</code> → page loads, not a 404 (proves the CloudFront Function rewrite).</li>
+            <li>Full click-through: Cognito sign-up → login → create league → squad builder → transfers.</li>
+            <li>Confirm RDS has <b>no public endpoint</b> and refuses connections from anywhere but the Lambda SG.</li>
+            <li>Manually invoke the worker Lambda → a poll cycle logs and writes to RDS.</li>
+            <li><b>Kill the NAT instance</b> → ASG relaunches it in ~2–4 min; a missed worker poll simply retries next cycle.</li>
+          </ul>
+          <div class="step-detail" style="margin-top:1rem;">
+            <div class="step-why"><span class="k">Why necessary</span>
+              Each check maps 1:1 to a deliberate design decision — if one fails, you know exactly which decision didn't land. Deploy to a throwaway/staging stack first; environments are isolated stacks, so staging can never touch prod.</div>
+            <div class="step-cost"><span class="k">Best practice</span>
+              Testing the failure mode (killing the NAT) on purpose, before launch, is what makes the $3/mo NAT instance a safe trade instead of a gamble.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- COST                                                         -->
+  <!-- ============================================================ -->
+  <div class="section">
+    <h2>4 · What it costs</h2>
+    <p class="section-intro">
+      The two always-on line items (database, NAT) are the entire bill. Everything else is pay-per-request
+      and rounds to zero at MVP traffic. An AWS Budgets alarm on the <code>Project=fantasy-league</code> tag
+      guards against surprises.
+    </p>
+    <div class="table-card">
+      <table>
+        <thead>
+          <tr><th>Item</th><th>Year 1 (free tier)</th><th>After year 1</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>RDS db.t4g.micro + 20 GB gp3</td><td class="cost-num">$0</td><td class="cost-num">~$14 / mo</td><td>Free tier covers 750 hrs/mo for 12 months; gp3 autoscaling capped at 50 GB</td></tr>
+          <tr><td>fck-nat instance (t4g.nano)</td><td class="cost-num">~$0</td><td class="cost-num">~$3 / mo</td><td>vs ~$32/mo for a managed NAT Gateway</td></tr>
+          <tr><td>Lambda + HTTP API</td><td class="cost-num">~$0</td><td class="cost-num">~$0–1 / mo</td><td>1M free Lambda requests/mo is effectively permanent free tier at this scale</td></tr>
+          <tr><td>CloudFront + S3</td><td class="cost-num">~$0–1 / mo</td><td class="cost-num">~$0–1 / mo</td><td>CloudFront free tier: 1 TB egress + 10M requests/mo</td></tr>
+          <tr><td>Cognito + SSM + EventBridge</td><td class="cost-num">$0</td><td class="cost-num">$0</td><td>Cognito free ≤ 50k MAU; SSM standard params free</td></tr>
+          <tr><td><strong>Total</strong></td><td class="cost-num"><strong>~$0–2 / mo</strong></td><td class="cost-num"><strong>~$17–18 / mo</strong></td><td>Ops overhead: ~15 min/quarter NAT patching (automatable via SSM Patch Manager)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- SCALING MIGRATION ROADMAP                                    -->
+  <!-- ============================================================ -->
+  <div class="section">
+    <h2>5 · Roadmap: migrating to more scalable infrastructure</h2>
+    <p class="section-intro">
+      The MVP architecture was deliberately chosen so that <strong>scaling up is a series of component swaps,
+      not a rewrite</strong> — the app code (route table, workers, Drizzle/Postgres) is untouched at every stage.
+      And because the read path is precomputed ("calculate once, store forever"), leaderboard reads scale
+      almost for free; the pressure points that actually appear are <strong>database connections, worker
+      throughput, and availability guarantees</strong> — which is exactly what these stages address, in order.
+      <br><br>
+      <strong>Rule: migrate on evidence, not anticipation.</strong> Each stage has an explicit trigger — until you
+      observe it, staying at the current stage <em>is</em> the best practice, because unused capacity is pure cost.
+    </p>
+
+    <div class="stages">
+
+      <!-- Stage 0 -->
+      <div class="stage s0">
+        <div class="stage-num">0</div>
+        <div class="stage-card">
+          <div class="stage-head">
+            <h3>Today — MVP serverless (you are here)</h3>
+            <span class="stage-cost">~$0–18 / mo</span>
+          </div>
+          <p style="margin-bottom:0;">Single-AZ RDS micro, NAT instance, on-demand Lambdas, default CloudFront domain.
+          Comfortably serves the design target: &lt;1,000 players, a handful of leagues, low concurrency.
+          Everything above this line in the document.</p>
+        </div>
+      </div>
+
+      <!-- Stage 1 -->
+      <div class="stage s1">
+        <div class="stage-num">1</div>
+        <div class="stage-card">
+          <div class="stage-head">
+            <h3>Stage 1 — Production hardening</h3>
+            <span class="stage-cost">adds ~$35–55 / mo</span>
+          </div>
+          <div class="trigger"><span class="t-label">Migrate when</span>
+            Real users depend on the app (public beta / first paying league), so a 2–4 minute background-job
+            blip or a single-AZ outage is no longer an acceptable trade for a few dollars.</div>
+          <ul class="change-list">
+            <li><b>fck-nat → managed NAT Gateway</b> — a one-line CDK change (<code>NatProvider.gateway()</code>). Zero-maintenance, multi-AZ-capable egress. (+~$32/mo)</li>
+            <li><b>RDS single-AZ → Multi-AZ</b> — synchronous standby in the second AZ with automatic failover; the subnet group already spans 2 AZs, so this is a flag flip. (~2× DB cost, +~$14/mo)</li>
+            <li><b>Custom domain</b> — Route 53 hosted zone + free ACM certificate on CloudFront. (+$0.50/mo + domain)</li>
+            <li><b>Alarms &amp; visibility</b> — CloudWatch alarms on Lambda errors, RDS CPU/storage/connections, worker failures; keep the Budgets alarm. (~$0–2/mo)</li>
+            <li><b>Optional: WAF on CloudFront</b> — managed rules against common abuse, revisiting the documented MVP scope-cut. (+~$6–10/mo)</li>
+          </ul>
+          <p style="margin-top:.85rem; margin-bottom:0; font-size:0.8rem;">Nothing about the application changes — these are availability and trust upgrades to the exact same topology.</p>
+        </div>
+      </div>
+
+      <!-- Stage 2 -->
+      <div class="stage s2">
+        <div class="stage-num">2</div>
+        <div class="stage-card">
+          <div class="stage-head">
+            <h3>Stage 2 — Relieve the first real bottlenecks</h3>
+            <span class="stage-cost">adds ~$15–40 / mo</span>
+          </div>
+          <div class="trigger"><span class="t-label">Migrate when</span>
+            Metrics — not intuition — show pressure: RDS connection count nearing its limit as Lambda
+            concurrency grows, sustained RDS CPU during match windows, or cold-start latency showing up in
+            API p95 during traffic spikes.</div>
+          <ul class="change-list">
+            <li><b>Add RDS Proxy</b> between Lambdas and Postgres — pools and multiplexes connections so hundreds of concurrent Lambdas can't exhaust the DB. This is <em>the</em> canonical Lambda-meets-RDS scaling fix; the app keeps using <code>DATABASE_URL</code>, only the host changes. (+~$11–15/mo)</li>
+            <li><b>Instance right-sizing</b> — db.t4g.micro → small/medium based on observed CPU/memory; a restart-sized change, not a migration.</li>
+            <li><b>Provisioned concurrency (API Lambda only)</b> — keeps 1–2 warm instances during match windows to remove cold starts; can be scheduled to match-day hours only to cap cost. (+~$4–10/mo)</li>
+            <li><b>Raise reserved concurrency limits</b> deliberately, now that the proxy protects the connection pool.</li>
+            <li><b>Optional: read replica</b> — only if non-precomputed reads (squad browsing, player search) measurably load the writer. The precompute pattern makes this later than in most apps.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Stage 3 -->
+      <div class="stage s3">
+        <div class="stage-num">3</div>
+        <div class="stage-card">
+          <div class="stage-head">
+            <h3>Stage 3 — Scale-out architecture</h3>
+            <span class="stage-cost">~$150–400+ / mo</span>
+          </div>
+          <div class="trigger"><span class="t-label">Migrate when</span>
+            Growth is structural, not spiky: thousands of active leagues, sustained (not bursty) API traffic
+            where always-on compute is cheaper than per-request Lambda, or worker cycles pushing the 15-minute
+            Lambda ceiling as the fixture/league count multiplies.</div>
+          <ul class="change-list">
+            <li><b>RDS → Aurora PostgreSQL</b> (Serverless v2 for spiky match-day load, provisioned for steady load) — wire-compatible with Postgres, so Drizzle and the schema move unchanged; brings storage autoscaling, fast failover, and up to 15 low-lag read replicas.</li>
+            <li><b>Scoring pipeline → queue-decoupled workers</b> — EventBridge events push <code>MATCH_COMPLETED</code> / <code>GAMEWEEK_COMPLETED</code> onto SQS; scoring consumers scale horizontally with per-message retries and a dead-letter queue. The importer → playerScores → teamScores → standings stages already have clean boundaries, so this is a transport change, not a redesign.</li>
+            <li><b>API on ECS Fargate behind an ALB</b> — <em>only</em> if sustained request volume makes always-on containers cheaper than Lambda, or per-request latency budgets tighten. The handler-per-route structure ports directly (the local server in <code>src/api/localServer.ts</code> already proves the non-Lambda hosting path).</li>
+            <li><b>ElastiCache (Redis)</b> in front of hot reads (current gameweek, fixtures) if needed — though precomputed tables keep read cost low for a long time.</li>
+            <li><b>Multi-region</b> — last resort, driven only by a global audience with latency SLAs; CloudFront already handles global <em>static</em> delivery, so this applies to the API/DB tier alone.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">
+      <b>Why the stages are ordered this way:</b> each stage buys the <em>next</em> constraint you'll actually hit —
+      availability first (stage 1), then database connections and latency (stage 2), then raw throughput
+      (stage 3). Skipping ahead buys capacity you can't use yet at a price you notice immediately.
+      The inverse also holds: every stage is reversible, because all of it is CDK — rolling back an upgrade
+      is a <code>cdk diff</code> + <code>cdk deploy</code> away.
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- FOOTER                                                       -->
+  <!-- ============================================================ -->
+  <div class="footer">
+    Sources of truth: <code>docs/deployment/DEPLOYMENT_PLAN.md</code> (architecture, locked decisions, security checklist, costs) ·
+    <code>docs/deployment/DEPLOYMENT_GUIDE.md</code> (runnable commands) ·
+    <code>docs/deployment/RELIABILITY_PLAN.md</code> (backups &amp; recovery) ·
+    <code>Fantasy League Architecture.txt</code> (the precompute-and-store pattern that shapes the scaling path).
+    If this page and those docs ever disagree, the markdown docs win.
+  </div>
+
+</div>
+</body>
+</html>
