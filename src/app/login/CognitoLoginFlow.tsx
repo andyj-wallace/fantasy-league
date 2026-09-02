@@ -16,8 +16,14 @@ import { getValidatedLoginRedirectTarget } from "@/app/lib/loginRedirect";
 type CognitoLoginStep = "signIn" | "signUp" | "confirmSignUp" | "resetPassword";
 
 /** Turns Cognito's error objects into the message a manager should see — Cognito's own messages
- * are mostly fine ("Incorrect username or password."), so pass them through with a fallback. */
+ * are mostly fine ("Incorrect username or password."), so pass them through with a fallback.
+ * AliasExistsException is the exception: it surfaces at the confirmation-code step (the pool is
+ * in alias mode, so a duplicate email is only rejected once the code is entered) and its raw
+ * wording doesn't tell the manager what to do about it. */
 function describeCognitoError(error: unknown): string {
+  if ((error as { code?: string }).code === "AliasExistsException") {
+    return "That email address already has an account. Log in with it instead, or reset the password if you've forgotten it.";
+  }
   if (error instanceof Error && error.message) return error.message;
   return "Something went wrong — try again.";
 }

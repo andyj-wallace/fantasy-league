@@ -82,9 +82,17 @@ export function signUpWithCognito(handle: string, email: string, displayName: st
   });
 }
 
+/**
+ * The `false` is Cognito's `forceAliasCreation` flag, and it is the one thing stopping two
+ * accounts from sharing an email. The pool is in alias mode (AliasAttributes: ["email"], fixed at
+ * creation and not changeable), so Cognito accepts a duplicate email at sign-up and only settles
+ * it here: with `true` it silently *migrates* the email alias off the account that already
+ * verified it, leaving two usernames pointing at one identity; with `false` it rejects the
+ * confirmation with AliasExistsException, which is what the sign-up screen reports.
+ */
 export function confirmCognitoSignUp(handleOrEmail: string, confirmationCode: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    cognitoUserForIdentifier(handleOrEmail).confirmRegistration(confirmationCode, true, (error) => (error ? reject(error) : resolve()));
+    cognitoUserForIdentifier(handleOrEmail).confirmRegistration(confirmationCode, false, (error) => (error ? reject(error) : resolve()));
   });
 }
 

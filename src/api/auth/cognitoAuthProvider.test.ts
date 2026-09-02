@@ -134,12 +134,39 @@ describe("CognitoAuthProvider — token verification", () => {
     mocks.insertUser.mockRejectedValue(new Error("duplicate key value violates unique constraint"));
     mocks.findUserByEmail
       .mockResolvedValueOnce(null) // pre-insert check: not there yet
-      .mockResolvedValueOnce({ id: "winner-user-id", email: "manager@example.com" }); // post-conflict re-read
+      // Post-conflict re-read. A genuine race is the same account making two concurrent first
+      // requests, so the winner's row carries this token's sub.
+      .mockResolvedValueOnce({ id: "winner-user-id", email: "manager@example.com", cognitoSub: "cognito-sub-123" });
     const { provider } = buildProvider();
 
     const session = await provider.verifySession(buildIdToken());
 
     expect(session).toEqual({ userId: "winner-user-id" });
+  });
+
+  it("refuses to relink an email-matched row that already belongs to a different Cognito account", async () => {
+    // The pool is in alias mode, so two accounts can end up sharing one verified email. Linking
+    // here would hand this account the other manager's team, leagues and standings.
+    mocks.findUserByEmail.mockResolvedValue({
+      id: "other-managers-user-id",
+      email: "manager@example.com",
+      cognitoSub: "cognito-sub-of-the-original-account",
+    });
+    const { provider } = buildProvider();
+
+    expect(await provider.verifySession(buildIdToken())).toBeNull();
+    expect(mocks.linkCognitoIdentity).not.toHaveBeenCalled();
+    expect(mocks.insertUser).not.toHaveBeenCalled();
+  });
+
+  it("does not hand the post-conflict re-read row to a different Cognito account", async () => {
+    mocks.insertUser.mockRejectedValue(new Error("duplicate key value violates unique constraint"));
+    mocks.findUserByEmail
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "other-managers-user-id", email: "manager@example.com", cognitoSub: "a-different-sub" });
+    const { provider } = buildProvider();
+
+    expect(await provider.verifySession(buildIdToken())).toBeNull();
   });
 
   it.each([

@@ -80,7 +80,12 @@ export class CognitoAuthProvider implements AuthProvider {
     const handle = claims["cognito:username"] ?? null;
     const existingUserByEmail = await usersRepository.findByEmail(claims.email);
     if (existingUserByEmail) {
-      // A row from before the sub/handle columns existed (or from the dev providers) — link it.
+      // The email fallback exists purely to backfill a row from before the sub/handle columns
+      // existed (or from the dev providers), so it only ever links a row that has no sub yet. A
+      // row already bound to a *different* sub means two Cognito accounts share this email — the
+      // pool is in alias mode, which permits that — and relinking would silently hand this
+      // account the other manager's team, leagues and standings. Refuse the session instead.
+      if (existingUserByEmail.cognitoSub !== null) return null;
       await usersRepository.linkCognitoIdentity(existingUserByEmail.id, { cognitoSub: claims.sub, handle });
       return { userId: existingUserByEmail.id };
     }
@@ -96,9 +101,12 @@ export class CognitoAuthProvider implements AuthProvider {
       });
       return { userId: createdUser.id };
     } catch {
-      // Two first-ever requests raced on the unique email — the loser re-reads the winner's row.
+      // Two first-ever requests raced on the unique email — the loser re-reads the winner's row,
+      // but only when the winner is this same Cognito account. A genuine race is one account
+      // making two concurrent first requests, so the subs match; a row carrying a different sub
+      // is the duplicate-email case guarded above, not a race.
       const userInsertedByConcurrentRequest = await usersRepository.findByEmail(claims.email);
-      return userInsertedByConcurrentRequest ? { userId: userInsertedByConcurrentRequest.id } : null;
+      return userInsertedByConcurrentRequest?.cognitoSub === claims.sub ? { userId: userInsertedByConcurrentRequest.id } : null;
     }
   }
 
