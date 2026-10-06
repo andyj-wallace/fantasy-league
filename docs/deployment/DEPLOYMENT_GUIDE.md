@@ -11,8 +11,10 @@ If you only read one thing: **the entire stack is created and destroyed with
 `cdk deploy` and `cdk destroy`. Nothing is set up by hand.** That is what makes it
 repeatable.
 
-> **Status (2026-07-11): this guide has been executed for real.** `fantasy-league-prod`
-> is live. The exact as-run commands (with the flags and gotchas this overview glosses
+> **Status (2026-10-06): prod is torn down.** `fantasy-league-prod` was executed from this
+> guide on 2026-07-11, rebuilt 2026-08-17 and destroyed again 2026-10-06; nothing is
+> deployed now. The RDS final snapshot is the only surviving copy of the beta data.
+> Everything below describes a rebuild. The exact as-run commands (with the flags and gotchas this overview glosses
 > over — tunnel TLS, the six SSM parameters, Lambda concurrency quota) are in
 > **`DEPLOYMENT_RUNBOOK.md`** — prefer it when actually typing commands.
 

@@ -1,5 +1,10 @@
 # Deployment Runbook — as actually run (first prod deploy, 2026-07-11)
 
+> **Status (2026-10-06): prod is torn down.** There is no live environment; this runbook is
+> now the rebuild reference. The RDS final snapshot `fantasy-league-prod-final-20261006-151737`
+> holds the real beta data. The `.github/workflows` pipelines described under **Release
+> process** were removed, so that section is historical. See `README.md` in this folder.
+
 Every command from the first production deployment, in order, with what it does and why.
 Unlike `DEPLOYMENT_GUIDE.md` (the plain-language overview) this is the exact, replayable
 record — treat it as the reference for redeploys, new environments, and rebuilds.
@@ -377,6 +382,10 @@ access requests are reviewed by AWS (usually within 24h) — not instant.
 
 ## Release process — `main` → `release` → deploy
 
+> **Historical as of 2026-10-06.** `.github/workflows/ci.yml` and `deploy.yml` were removed
+> when prod was torn down, so pushing `release` deploys nothing. Restore them from git history
+> (`git log --diff-filter=D -- .github/workflows`) before relying on anything below.
+
 Two branches, two gates:
 
 - **`main`** — where PRs land. Gated by `.github/workflows/ci.yml`'s fast `test` /
@@ -511,6 +520,14 @@ previously accounted for in this runbook or the script) — deleted manually. Fi
 verification explicitly asserts the VPC is gone rather than only sweeping tags. Prod
 was fully torn down (stack, VPC, database, snapshot, bucket, SSM params) as of
 2026-07-13 — see `docs/deployment/README.md` for current status before redeploying.
+
+**As-run: second prod teardown (2026-10-06).** Run after the GW1-GW5 beta. This time the
+final snapshot `fantasy-league-prod-final-20261006-151737` was deliberately kept (it is the
+only copy of the real beta data), so the "later, when certain" snapshot deletion above has
+not been done. Verify the sweep with the script's own verification step rather than
+assuming it: the stack, the CloudFront distribution (blocked until its Free pricing plan
+is cancelled in the console, Troubleshooting row 14), the web bucket and the SSM
+parameters are the resources that outlast the database.
 
 **Appendix — abandoning CDK in this account entirely** (only if nothing else will ever
 use CDK here): empty the versioned bootstrap bucket *including all object versions*

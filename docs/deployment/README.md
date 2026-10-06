@@ -20,35 +20,35 @@ GitHub once the one-time setup in DEPLOYMENT_RUNBOOK.md's "Release process" sect
 complete. Infra deploys work two interchangeable ways: `deploy:infra` (CDK) and
 `deploy:infra:cli` (synth → publish assets → plain `aws cloudformation deploy`).
 
-**Status:** **LIVE as of 2026-08-17** — https://d3ktr55dnycetc.cloudfront.net. Prod was
-live 2026-07-11 through 2026-07-13, torn down, then redeployed via the `main`→`release`
-GitHub Actions pipeline (first successful end-to-end run of that pipeline — see
-DEPLOYMENT_RUNBOOK.md's Troubleshooting rows 15-16 for the two bugs it took to get
-there: an OIDC trust-policy/environment-claim mismatch, and SSM secrets that needed
-re-seeding after the teardown). That run's infra step (`cdk deploy`) was accidentally
-cancelled from the GitHub UI partway through — CloudFormation kept building regardless
-(cancelling the workflow doesn't cancel the underlying stack operation) and reached
-`CREATE_COMPLETE` on its own, but the workflow's remaining steps (migrate/frontend/
-smoke) never ran as a result. Those three were finished manually with `npm run
-deploy:migrate`, `deploy:frontend`, `deploy:smoke` — all passed. The account-level
-`FantasyLeagueGitHubDeploy` stack (GitHub OIDC provider + deploy role) is also live,
-and `release` has branch protection requiring `integration-smoke`.
+**Status:** **TORN DOWN 2026-10-06** after the GW1-GW5 beta. Nothing is deployed, so
+there is no live URL (the former CloudFront URL `https://d3ktr55dnycetc.cloudfront.net`
+is dead). The code, the CDK app in `infra/` and these runbooks are unchanged, so the
+whole stack can be rebuilt with `npm run deploy:all`. The RDS final snapshot
+`fantasy-league-prod-final-20261006-151737` holds the real beta data (users, leagues,
+teams, scores, 674 hydrated players) and is the only copy: keep it until you are certain
+you will not restore, and restore from it per `RELIABILITY_PLAN.md` instead of
+re-seeding. The `.github/workflows` CI and deploy pipelines were removed in the same
+change, so pushing `release` no longer deploys anything; the release process in
+DEPLOYMENT_RUNBOOK.md is historical until the workflows are restored from git history.
 
-**Since then (as of 2026-08-26):**
-- **Prod carries real user data.** The GW1 beta launched 2026-08-21 — see
-  [`../beta-launch-runbook.md`](../beta-launch-runbook.md) for the as-run record. Prod holds
-  real users, leagues and teams plus 674 hydrated players. Treat every prod write as touching
-  real people, and **snapshot before migrating** — the launch-night "prod is empty" shortcut
-  no longer applies.
-- **Match-poll schedule is ENABLED**, and the CDK default was inverted to on 2026-08-24 —
-  previously any deploy omitting `--enable-match-poll` would silently disable a *running*
-  schedule. See DEPLOYMENT_RUNBOOK.md follow-up 7.
-- **The `production` required-reviewer rule is ON** (confirmed 2026-08-20), so prod deploys
-  pause for approval. One approval releases the whole job — infra, migrations, frontend, smoke.
-- **Prod runs pre-fix worker code.** Five worker-pipeline defects found in live use
-  (remaining-gaps items 16-20) are closed in the tree but **not yet deployed**; that deploy also
-  carries the unapplied migration `0013_glorious_lady_mastermind.sql`.
+**History:** live 2026-07-11 through 2026-07-13, torn down, redeployed 2026-08-17 via
+the `main`→`release` GitHub Actions pipeline (see DEPLOYMENT_RUNBOOK.md's Troubleshooting
+rows 15-16 for the two bugs it took to get there), GW1 beta launched 2026-08-21 (see
+[`../beta-launch-runbook.md`](../beta-launch-runbook.md)), then torn down again
+2026-10-06.
 
-**Still open:** reserved concurrency quota, an undrilled restore (higher stakes now that prod
-holds real data), and the rest of the ops hardening in
+**If you rebuild:**
+- Run `npm run deploy:secrets` first: teardown deletes every `/fantasy-league/prod/*` SSM
+  parameter (Troubleshooting row 16).
+- The unapplied worker-pipeline fixes (remaining-gaps items 16-20) and migration
+  `0013_glorious_lady_mastermind.sql` were never deployed to the old environment; a fresh
+  deploy gets them. If restoring from the snapshot, run `deploy:migrate` afterwards.
+- Match-poll schedule now defaults to ENABLED (DEPLOYMENT_RUNBOOK.md follow-up 7). Prod
+  data is real, so snapshot before migrating once users exist again.
+- The GitHub OIDC stack `FantasyLeagueGitHubDeploy` and the `CDKToolkit` bootstrap stack
+  are account-level and are not part of the per-environment teardown: check whether they
+  still exist before assuming a clean account.
+
+**Still open:** reserved concurrency quota, an undrilled restore (now the only route back
+to the beta data), and the rest of the ops hardening in
 [`../remaining-gaps-todo.md`](../remaining-gaps-todo.md) item 13.

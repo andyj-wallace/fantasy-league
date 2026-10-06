@@ -1,6 +1,49 @@
 # fantasy-league
 Football fantasy league game
 
+An invite-only Fantasy Premier League clone: pick 16 players on a £110M budget, choose a
+formation, name a captain who scores double, make two free transfers a gameweek, and climb a
+private league table that updates as each real match finishes.
+
+> **Status:** the AWS production environment was torn down on 2026-10-06 after the GW1–GW5
+> beta. The code, infrastructure definitions (`infra/`) and deployment runbooks
+> (`docs/deployment/`) are all still here, so the whole stack can be rebuilt with
+> `npm run deploy:all`. The screenshots below are from the live beta.
+
+## Screenshots
+
+### Landing page and login
+
+![Landing page](docs/screenshots/landing-page.png)
+
+![Login](docs/screenshots/login.png)
+
+### League hub
+
+Standings, the invite code and the gameweek's fixtures live on one page; the squad builder and
+transfers open as overlays on top of it.
+
+![League hub with standings and fixtures](docs/screenshots/league-hub-standings.png)
+
+### Squad builder
+
+Formation and lineup on a pitch, with the starting XI alongside it.
+
+![Squad builder: formation and lineup](docs/screenshots/squad-builder-formation-lineup.png)
+
+Captain and vice-captain, the bench, and a live gameweek score breakdown.
+
+![Squad builder: captaincy and gameweek score](docs/screenshots/squad-builder-captaincy-gameweek-score.png)
+
+Player discovery: search, sort and filter by position, club and price, with recent form.
+Players whose match has kicked off are locked.
+
+![Squad builder: change players](docs/screenshots/squad-builder-change-players.png)
+
+### Transfers
+
+![Transfers](docs/screenshots/transfers.png)
+
 ## Local development
 
 Prerequisites: Node.js, Docker.
