@@ -119,6 +119,10 @@ function TransferPicker({
       } else {
         reset();
       }
+    } catch {
+      // onConfirm throws on a dead request rather than returning a message; without this the
+      // picker would just re-enable Confirm and say nothing, reading as a completed transfer.
+      setError("Could not make this transfer — check your connection and try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -231,13 +235,23 @@ export function TransfersPanel({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ playerOutId: outgoing.id, playerInId: replacementPlayerId }),
     });
-    const body = await response.json();
+    // A gateway error returns HTML, not JSON — parsing defensively keeps the !ok branch below
+    // reachable so the user gets a transfer-specific message rather than an unhandled throw.
+    const body = await response.json().catch(() => ({}));
     if (!response.ok) return body.message ?? "Could not make this transfer.";
 
     invalidateCached(`${getApiBaseUrl()}/teams/${teamId}`);
     invalidateCached(`${getApiBaseUrl()}/teams/${teamId}/transfers/available`);
     invalidateCached(`${getApiBaseUrl()}/me/teams`);
-    await loadData();
+    // Past this point the transfer is committed, so a failed refresh must not be reported as a
+    // failed transfer — that would invite the manager to spend a second one on the same swap.
+    try {
+      await loadData();
+    } catch {
+      setPageMessage("Transfer confirmed, but the page couldn't refresh — reload to see it.");
+      onChanged?.();
+      return null;
+    }
     const captaincyChangeWarnings: string[] = body.captaincyChangeWarnings ?? [];
     setPageMessage(
       [`Transfer confirmed: ${outgoing.name} → ${replacement?.name ?? replacementPlayerId}.`, ...captaincyChangeWarnings].join(" "),

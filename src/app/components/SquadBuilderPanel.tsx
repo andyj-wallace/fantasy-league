@@ -720,17 +720,23 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
   async function handleConfirmedSave() {
     setIsConfirmingSave(false);
     setIsSaving(true);
+    // A thrown request (network failure, or a non-JSON error body) means neither PUT reported
+    // back, so the catch below has to know which of the two already committed server-side.
+    let rosterSaveLanded = false;
     try {
       const rosterResponse = await authedFetch(`${getApiBaseUrl()}/teams/${teamId}/roster`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ rosterSlots: draftRosterSlots }),
       });
-      const rosterBody = await rosterResponse.json();
+      // A gateway error returns HTML, not JSON — parsing defensively keeps the !ok branch below
+      // reachable so the user gets the server's failure rather than a generic connection message.
+      const rosterBody = await rosterResponse.json().catch(() => ({}));
       if (!rosterResponse.ok) {
         setSaveResult({ kind: "error", messages: [rosterBody.message ?? "Could not save squad."] });
         return;
       }
+      rosterSaveLanded = true;
       // The roster PUT has landed server-side even if the lineup PUT below fails, so invalidate
       // now rather than only on full success — otherwise a stale roster/budget could still be
       // served from cache after a partial save.
@@ -742,7 +748,7 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ formation: selectedFormation, captainPlayerId, viceCaptainPlayerId }),
       });
-      const lineupBody = await lineupResponse.json();
+      const lineupBody = await lineupResponse.json().catch(() => ({}));
       if (!lineupResponse.ok) {
         setTeam((previousTeam) => savedTeamKeepingGameweekTransferCost(previousTeam, rosterBody));
         setSaveResult({
@@ -770,6 +776,16 @@ export function SquadBuilderPanel({ teamId, onChanged }: { teamId: string; onCha
         setSaveResult({ kind: "success", messages: ["Squad and lineup saved."] });
       }
       onChanged?.();
+    } catch {
+      // Without this the request would fail silently: the confirmation card is already dismissed
+      // and the finally below re-enables the button, so the manager would read a dead request as
+      // a successful save. Put the card back so the retry is one tap from where they were.
+      setSaveResult(
+        rosterSaveLanded
+          ? { kind: "partial", messages: ["Squad saved, but the lineup didn't — reopen and set your lineup."] }
+          : { kind: "error", messages: ["Could not save your squad — check your connection and try again."] },
+      );
+      setIsConfirmingSave(true);
     } finally {
       setIsSaving(false);
     }
