@@ -10,6 +10,44 @@ private league table that updates as each real match finishes.
 > (`docs/deployment/`) are all still here, so the whole stack can be rebuilt with
 > `npm run deploy:all`. The screenshots below are from the live beta.
 
+## Purpose
+
+This project is **strictly for educational purposes**. It exists to learn how a full-stack,
+multi-service application fits together: a frontend, an API, background workers, a database, an
+external data provider, authentication and cloud deployment. It is not a commercial product, it
+is not intended for real money or real users beyond a small invite-only group, and it is not
+affiliated with, endorsed by, or connected to the Premier League or Fantasy Premier League.
+
+## What was learned
+
+- **Precompute, don't recompute.** Scores are calculated once by workers and stored in
+  per-player, per-team and standings tables; the leaderboard is then a plain read. Designing
+  around the read path, rather than the cost of each calculation, shapes the whole backend.
+- **The scoring engine is where the difficulty lives.** Captain and vice-captain fallbacks,
+  postponed fixtures, players who don't play, and the game-state goal bonus each raised edge cases
+  that the plain-text ruleset had to settle. Those decisions are pinned by unit tests so they
+  don't drift.
+- **Write the ruleset down before the code.** The plain-text design docs at the repo root are the
+  source of truth; the implementation follows them, not the other way round.
+- **Build skeleton first, top-down.** Defining interfaces between the frontend, API, workers,
+  database and data provider before filling in behaviour kept each layer replaceable.
+- **Working within a rate-limited external API.** The live-match polling cadence is derived from
+  a fixed daily request budget rather than a fixed timer, and a key with more than one consumer
+  makes that quota tracking drift.
+- **Authentication is more than a login form.** Cognito integration, verifying ID tokens in the
+  API, and account linking all have sharp edges, including a bug where one email address could
+  end up owning two accounts.
+- **Testing trade-offs.** Most tests mock the repository layer and run without Postgres, which keeps
+  the feedback loop fast but leaves database behaviour largely unasserted. Compiling Drizzle
+  statements with `.toSQL()` is a cheap middle ground for checking query parameters.
+- **Deploying to AWS.** A static Next.js export on S3 behind CloudFront, with the API served under
+  `/api/*` on the same domain to avoid CORS, and Lambda, API Gateway and RDS provisioned through
+  CDK. Tearing the stack down and rebuilding it from runbooks was as important a skill as deploying
+  it.
+- **Keeping UI state in the URL.** Opening a panel pushes a query parameter, so overlays are
+  deep-linkable and the browser Back button closes them. The frontend uses a hand-written CSS
+  design system rather than a component library.
+
 ## Screenshots
 
 ### Landing page and login
